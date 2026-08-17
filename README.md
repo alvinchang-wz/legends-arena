@@ -3,8 +3,6 @@
 A browser-based replica of Mobile Legends: Bang Bang gameplay, built with plain
 HTML5 canvas + JavaScript. No dependencies, no build step.
 
-**Play it live:** <https://alvinchang-wz.github.io/legends-arena/>
-
 ## Run it locally
 
 Serve the folder over HTTP:
