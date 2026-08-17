@@ -1,0 +1,7 @@
+.DS_Store
+.claude/
+.cursor/
+training/data/
+training/checkpoints/
+*.pyc
+__pycache__/

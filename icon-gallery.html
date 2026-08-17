@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Icon gallery (dev)</title>
+<style>
+  body { background: #0a101d; color: #cfd8ea; font: 12px system-ui; padding: 16px; }
+  h2 { color: #ffc94a; margin: 18px 0 8px; font-size: 14px; letter-spacing: 1px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cell { width: 92px; text-align: center; }
+  .pad { width: 84px; height: 84px; margin: 0 auto; border-radius: 14px; display: flex;
+         align-items: center; justify-content: center;
+         background: radial-gradient(circle at 50% 36%, #182338, #0b1220 75%);
+         border: 1px solid #2a3a56; }
+  .cell small { display: block; margin-top: 3px; color: #7f8cab; word-break: break-all; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="js/icons.js"></script>
+<script>
+const host = document.getElementById('host');
+const groups = {};
+for (const key of Object.keys(Icons.GLYPHS)) {
+  const kind = key.split(':')[0];
+  (groups[kind] = groups[kind] || []).push(key);
+}
+for (const [kind, keys] of Object.entries(groups)) {
+  const h = document.createElement('h2');
+  h.textContent = kind.toUpperCase();
+  host.appendChild(h);
+  const row = document.createElement('div');
+  row.className = 'row';
+  for (const k of keys) {
+    const c = document.createElement('div');
+    c.className = 'cell';
+    c.innerHTML = `<div class="pad">${Icons.img(k, 64)}</div><small>${k}</small>`;
+    row.appendChild(c);
+  }
+  host.appendChild(row);
+}
+</script>
+</body>
+</html>
