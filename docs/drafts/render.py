@@ -1,10 +1,11 @@
 """Render draft-a.json exactly, optionally hiding the loose walls.
-usage: python docs/drafts/render.py [--camp-walls-only] out.png"""
+usage: python docs/drafts/render.py [--camp-walls-only] [--no-bushes] out.png"""
 import json, math, sys
 from PIL import Image, ImageDraw, ImageFont
 
 d = json.load(open('docs/drafts/draft-a.json'))
 camp_walls_only = '--camp-walls-only' in sys.argv
+no_bushes = '--no-bushes' in sys.argv
 out = [a for a in sys.argv[1:] if not a.startswith('--')][0]
 W, H = d['size']
 img = Image.new('RGB', (W, H), (24, 24, 24))
@@ -41,7 +42,7 @@ for c in d['camps']:
 for w in d['walls']:
     if camp_walls_only and not w['nearCamp']: continue
     dr.polygon([tuple(p) for p in w['poly']], fill=(143, 143, 143))
-for bsh in d['bushes']:
+for bsh in ([] if no_bushes else d['bushes']):
     poly = [tuple(p) for p in bsh['poly']]
     dr.polygon(poly, fill=(48, 66, 48))
     xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
