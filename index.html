@@ -165,6 +165,17 @@
   <!-- ===== Out-of-match screens (js/screens.js, css/screens.css) ===== -->
   <div id="menuShade"></div>
 
+  <section id="gate" class="screen" hidden>
+    <form id="gateForm" class="gateBox panel" autocomplete="off">
+      <div class="logoWord second goldText">LEGENDS ARENA</div>
+      <div class="gateTitle">PRIVATE PREVIEW</div>
+      <p class="gateHint">This build is invite-only. Enter the passphrase to play.</p>
+      <input id="gateInput" type="password" placeholder="Passphrase" autocapitalize="off" spellcheck="false" required>
+      <button type="submit" class="cta">ENTER</button>
+      <div id="gateMsg" class="gateMsg"></div>
+    </form>
+  </section>
+
   <section id="title" class="screen" hidden>
     <div class="titleLogo">
       <div class="logoWord goldText">LEGENDS</div>

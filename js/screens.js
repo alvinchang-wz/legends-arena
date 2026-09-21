@@ -97,7 +97,54 @@ const Screens = {
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
-    this.show('title');
+    this.initGate();
+    this.show(this.gateLocked() ? 'gate' : 'title');
+  },
+
+  /* ---------------- passphrase gate ----------------
+     The hosted build carries <meta name="legends-gate" content="<sha256>">
+     (see scripts/build-www.js). Local dev and the Android app carry no meta,
+     so they never see this screen. The hash is public: this keeps strangers
+     out, it is not a substitute for a server-side login. */
+  GATE_SALT: 'legends-arena:gate:v1:',
+  gateHash() {
+    const m = document.querySelector('meta[name="legends-gate"]');
+    return m ? m.content : null;
+  },
+  gateLocked() {
+    const hash = this.gateHash();
+    if (!hash) return false;
+    try { return localStorage.getItem('legends.gate') !== hash; } catch (e) { return true; }
+  },
+  initGate() {
+    const form = document.getElementById('gateForm');
+    if (!form) return;
+    const input = document.getElementById('gateInput');
+    const msg = document.getElementById('gateMsg');
+    // The in-game hotkey handlers listen on window; keep typing out of them,
+    // and submit on Enter ourselves since they may swallow the key.
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+      input.addEventListener(type, e => {
+        e.stopPropagation();
+        if (type === 'keydown' && e.key === 'Enter') { e.preventDefault(); form.requestSubmit(); }
+      });
+    }
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const expected = this.gateHash();
+      if (!expected || !window.crypto || !crypto.subtle) { this.show('title'); return; }
+      const bytes = new TextEncoder().encode(this.GATE_SALT + input.value.trim());
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+      if (hex === expected) {
+        try { localStorage.setItem('legends.gate', expected); } catch (err) { /* session only */ }
+        SFX.ensure();
+        this.show('title');
+      } else {
+        msg.textContent = 'That passphrase is not right.';
+        input.select();
+      }
+    });
   },
 
   /* Menu scale: author at 1280x720, fit the short edge, never let a phone

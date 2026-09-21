@@ -560,3 +560,24 @@
     radial-gradient(ellipse at 82% 92%, color-mix(in srgb, var(--team-red) 12%, transparent) 0%, transparent 52%),
     radial-gradient(ellipse at center, var(--surface1) 0%, var(--void) 72%);
 }
+
+/* ============================================================
+   GATE — passphrase wall for the hosted build (see scripts/build-www.js).
+   ============================================================ */
+#gate { display: flex; align-items: center; justify-content: center; }
+.gateBox {
+  display: flex; flex-direction: column; align-items: center; gap: calc(12px * var(--ms));
+  width: min(92vw, calc(460px * var(--ms))); padding: calc(28px * var(--ms)) calc(28px * var(--ms)) calc(24px * var(--ms));
+  text-align: center; animation: cardIn var(--dur-slow) var(--ease-out);
+}
+.gateBox .logoWord.second { font-size: calc(30px * var(--ms)); letter-spacing: calc(10px * var(--ms)); padding-left: calc(10px * var(--ms)); }
+.gateTitle { font-family: var(--menu-font); font-weight: 700; font-size: calc(13px * var(--ms)); letter-spacing: calc(4px * var(--ms)); color: var(--text-faint); }
+.gateHint { margin: 0; font-size: calc(13px * var(--ms)); color: var(--text-dim); }
+#gateInput {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: calc(16px * var(--ms)); color: var(--text);
+  background: var(--surface0); border: 1px solid var(--line); border-radius: var(--r1);
+  padding: calc(10px * var(--ms)) calc(12px * var(--ms)); outline: none; text-align: center; letter-spacing: 2px;
+}
+#gateInput:focus { border-color: var(--gold); }
+.gateBox .cta { min-width: 100%; height: calc(56px * var(--ms)); font-size: calc(22px * var(--ms)); }
+.gateMsg { min-height: calc(16px * var(--ms)); font-size: calc(12px * var(--ms)); color: var(--danger); }

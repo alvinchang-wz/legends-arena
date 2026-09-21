@@ -1,5 +1,10 @@
 name: Deploy GitHub Pages
 
+# Publishes ONLY the built game (www/), not the repository: no training
+# data, docs, headless tools or the Android project. The hosted build adds a
+# strict CSP, a robots.txt, and, when the GATE_PASSPHRASE repository secret
+# is set, a passphrase gate in front of the game.
+
 on:
   push:
     branches: [main]
@@ -22,9 +27,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the hosted bundle
+        env:
+          WEB_HOSTED: "1"
+          WEB_GATE: ${{ secrets.GATE_PASSPHRASE }}
+        run: node scripts/build-www.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: www
       - id: deployment
         uses: actions/deploy-pages@v4

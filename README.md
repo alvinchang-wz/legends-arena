@@ -34,6 +34,19 @@ work, painted at half rate, and replaced the moment a real match starts.
 `manifest.webmanifest` and `icon.svg` make the site installable as a
 landscape, fullscreen app on Android and desktop Chrome.
 
+## Hosted build (GitHub Pages)
+
+The Pages workflow publishes only the built game (`www/`), never the whole
+repository. The hosted build adds a strict Content-Security-Policy, a
+`robots.txt`, and, when the `GATE_PASSPHRASE` repository secret is set, a
+passphrase screen in front of the game (only a salted SHA-256 of the phrase
+reaches the page). This keeps strangers out of a public site; it is not a
+substitute for a real login. Set the secret under Settings, Secrets and
+variables, Actions; enable Pages under Settings, Pages, Source: GitHub Actions.
+
+Build the same bundle locally with `WEB_HOSTED=1 WEB_GATE="your phrase"
+node scripts/build-www.js` and open `http://localhost:8642/www/`.
+
 ## Android app
 
 The Android build is a [Capacitor](https://capacitorjs.com) shell around the
