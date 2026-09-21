@@ -1518,13 +1518,11 @@ const UI = {
           g.stroke();
         }
       }
-      g.fillStyle = rgba(THEME.river, 0.95);
-      g.beginPath(); g.arc(mx(LAKE.x), my(LAKE.y), LAKE.r * k, 0, TAU); g.fill();
-      g.fillStyle = rgba(THEME.lane, 0.7);
-      g.beginPath(); g.arc(mx(ISLE.x), my(ISLE.y), ISLE.r * k * 0.9, 0, TAU); g.fill();
-      for (const p of [LORD_PIT, TURTLE_PIT]) {
+      for (const p of POOLS) {
+        g.fillStyle = rgba(THEME.river, 0.95);
+        g.beginPath(); g.arc(mx(p.x), my(p.y), p.r * k, 0, TAU); g.fill();
         g.fillStyle = rgba(THEME.riverLight, 0.8);
-        g.beginPath(); g.arc(mx(p.x), my(p.y), 8, 0, TAU); g.fill();
+        g.beginPath(); g.arc(mx(p.x), my(p.y), 5, 0, TAU); g.fill();
       }
     }
     const lanes = Game.isDuel() ? DUEL_MAP.lanes : Game.isTen() ? TEN_MAP.lanes : LANES;
@@ -1558,10 +1556,15 @@ const UI = {
     }
     // bushes
     for (const b of Game.bushes()) {
+      g.fillStyle = rgba(THEME.bush, 0.85);
+      if (b.ax !== undefined) {
+        g.strokeStyle = rgba(THEME.bush, 0.85); g.lineWidth = b.r * 2 * k; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(mx(b.ax), my(b.ay)); g.lineTo(mx(b.bx), my(b.by)); g.stroke();
+        continue;
+      }
       const mid = Game.worldSize() / 2;
       const ang = Math.atan2(b.y - mid, b.x - mid) + Math.PI / 4;
       g.save(); g.translate(mx(b.x), my(b.y)); g.rotate(ang); g.scale(1.45, 0.78);
-      g.fillStyle = rgba(THEME.bush, 0.85);
       g.beginPath(); g.arc(0, 0, b.r * k, 0, TAU); g.fill();
       g.restore();
     }

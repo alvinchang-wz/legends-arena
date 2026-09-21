@@ -1004,10 +1004,7 @@ const Game = {
       h.bush = -1; h.inRiver = false;
       if (!h.alive) continue;
       for (let i = 0; i < bushes.length; i++) {
-        const b = bushes[i];
-        if ((h.x - b.x) * (h.x - b.x) + (h.y - b.y) * (h.y - b.y) <= b.r * b.r) {
-          h.bush = i; break;
-        }
+        if (inBush(bushes[i], h.x, h.y)) { h.bush = i; break; }
       }
       if (!this.isDuel()) {
         if (this.isTen()) {
@@ -1020,8 +1017,8 @@ const Game = {
           }
           h.inRiver = best <= 110 * 110;
         } else {
-          // the two streams and the marsh lake carry the current
-          const currentR = 95 * MAP_SCALE;
+          // the river channel and both pit pools carry the current
+          const currentR = RIVER_HALF_W;
           let best = Infinity;
           for (const s of STREAMS) {
             for (let i = 1; i < s.length; i++) {
@@ -1030,8 +1027,8 @@ const Game = {
               if (d < best) best = d;
             }
           }
-          const dl = (h.x - LAKE.x) * (h.x - LAKE.x) + (h.y - LAKE.y) * (h.y - LAKE.y);
-          h.inRiver = best <= currentR * currentR || dl <= LAKE.r * LAKE.r;
+          h.inRiver = best <= currentR * currentR ||
+            POOLS.some(p => (h.x - p.x) * (h.x - p.x) + (h.y - p.y) * (h.y - p.y) <= p.r * p.r);
         }
       }
     }
@@ -1167,6 +1164,8 @@ const Game = {
          backstop for everything that does not go through moveToward — a dash
          that ends inside a rock, a knock-back, two units squeezing a third. */
       for (const w of walls) {
+        if (w.minX !== undefined && (a.x < w.minX - a.radius || a.x > w.maxX + a.radius ||
+            a.y < w.minY - a.radius || a.y > w.maxY + a.radius)) continue;
         const c = wallClosest(w, a.x, a.y);
         let dx = a.x - c.x, dy = a.y - c.y;
         const d = Math.hypot(dx, dy);
@@ -1688,12 +1687,13 @@ function paintCampArena(g, c, index) {
 }
 
 function buildMapLayer() {
-  const S = 0.62;
+  const S = 0.62, M = MapArt.MARGIN;
   mapLayer = document.createElement('canvas');
-  mapLayer.width = WORLD * S; mapLayer.height = WORLD * S;
+  mapLayer.width = (WORLD + 2 * M) * S; mapLayer.height = (WORLD + 2 * M) * S;
+  mapLayer.margin = M;                     // world units painted beyond the square
   const g = mapLayer.getContext('2d');
-  g.scale(S, S);
-  MapArt.paintCrown(g);
+  g.scale(S, S); g.translate(M, M);
+  MapArt.paintBoard(g);
 }
 
 /* The duel arena is a separate static layer rather than a crop of the 5v5
@@ -2036,13 +2036,14 @@ function visibleWorldRect(pad = 80) {
 function drawMapLayer(layer, W) {
   if (!layer) return;
   const v = visibleWorldRect(160);
-  const x = Math.max(0, v.x);
-  const y = Math.max(0, v.y);
-  const dw = Math.min(W, v.x + v.w) - x;
-  const dh = Math.min(W, v.y + v.h) - y;
+  const m = layer.margin || 0;             // the 5v5 board paints a rim past its edge
+  const x = Math.max(-m, v.x);
+  const y = Math.max(-m, v.y);
+  const dw = Math.min(W + m, v.x + v.w) - x;
+  const dh = Math.min(W + m, v.y + v.h) - y;
   if (dw <= 1 || dh <= 1) return;
-  const Sx = layer.width / W, Sy = layer.height / W;
-  ctx.drawImage(layer, x * Sx, y * Sy, dw * Sx, dh * Sy, x, y, dw, dh);
+  const Sx = layer.width / (W + 2 * m), Sy = layer.height / (W + 2 * m);
+  ctx.drawImage(layer, (x + m) * Sx, (y + m) * Sy, dw * Sx, dh * Sy, x, y, dw, dh);
 }
 
 /* Health bar with a shield overlay and crowd-control pips.
@@ -2888,14 +2889,12 @@ function render() {
   // Bushes over units — concealment must cover the concealed. Dark under-
   // lobes below, lit lobes lifted above them, and a contact shadow: the
   // thicket reads as a mound you stand inside rather than paint you stand on.
-  for (const b of Game.bushes()) {
-    if (!inView(b.x, b.y, b.r + 60)) continue;
-    const ang = Math.atan2(b.y - Game.worldSize() / 2, b.x - Game.worldSize() / 2) + Math.PI / 4;
+  const bushLobes = (b, x, y, ang) => {
     const bush = Game.isTen() ? '#4a2214' : THEME.bush;
     const bushLt = Game.isTen() ? '#8a4a22' : THEME.bushLight;
-    ctx.beginPath(); ctx.arc(b.x, b.y + 6, b.r * 0.95, 0, TAU);
+    ctx.beginPath(); ctx.arc(x, y + 6, b.r * 0.95, 0, TAU);
     ctx.fillStyle = 'rgba(4,10,6,0.32)'; ctx.fill();
-    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
     const lift = -b.r * 0.3;
     for (const [ox, oy, rr, col] of [
       [-0.44, 0.14, 0.6, rgba(mixHex(bush, '#020604', 0.4), 0.88)],
@@ -2911,6 +2910,21 @@ function render() {
       ctx.fillStyle = col; ctx.fill();
     }
     ctx.restore();
+  };
+  for (const b of Game.bushes()) {
+    const pad = b.ax === undefined ? b.r + 60 : b.r + 60 + Math.hypot(b.bx - b.ax, b.by - b.ay) / 2;
+    if (!inView(b.x, b.y, pad)) continue;
+    if (b.ax === undefined) {
+      bushLobes(b, b.x, b.y, Math.atan2(b.y - Game.worldSize() / 2, b.x - Game.worldSize() / 2) + Math.PI / 4);
+      continue;
+    }
+    // a capsule bush is a row of thickets along its axis
+    const len = Math.hypot(b.bx - b.ax, b.by - b.ay), ang = Math.atan2(b.by - b.ay, b.bx - b.ax);
+    const n = Math.max(1, Math.round(len / (b.r * 0.9)));
+    for (let i = 0; i <= n; i++) {
+      const t = n ? i / n : 0.5;
+      bushLobes(b, b.ax + (b.bx - b.ax) * t, b.ay + (b.by - b.ay) * t, ang);
+    }
   }
 
   // effects

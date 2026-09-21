@@ -17,6 +17,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const CORE_SCRIPTS = [
   'js/theme.js',
   'js/data.js',
+  'js/map-data.js',
   'js/map.js',
   'js/combat.js',
   'js/bot-params.js',
