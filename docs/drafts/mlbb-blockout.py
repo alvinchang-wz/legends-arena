@@ -12,7 +12,10 @@ import json, math, sys
 import numpy as np, cv2
 from PIL import Image, ImageDraw, ImageFont
 
-H = 'docs/mlbb-handoff/'
+import os as _os
+# The survey handoff lives in the workspace dataset; a private local copy in
+# docs/mlbb-handoff/ (gitignored) is used when the game is checked out alone.
+H = next((p for p in ['../dataset/world/handoff/', 'docs/mlbb-handoff/'] if _os.path.exists(p + 'labels.json')), 'docs/mlbb-handoff/')
 labels = json.load(open(H + 'labels.json'))
 photo = json.load(open(H + ('map.json' if '--contact' in sys.argv else 'map_photo.json')))
 SQ = photo['meta']['map_square']            # [x0, y0, x1, y1] in map px

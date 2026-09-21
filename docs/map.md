@@ -1,8 +1,9 @@
 # The 5v5 map
 
 The board is generated geometry. `docs/drafts/mlbb-clean.py` reads the
-survey of the reference map in `docs/mlbb-handoff/` (kept out of the public
-repo: it contains stitched game screenshots) and writes `js/map-data.js`,
+survey of the reference map (`../dataset/world/handoff/` in the workspace,
+or a private copy in `docs/mlbb-handoff/`, which is gitignored because it
+contains stitched game screenshots) and writes `js/map-data.js`,
 which `js/map.js` scales onto the engine's world. `js/mapart.js` paints it.
 
 Layout: Blue base bottom-left, Red base top-right, mid on the diagonal, top
