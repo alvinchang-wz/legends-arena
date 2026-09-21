@@ -857,6 +857,37 @@ const Icons = (() => {
     g.lineWidth = 8; g.strokeStyle = '#fecaca'; g.stroke();
     tri(g, 50 + 27 * Math.cos(1.6 * Math.PI), 50 + 27 * Math.sin(1.6 * Math.PI), 11, 1.6 * Math.PI + Math.PI / 2, '#fee2e2');
   };
+  GLYPHS['spell:flameshot'] = g => {
+    shot(g, '#fb923c');
+    spark4(g, 72, 28, 14, '#fdba74');
+    spark4(g, 78, 22, 7, '#fff7ed');
+  };
+  GLYPHS['spell:arrival'] = g => {
+    ring(g, 50, 58, 22, 4, '#fbbf24');
+    chevron(g, 50, 32, 12, 18, 8, '#fde68a', -Math.PI / 2);
+    g.fillStyle = '#f59e0b'; g.fillRect(46, 48, 8, 28);
+  };
+  GLYPHS['spell:icequake'] = g => {
+    path(g, [[18, 78], [50, 22], [82, 78]]);
+    g.fillStyle = lg(g, 50, 22, 50, 78, [[0, '#e0f2fe'], [1, '#38bdf8']]); g.fill();
+    spark4(g, 50, 48, 10, '#fff');
+  };
+  GLYPHS['spell:weaken'] = g => {
+    chevron(g, 50, 38, 18, 22, 10, '#c4b5fd', Math.PI / 2);
+    chevron(g, 50, 58, 18, 22, 10, '#a78bfa', Math.PI / 2);
+  };
+  GLYPHS['spell:revitalize'] = g => {
+    g.beginPath(); g.moveTo(50, 78); g.bezierCurveTo(18, 52, 28, 22, 50, 36); g.bezierCurveTo(72, 22, 82, 52, 50, 78);
+    g.fillStyle = '#4ade80'; g.fill();
+    spark4(g, 50, 44, 8, '#dcfce7');
+  };
+  GLYPHS['ping:missing'] = g => {
+    g.fillStyle = '#e879f9'; g.font = '800 54px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('?', 50, 54);
+  };
+  GLYPHS['ping:turtle'] = g => { ring(g, 50, 54, 28, 6, '#4ade80'); dot(g, 50, 50, 10, '#bbf7d0'); };
+  GLYPHS['ping:lord'] = g => { spark4(g, 50, 48, 22, '#ffc94a'); dot(g, 50, 50, 8, '#fff7ed'); };
+  GLYPHS['ping:careful'] = g => { ring(g, 50, 42, 16, 5, '#fbbf24'); g.fillStyle = '#fbbf24'; g.fillRect(47, 62, 6, 18); };
 
   /* ---------------- emblems (role sigils) ---------------- */
   GLYPHS['emblem:assassin'] = g => {

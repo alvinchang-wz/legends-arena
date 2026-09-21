@@ -71,13 +71,15 @@ duel. Run `node headless/simulate.js --help` for the complete option list.
 
 ### Heroes
 
-- **8 original heroes** across Marksman / Mage / Tank / Assassin / Support /
-  Fighter, each with a **passive**, two skills and an ultimate.
+- **28 original heroes** across Marksman (4) / Mage (6) / Tank (4) / Assassin (4) /
+  Support (4) / Fighter (6), each with a **passive**, two skills and an ultimate.
 - Passives are real mechanics, not flavour: Zephyr's every-third-attack
   proc, Ignis's stacking Ember burn, Grom's crowd-scaling resists and panic
   shield, Nyx's positional true damage, Sylva's heal-linked haste, Torren's
   lifesteal that grows as he drops, Mira's four-stack freeze, Karn's
-  attack-driven cooldown reduction and damage-stacked armor.
+  attack-driven cooldown reduction and damage-stacked armor — plus 20 more
+  (Vesper, Quill, Lumen, Volt, Nadir, Ashara, Hexa, Wraith, Sable, Rook,
+  Brass, Omen, Tide, Cinder, Bastion, Marrow, Anchor, Bell, Wick, Pact).
 - **Manual skill leveling** — one point per hero level, ultimate gated at
   levels 4 / 8 / 12. Ranks sum to exactly the level cap, so a hero finishes
   with everything spent. `Shift`+`1/2/3`, or tap the rank pips on touch.
@@ -92,8 +94,9 @@ duel. Run `node headless/simulate.js --help` for the complete option list.
 - **Quick Buy** — a live recommended-item card uses the same role- and
   matchup-aware scoring as the bots. It shows the remaining gold anywhere
   on the map and becomes a one-tap purchase at your fountain.
-- **9 battle spells** — Flicker, Execute, Retribution, Sprint, Purify,
-  Inspire, Petrify, Aegis, Vengeance. One per hero, chosen at hero select,
+- **14 battle spells** — Flicker, Execute, Retribution, Sprint, Purify,
+  Inspire, Petrify, Aegis, Vengeance, plus Flameshot, Arrival, Icequake,
+  Weaken, Revitalize (see `js/mlbb.js`). One per hero, chosen at hero select,
   cast with `F`. Retribution is the only way to steal an epic objective.
 - **6 emblems** — a stat package plus one keystone each (Killing Spree,
   Impure Rage, Weakness Finder, Brave Smite, Focusing Mark, Festival of
@@ -285,6 +288,8 @@ edge-anchored element honours `env(safe-area-inset-*)`.
 | `js/entities.js` | Unit/Hero/Minion/Tower/Monster/Projectile/Zone + bot AI |
 | `js/objectives.js` | Buff camps, Turtle/Lord, inhibitors, super minions |
 | `js/items.js` | Item shop, battle spells, emblems, bot shopping |
+| `js/mlbb.js` | MLBB layer: extra spells, Retribution evolves, blessings, slogans, bans, HUD callouts |
+| `js/features.js` | Feature flags / experiment toggles |
 | `js/input.js` | Joystick, skill drag-aim, keyboard |
 | `js/ui.js` | Sound, HUD, minimap, shop, scoreboard, pings, end screen |
 | `js/main.js` | Game state, match loop, vision, rendering |
@@ -299,8 +304,8 @@ Balance lives in `COMBAT` and `BALANCE` (`js/data.js`), the item table
 ## Not implemented
 
 Called out so the list above can be trusted: there is no account
-progression, rank tier, hero mastery or match history; no draft/ban phase
-(the draft screen picks line-ups, it does not ban); the 1v1 duel is a
+progression, rank tier, hero mastery or match history; the draft screen picks
+line-ups plus one ban per side (see `js/mlbb.js`); the 1v1 duel is a
 practice arena with no win condition — it runs until you leave it, and its
 bases are recovery zones, not shops; and the audio is still the original
 synthesized bleeps rather than a designed sound set.

@@ -429,7 +429,7 @@ const PASSIVES = {
     onDealDamage(h, target, amount, pkt) {
       if (!pkt || pkt.type !== 'magic' || !target.marks || target.marks.staticT < Game.time) return amount;
       pkt.pen = pkt.pen || { flat: 0, pct: 0 };
-      pkt.pen.flat = (pkt.pen.flat || 0) + target.marks.static * 6;
+      pkt.pen.flat = (pkt.pen.flat || 0) + target.marks.static * 8;
       return amount;
     },
   },
@@ -467,7 +467,7 @@ const PASSIVES = {
       m.blight = (m.blightT > Game.time) ? Math.min(2, m.blight + 1) : 1;
       m.blightT = Game.time + 3;
       target.addDot({
-        src: h, total: (40 + h.magicPower() * 0.3) * m.blight, dur: 3,
+        src: h, total: (50 + h.magicPower() * 0.3) * m.blight, dur: 3,
         type: 'magic', color: h.color, tag: 'blight',
       });
     },

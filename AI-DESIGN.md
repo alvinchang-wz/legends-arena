@@ -1,5 +1,12 @@
 # The AI We're Building: Continuously Self-Improving Heuristic Bots
 
+> **Status (verified 2026-09-04): design doc / roadmap — NOT fully implemented.**
+> Implemented today: static hand-tuned bot (`js/entities.js` + thresholds in
+> `js/bot-params.js`), plus the neural target-selection clone described in
+> TRAINING.md. There is no `js/brain.js`, no genome mutation/promotion/archive,
+> and no localStorage trainer. The four "dormant" heuristics now ship live at
+> sensible defaults (see `js/bot-params.js` header).
+
 ## The Vision
 
 Each of the 10 heroes in a match is controlled by its own independent bot.
@@ -134,9 +141,10 @@ These were identified in design discussion and are the real frontier:
 
 ## Where Things Live
 
-| Piece | Location |
-|---|---|
-| Gene definitions, mutation, fitness, promotion, archive | `js/brain.js` |
-| Bot decision-making using genes (`botThink` / `botControl` / `botCast`) | `js/entities.js` (Hero class) |
-| Match-end training hook, auto-train restart, match caps | `js/main.js` |
-| 🧠 panel, speed/AUTO controls, export/import | `js/ui.js` |
+| Piece | Location | Status |
+|---|---|---|
+| Gene definitions, mutation, fitness, promotion, archive | `js/brain.js` | **Not implemented — no such file** |
+| Bot decision-making using genes (`botThink` / `botControl` / `botCast`) | `js/entities.js` (Hero class) | Implemented with static `BOT_PARAMS` |
+| Static tuning thresholds | `js/bot-params.js` | Implemented (nothing mutates at runtime) |
+| Match-end training hook, auto-train restart, match caps | `js/main.js` | Partial (caps + auto-restart exist; no trainer hook) |
+| 🧠 panel, speed/AUTO controls, export/import | `js/ui.js` | Partial (speed/AUTO exist; no genome panel) |

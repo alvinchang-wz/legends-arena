@@ -168,10 +168,13 @@ class EpicMonster extends Unit {
       if (h.team !== team) continue;
       h.gainGold(reward);
       h.gainXp(this.xpValue);
-      h.applyBuffRune(this.epic);
+      if (this.epic === 'lord') h.applyBuffRune('lord');
+      else h.applyBuffRune('turtle');
     }
-    UI.announce(`${this.icon} ${TEAM_NAMES[team]} slew the ${this.name.toUpperCase()}!`, 'major');
+    UI.announce(team === TEAM_BLUE ? `${this.icon} ${this.name} taken!` : `${this.icon} Enemy took ${this.name}!`,
+      team === TEAM_BLUE ? 'major' : 'death');
     if (this.epic === 'lord') Game.spawnLordMinion(team, this.evolved);
+    if (typeof Mlbb !== 'undefined') Mlbb.onEpicKill(this, src);
     Game.scheduleEpic(this.epic);
   }
 }

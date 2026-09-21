@@ -217,6 +217,7 @@ const UI = {
     this.buildShop();
     this.buildPingWheel();
     this.initTooltips();
+    if (typeof Mlbb !== 'undefined') Mlbb.bindSelect();
     Input.loadSettings();
     if (typeof Features !== 'undefined') Features.bindHud();
     if (this.els.setReleaseAim) {
@@ -510,7 +511,16 @@ const UI = {
             ${this.skillTags(s).length ? `<div class="tagList">${this.skillTags(s).map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
           </div>
         </div>`).join('')}
-      </div>`;
+      </div>
+      ${this.recommendedPathHTML(h)}`;
+  },
+
+  recommendedPathHTML(h) {
+    if (typeof Mlbb === 'undefined') return '';
+    const path = Mlbb.recommendPath(h);
+    if (!path.length) return '';
+    return `<div class="recPath"><span class="loLabel">Recommended</span>${path.map(it =>
+      `<span title="${it.name}">${this.itemIcon(it, 22)}</span>`).join('<i>›</i>')}</div>`;
   },
 
   buildRoleFilter() {
@@ -637,6 +647,14 @@ const UI = {
      slots stay clickable for jumping back to one you want to change, and the
      hint under them always names where the next card click will land. */
   pickHero(hero) {
+    if (typeof Mlbb !== 'undefined' && Mlbb.banMode != null) {
+      Mlbb.tryBan(hero);
+      return;
+    }
+    if (typeof Mlbb !== 'undefined' && Mlbb.isBanned(hero)) {
+      this.announce(`${hero.name} is banned`, 'minor');
+      return;
+    }
     this.els.heroInfo.innerHTML = this.heroInfoHTML(hero);
     const a = this.activeSlot;
     this.draft[a.team][a.i] = hero;
@@ -796,7 +814,7 @@ const UI = {
   /* Multi-kills and objectives get the full-screen banner; everything else
      queues into the smaller #announce line so the two never fight for the
      same moment. */
-  BANNER_WORDS: /DOUBLE KILL|TRIPLE KILL|MANIAC|SAVAGE|FIRST BLOOD|LORD|TURTLE|PLATING/i,
+  BANNER_WORDS: /DOUBLE KILL|TRIPLE KILL|MANIAC|SAVAGE|FIRST BLOOD|FIRST TURRET|LORD|TURTLE|PLATING|HAS SPAWNED|GODLIKE|LEGENDARY/i,
 
   announce(text, style = 'minor') {
     if (style === 'major' && this.BANNER_WORDS.test(text)) { this.banner(text); return; }
@@ -828,13 +846,20 @@ const UI = {
           <span class="allyBar"><i></i></span>
           <span class="allyBar mp"><i></i></span>
         </span>
-        <span class="allyUlt">${this.icon(`skill:${h.def0.id}:2`, 18, h.skills[2].icon)}</span>`;
+        <span class="allyUlt">${this.icon(`skill:${h.def0.id}:2`, 18, h.skills[2].icon)}</span>
+        <span class="allySpell">${h.spell ? this.icon('spell:' + h.spell.id, 16, h.spell.icon) : ''}</span>
+        <span class="allyDeadT"></span>`;
+      el.addEventListener('click', () => {
+        if (Game.player) Game.ping('omw', h.x, h.y, Game.player);
+      });
       host.appendChild(el);
       this.stripCards.push({ h, el,
         hp: el.querySelector('.allyBar > i'),
         mp: el.querySelector('.allyBar.mp > i'),
         lv: el.querySelector('.allyLv'),
-        ult: el.querySelector('.allyUlt') });
+        ult: el.querySelector('.allyUlt'),
+        spell: el.querySelector('.allySpell'),
+        deadT: el.querySelector('.allyDeadT') });
     }
   },
 
@@ -847,6 +872,8 @@ const UI = {
       c.mp.style.width = ((h.maxMana ? h.mana / h.maxMana : 0) * 100) + '%';
       c.lv && this.setTxt(c.lv, h.level);
       c.ult.classList.toggle('ready', h.skillRank[2] > 0 && h.skillCd[2] <= 0 && h.mana >= h.skills[2].mana);
+      if (c.spell) c.spell.classList.toggle('ready', h.spell && h.spellCd <= 0);
+      if (c.deadT) this.setTxt(c.deadT, h.alive ? '' : Math.ceil(h.respawnT));
     }
   },
 
@@ -1215,6 +1242,7 @@ const UI = {
         .map(h => `<div class="sbRowP${h.isPlayer ? ' you' : ''}">
             <span>${this.heroIcon(h, 20)}</span>
             <span class="nm"><span>${h.name}</span> <span class="lv">${h.level}</span></span>
+            <span class="sbLoad">${h.spell ? this.icon('spell:' + h.spell.id, 16, h.spell.icon) : ''}${h.emblem ? this.icon('emblem:' + h.emblem.id, 16, h.emblem.icon) : ''}</span>
             <span>${h.kills}/${h.deaths}/${h.assists}</span>
             <span>${Math.floor(h.goldEarned)}</span>
             <span>${h.cs || 0}</span>
@@ -1226,6 +1254,7 @@ const UI = {
           </div>`).join('');
       return `<div class="sbTeam ${t === TEAM_BLUE ? 'blue' : 'red'}">
         <div class="sbHead"><span></span><span>${TEAM_NAMES[t]} — ${Game.kills[t]} kills</span>
+          <span>Load</span>
           <span>K/D/A</span><span>Gold</span><span>CS</span><span>KP</span><span>Dmg</span><span>Taken</span><span>Heal</span><span>Share</span></div>
         ${rows}</div>`;
     };
@@ -1256,7 +1285,9 @@ const UI = {
     const div = document.createElement('div');
     div.className = 'feedItem';
     const badge = (killer instanceof Hero && killer.streak >= 3) ? '<i class="sdBadge">🔥</i>' : '';
-    div.innerHTML = `${lbl(killer)} <span class="sword">${this.icon('misc:attack', 14, '⚔')}</span> ${lbl(victim)}${badge}`;
+    const spell = (killer instanceof Hero && killer.spell)
+      ? `<i class="feedSpell" title="${killer.spell.name}">${this.icon('spell:' + killer.spell.id, 14, killer.spell.icon)}</i>` : '';
+    div.innerHTML = `${lbl(killer)} ${spell}<span class="sword">${this.icon('misc:attack', 14, '⚔')}</span> ${lbl(victim)}${badge}`;
     this.els.killfeed.prepend(div);
     this.feedItems.push({ el: div, t: Game.time });
     while (this.feedItems.length > 5) this.feedItems.shift().el.remove();
@@ -1610,6 +1641,7 @@ const UI = {
       g.fill();
       if (h.isPlayer) { g.strokeStyle = THEME.text; g.lineWidth = 2; g.stroke(); }
     }
+    if (typeof Mlbb !== 'undefined') Mlbb.drawMinimapUlt(g, mx, my);
     if (typeof Features !== 'undefined') Features.renderMinimap(g, mx, my);
     // pings, pulsing so they catch the eye at minimap scale
     for (const pg of Game.pings) {

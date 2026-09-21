@@ -102,7 +102,7 @@ const Game = {
     const out = (wanted || []).slice(0, n);
     while (out.length < n) out.push(null);
     const used = new Set(out.filter(Boolean));
-    const unique = shuffle(HEROES).filter(h => !used.has(h));
+    const unique = shuffle(HEROES).filter(h => !used.has(h) && !(typeof Mlbb !== 'undefined' && Mlbb.isBanned(h)));
     const pool = unique.concat(shuffle(HEROES));
     let pi = 0;
     return out.map(h => h || pool[pi++] || HEROES[0]);
@@ -121,7 +121,7 @@ const Game = {
     this.followHero = null;
     if (!this.spectate) this.simSpeed = 1;
     this.time = 0; this.waveT = 3; this.waveN = 0;
-    this.kills = [0, 0]; this.firstBlood = false;
+    this.kills = [0, 0]; this.firstBlood = false; this.firstTurret = false;
     this.heroes = []; this.minions = []; this.monsters = [];
     this.projectiles = []; this.zones = []; this.effects = []; this.floaters = []; this.indicators = [];
 
@@ -250,6 +250,7 @@ const Game = {
 
     UI.buildMinimapStatic();
     this.cam.zoom = this.cam.zoomWant = clamp(CH / (this.isDuel() ? 900 : this.isTen() ? 1450 : 1400), 0.45, 1.3);
+    if (typeof Mlbb !== 'undefined') Mlbb.onMatchStart();
     if (this.spectate) {
       this.cam.x = this.worldSize() / 2; this.cam.y = this.worldSize() / 2;
       UI.announce(this.isTen() ? '👁 Spectating 10v10 — Auric Caldera' : '👁 Spectating: Blue vs Red', 'major');
@@ -643,6 +644,9 @@ const Game = {
     help:     { icon: '🆘', label: 'Need help',  color: '#a78bfa' },
     omw:      { icon: '🏃', label: 'On my way',  color: '#4ade80' },
     missing:  { icon: '❓', label: 'Missing',     color: '#e879f9' },
+    turtle:   { icon: '🐢', label: 'Turtle',      color: '#4ade80' },
+    lord:     { icon: '👑', label: 'Lord',        color: '#ffc94a' },
+    careful:  { icon: '👀', label: 'Careful',     color: '#fbbf24' },
   },
   ping(kind, x, y, by) {
     if (!this.PING_KINDS[kind]) return;
@@ -791,6 +795,7 @@ const Game = {
     // The duel arena has no fog: it is small enough that hiding in it would
     // only mean walking around looking for each other.
     if (this.isDuel()) return true;
+    if (typeof Mlbb !== 'undefined' && Mlbb.bushHiddenFrom(team, u)) return false;
     return this.visible(team, u.x, u.y);
   },
   targetMatchesMode(u, mode = 'auto') {
@@ -1027,8 +1032,8 @@ const Game = {
         const d = Math.hypot(h.x - b.x, h.y - b.y);
         if (d < 300) {
           if (h.team === team) {
-            h.heal(h.maxHp * 0.06 * dt);
-            h.mana = Math.min(h.maxMana, h.mana + h.maxMana * 0.08 * dt);
+            h.heal(h.maxHp * 0.10 * dt);
+            h.mana = Math.min(h.maxMana, h.mana + h.maxMana * 0.12 * dt);
           } else if (!this.isDuel() && this.bases[team] && this.bases[team].alive) {
             h.takeDamage(350 * dt, this.bases[team]);
           }
@@ -1051,6 +1056,7 @@ const Game = {
 
     this.separate();
     if (typeof Features !== 'undefined') Features.update(dt);
+    if (typeof Mlbb !== 'undefined') Mlbb.update(dt);
   },
 
   pause() {
@@ -1444,6 +1450,7 @@ const DISPLAY_FONT = "'Bahnschrift', 'Oswald', 'Avenir Next Condensed', 'Roboto 
    browser's bilinear filter gives soft vision edges for free; drawing
    4096 rounded rects per frame would not. */
 let fogLayer = null;
+let fogImg = null;
 function drawFog() {
   if (Game.spectate || Game.isDuel() || !Game.vision) return; // duel keeps both fighters observable
   const N = Game.VIS_N;
@@ -1452,7 +1459,8 @@ function drawFog() {
     fogLayer.width = N; fogLayer.height = N;
   }
   const fg = fogLayer.getContext('2d');
-  const img = fg.createImageData(N, N);
+  if (!fogImg) fogImg = fg.createImageData(N, N);
+  const img = fogImg;
   const grid = Game.vision[TEAM_BLUE];
   const seen = Game.explored;
   /* Three states, not two. Terrain you have never visited is darkest;
@@ -2328,6 +2336,29 @@ function inView(x, y, pad = 90) {
     y > Game.cam.y - hy && y < Game.cam.y + hy;
 }
 
+/* Screen-space shake is stored in pixels; convert it back to world so a crop
+   of the baked map still covers the shaken viewport. */
+function visibleWorldRect(pad = 80) {
+  const z = Game.cam.zoom || 1;
+  const camX = Game.cam.x - (Game.shakeX || 0) / z;
+  const camY = Game.cam.y - (Game.shakeY || 0) / (z * TILT);
+  const hx = CW / (2 * z) + pad;
+  const hy = CH / (2 * z * TILT) + pad;
+  return { x: camX - hx, y: camY - hy, w: hx * 2, h: hy * 2 };
+}
+
+function drawMapLayer(layer, W) {
+  if (!layer) return;
+  const v = visibleWorldRect(160);
+  const x = Math.max(0, v.x);
+  const y = Math.max(0, v.y);
+  const dw = Math.min(W, v.x + v.w) - x;
+  const dh = Math.min(W, v.y + v.h) - y;
+  if (dw <= 1 || dh <= 1) return;
+  const Sx = layer.width / W, Sy = layer.height / W;
+  ctx.drawImage(layer, x * Sx, y * Sy, dw * Sx, dh * Sy, x, y, dw, dh);
+}
+
 /* Health bar with a shield overlay and crowd-control pips.
    Shields draw as a white segment continuing past the health fill rather than
    overlaying it, so "I have 300 effective HP left" is one length to read.
@@ -2814,7 +2845,7 @@ function render() {
   worldTransform();
   const W = Game.worldSize();
   const layer = Game.isDuel() ? duelMapLayer : Game.isTen() ? tenMapLayer : mapLayer;
-  ctx.drawImage(layer, 0, 0, W, W);
+  drawMapLayer(layer, W);
 
   // ground-level range overlays
   drawTowerRanges();
@@ -3672,21 +3703,30 @@ function drawAimIndicator() {
 
 /* ---------- main loop ---------- */
 const SIM_STEP = 1 / 60;
+const RENDER_STEP = 1 / 60;
 let lastT = performance.now();
 let simAcc = 0;
+let drawAcc = 0;
 function frame(now) {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+
   if (Game._clockReset) {
     lastT = now;
     simAcc = 0;
+    drawAcc = 0;
     Game._clockReset = false;
   }
   const raw = Math.min(0.08, (now - lastT) / 1000);
   lastT = now;
 
   if (Game.paused) {
-    render();
-    UI.syncHUD(0);
-    requestAnimationFrame(frame);
+    drawAcc += raw;
+    if (drawAcc >= RENDER_STEP * 0.85) {
+      drawAcc = 0;
+      render();
+      UI.syncHUD(0);
+    }
     return;
   }
 
@@ -3708,9 +3748,16 @@ function frame(now) {
     simAcc = 0;
   }
   Game.updateEffects(raw);
+
+  /* High-refresh displays were painting this canvas twice a frame for no
+     visible gain. Cap the paint + HUD at 60 Hz; the sim already steps there. */
+  drawAcc += raw;
+  if (drawAcc < RENDER_STEP * 0.85) return;
+  const hudDt = drawAcc;
+  drawAcc -= RENDER_STEP;
+  if (drawAcc > RENDER_STEP) drawAcc = 0;
   render();
-  UI.syncHUD(raw);
-  requestAnimationFrame(frame);
+  UI.syncHUD(hudDt);
 }
 
 /* ---------- spectator camera: drag pan, wheel zoom, click to follow ---------- */

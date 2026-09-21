@@ -106,6 +106,7 @@ const Features = {
     for (const h of Game.heroes) this.prepHero(h);
     this.applyCosmeticTints();
     this.bumpMastery();
+    if (typeof Mlbb !== 'undefined') Mlbb.bindSelect();
   },
 
   prepHero(h) {
@@ -413,7 +414,7 @@ const Features = {
   },
 
   onRespawn(h) {
-    h.spawnProtT = 1.8;
+    h.spawnProtT = 2.5;
     h.spawnGateT = 0.7;
     Game.fx.ring(h.x, h.y, 80, '#9be7ff', 0.7);
   },
@@ -901,8 +902,11 @@ const Features = {
   fillWhatsNew() {
     const host = document.getElementById('wnList');
     if (!host) return;
-    host.innerHTML = FEATURE_CATALOG.map((n, i) =>
+    const ml = (typeof MLBB_CATALOG !== 'undefined' ? MLBB_CATALOG : []).map((n, i) =>
       `<li><i>${String(i + 1).padStart(3, '0')}</i> ${n}</li>`).join('');
+    const extra = FEATURE_CATALOG.map((n, i) =>
+      `<li><i>${String(i + 1 + (typeof MLBB_CATALOG !== 'undefined' ? MLBB_CATALOG.length : 0)).padStart(3, '0')}</i> ${n}</li>`).join('');
+    host.innerHTML = ml + extra;
   },
   toggleWhatsNew() {
     const el = document.getElementById('whatsNew');

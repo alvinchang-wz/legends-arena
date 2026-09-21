@@ -1475,6 +1475,22 @@ function runAITests(log) {
     RNG.restore();
   }
 
+  /* ---- 23. Mobile Legends pack ---- */
+  {
+    ok('23a fifty named MLBB systems', typeof MLBB_CATALOG !== 'undefined' && MLBB_CATALOG.length === 50);
+    ok('23b Flameshot, Arrival, Icequake, Weaken and Revitalize are battle spells',
+      !!(SPELL_BY_ID.flameshot && SPELL_BY_ID.arrival && SPELL_BY_ID.icequake &&
+         SPELL_BY_ID.weaken && SPELL_BY_ID.revitalize));
+    ok('23c Flicker is documented to pass through walls',
+      /wall/i.test(SPELL_BY_ID.flicker.desc));
+    const h = new Hero(HEROES[0], TEAM_BLUE, true, 'mid');
+    h.skillPoints = 1; h.skillRank = [0, 0, 0]; h.level = 1;
+    ok('23d skill 2 is locked at level 1', !h.canRankUp(1) && h.canRankUp(0));
+    h.level = 2; h.skillRank = [1, 0, 0]; h.skillPoints = 1;
+    ok('23e skill 2 unlocks at level 2', h.canRankUp(1));
+    ok('23f recall is a 6 second channel', BALANCE.recallTime === 6);
+  }
+
   log(`\n=== ${pass} passed, ${fail} failed ===`);
   return { pass, fail };
 }

@@ -283,14 +283,22 @@ const ItemAI = {
 const BATTLE_SPELLS = [
   {
     id: 'flicker', name: 'Flicker', icon: '💫', cd: 100,
-    desc: 'Blink a short distance toward your aim point (drag the spell button or hold F).',
+    desc: 'Blink a short distance toward your aim point. Passes through walls.',
+    aimRange: 420,
     cast(h, point) {
       const dir = point ? norm(point.x - h.x, point.y - h.y) : { x: Math.cos(h.facing), y: Math.sin(h.facing) };
+      const ox = h.x, oy = h.y, distBlink = 420;
       Game.fx.ghost(h);
       Game.fx.ring(h.x, h.y, 60, THEME.magic, 0.4);
-      h.x += dir.x * 420;
-      h.y += dir.y * 420;
+      h.x += dir.x * distBlink;
+      h.y += dir.y * distBlink;
       Game.clampPoint(h, 40);
+      if (Game.wallAt(h.x, h.y, h.radius + 8)) {
+        for (let t = 0.95; t >= 0.15; t -= 0.05) {
+          const nx = ox + dir.x * distBlink * t, ny = oy + dir.y * distBlink * t;
+          if (!Game.wallAt(nx, ny, h.radius + 8)) { h.x = nx; h.y = ny; break; }
+        }
+      }
       Game.fx.ghost(h);
       Game.fx.ring(h.x, h.y, 60, THEME.magic, 0.4);
       Game.fx.flash(h.x, h.y, 50, THEME.magic);
@@ -329,7 +337,9 @@ const BATTLE_SPELLS = [
         if (!best && d < bd) { bd = d; best = m; }
       }
       if (!best) return false;
-      resolveDamage(h, best, { amount: best.epic ? 800 : 500, type: 'true' });
+      const amount = (typeof Mlbb !== 'undefined' ? Mlbb.retriDamage(h, best) : (best.epic ? 800 : 500));
+      resolveDamage(h, best, { amount, type: 'true' });
+      if (typeof Mlbb !== 'undefined') Mlbb.applyRetriEvolve(h, best);
       Game.fx.ring(best.x, best.y, best.radius + 40, THEME.warn, 0.5);
       return true;
     },
@@ -397,6 +407,70 @@ const BATTLE_SPELLS = [
       return true;
     },
   },
+  {
+    id: 'flameshot', name: 'Flameshot', icon: '🔥', cd: 85, aimRange: 900,
+    desc: 'Fire a long-range magic bolt at the first enemy in a line.',
+    cast(h, point) {
+      const dir = point ? norm(point.x - h.x, point.y - h.y) : { x: Math.cos(h.facing), y: Math.sin(h.facing) };
+      const s = { name: 'Flameshot', icon: '🔥', type: 'skillshot', dmgType: 'magic',
+        dmg: 160 + h.level * 8, range: 900, speed: 1100, radius: 28, explodeR: 0 };
+      Game.projectiles.push(Projectile.skillshot(h, s, dir));
+      Game.fx.ring(h.x, h.y, 50, THEME.warn, 0.35);
+      return true;
+    },
+  },
+  {
+    id: 'arrival', name: 'Arrival', icon: '🚪', cd: 100,
+    desc: 'Channel for 4.6s, then teleport to the nearest allied turret. Damage or moving cancels it.',
+    cast(h) {
+      return typeof Mlbb !== 'undefined' && Mlbb.startArrival(h);
+    },
+  },
+  {
+    id: 'icequake', name: 'Icequake', icon: '❄', cd: 75,
+    desc: 'Slam the ground, dealing magic damage and slowing nearby enemies by 40% for 1.5s.',
+    cast(h) {
+      let hit = 0;
+      for (const u of Game.enemyUnits(h.team, { neutral: true })) {
+        if (dist(h, u) > 280 + u.radius) continue;
+        resolveDamage(h, u, { amount: 140 + h.level * 6, type: 'magic' });
+        if (u.cc) u.cc.applySlow(0.4, 1.5, u.attrs ? u.attrs.get('tenacity') : 0);
+        hit++;
+      }
+      Game.fx.ring(h.x, h.y, 280, '#7dd3fc', 0.55);
+      return hit > 0;
+    },
+  },
+  {
+    id: 'weaken', name: 'Weaken', icon: '⬇', cd: 70,
+    desc: 'Shred 18 Armor and Magic Resist from nearby enemies for 4s.',
+    cast(h) {
+      let hit = 0;
+      for (const u of Game.enemyUnits(h.team, {})) {
+        if (u.type !== 'hero' || dist(h, u) > 300 + u.radius) continue;
+        u.marks = u.marks || {};
+        u.marks.weakenUntil = Game.time + 4;
+        if (u.recalcStats) u.recalcStats(false);
+        hit++;
+      }
+      Game.fx.ring(h.x, h.y, 300, '#c4b5fd', 0.5);
+      return hit > 0;
+    },
+  },
+  {
+    id: 'revitalize', name: 'Revitalize', icon: '💚', cd: 85,
+    desc: 'Heal yourself and nearby allies for 12% of your max health.',
+    cast(h) {
+      for (const a of Game.heroes) {
+        if (a.team !== h.team || !a.alive || dist(h, a) > 340) continue;
+        const amt = a.heal(h.maxHp * 0.12);
+        a.stats.healDone = (a.stats.healDone || 0) + amt;
+        Game.fx.healFx(a, Math.round(amt));
+      }
+      Game.fx.ring(h.x, h.y, 340, THEME.hp, 0.55);
+      return true;
+    },
+  },
 ];
 const SPELL_BY_ID = Object.fromEntries(BATTLE_SPELLS.map(s => [s.id, s]));
 
@@ -404,7 +478,7 @@ const SPELL_BY_ID = Object.fromEntries(BATTLE_SPELLS.map(s => [s.id, s]));
    objectives are uncontestable against a team that has it. */
 const BOT_SPELL_BY_ROLE = {
   Tank: 'petrify', Fighter: 'execute', Assassin: 'retribution',
-  Marksman: 'inspire', Mage: 'flicker', Support: 'aegis',
+  Marksman: 'inspire', Mage: 'flameshot', Support: 'revitalize',
 };
 
 /* ============================================================

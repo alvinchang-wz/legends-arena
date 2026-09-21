@@ -184,6 +184,12 @@ and reaching the same conclusion.
 
 ## Constants reference
 
+> Live values live in `js/bot-params.js` and have drifted from the original
+> seed below (verified 2026-09-04): think 0.12–0.20s (0.06–0.10 hot),
+> retreat 28%, re-engage 72%, recall-safe 920, notice 700, chase 980,
+> hero bias 240, low-HP bias 210, structure penalty 70, dive HP 88%,
+> cast chance 97%/tick. The table keeps the original v1 numbers for history.
+
 | Constant | Value | Role |
 |---|---|---|
 | think interval | 0.22–0.34 s | decision frequency |

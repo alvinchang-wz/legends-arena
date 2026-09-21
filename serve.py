@@ -7,7 +7,7 @@
   browser download folder. Paths are confined to the project directory.
 """
 import http.server
-import os
+import osz
 import sys
 import urllib.parse
 

@@ -360,6 +360,10 @@ const Input = {
       if (k === 'z') UI.sendPing('danger');
       if (k === 'x') UI.sendPing('retreat');
       if (k === 'c') UI.sendPing('gather');
+      if (e.code === 'Enter' && typeof Mlbb !== 'undefined') {
+        e.preventDefault();
+        Mlbb.toggleChatWheel();
+      }
       if (k === 'escape') {
         this.cancelAim(); this.clearTargetLock();
         UI.closePingWheel(); UI.toggleShop(false); UI.toggleSettings(false);

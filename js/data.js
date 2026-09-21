@@ -109,7 +109,7 @@ const HEROES = [
     skills: [
       { name: 'Piercing Bolt', icon: '➹', type: 'skillshot', cd: 6, mana: 40, dmgType: 'physical', dmg: 120, dmgLv: 15, scaleAd: 0.8, range: 720, speed: 950, radius: 26, pierce: true, desc: 'Fire a bolt that pierces every enemy in a line.' },
       { name: 'Agile Hop', icon: '💨', type: 'dash', cd: 9, mana: 45, dist: 280, speed: 1000, buff: { asMult: 1.7, dur: 3 }, desc: 'Leap in a direction and gain rapid attack speed.' },
-      { name: 'Arrow Storm', icon: '🌧️', type: 'zone', cd: 36, mana: 100, dmgType: 'physical', range: 620, radius: 230, delay: 0.5, ticks: 4, interval: 0.5, dmg: 70, dmgLv: 9, scaleAd: 0.35, slowPct: 0.3, slowDur: 0.8, desc: 'Rain arrows on an area, striking 4 times and slowing.' },
+      { name: 'Arrow Storm', icon: '🌧️', type: 'zone', cd: 36, mana: 100, dmgType: 'physical', range: 620, radius: 250, delay: 0.5, ticks: 4, interval: 0.5, dmg: 70, dmgLv: 9, scaleAd: 0.35, slowPct: 0.3, slowDur: 0.8, desc: 'Rain arrows on a wide area, striking 4 times and slowing. The teamfight answer to Vesper.' },
     ],
   },
   {
@@ -167,7 +167,7 @@ const HEROES = [
     skills: [
       { name: 'Shadow Strike', icon: '🌑', type: 'dash', cd: 8, mana: 45, dmgType: 'physical', dist: 340, speed: 1100, dmg: 140, dmgLv: 17, scaleAd: 0.7, desc: 'Dash through enemies, damaging everyone in your path.' },
       { name: 'Fan of Knives', icon: '🔪', type: 'nova', cd: 7, mana: 40, dmgType: 'physical', radius: 230, dmg: 130, dmgLv: 15, scaleAd: 0.7, desc: 'Fling blades at every enemy around you.' },
-      { name: 'Deathmark', icon: '☠️', type: 'blinkstrike', cd: 40, mana: 100, dmgType: 'physical', range: 500, dmg: 280, dmgLv: 32, scaleAd: 0.85, physPenPct: 0.22, silence: 0.9, desc: 'Blink to a target, silence them, and strike a lethal armor-piercing blow.' },
+      { name: 'Deathmark', icon: '☠️', type: 'blinkstrike', cd: 44, mana: 100, dmgType: 'physical', range: 500, dmg: 300, dmgLv: 34, scaleAd: 0.85, physPenPct: 0.22, silence: 0.9, desc: 'Blink to a target, silence them, and strike a lethal armor-piercing blow. The biggest single hit of any assassin, less often.' },
     ],
   },
   {
@@ -225,13 +225,14 @@ const HEROES = [
     id: 'karn', name: 'Karn', role: 'Fighter', icon: '⛓️', color: '#fbbf24', projColor: '#fde68a',
     desc: 'A chained warden who drags enemies to their doom.',
     difficulty: 3, damageStyle: 'physical',
-    hp: 720, hpLv: 98, mp: 230, mpLv: 25, atk: 60, atkLv: 6.8,
+    hp: 685, hpLv: 94, mp: 230, mpLv: 25, atk: 60, atkLv: 6.8,
     /* Lighter evidence than the Nyx change, so a lighter touch: Karn was
        carrying 90% of the dedicated Tank's effective HP while out-damaging
        every other melee and holding the best crowd control in the game. The
        armour growth is the cheapest thing to give back — it lands Karn between
-       the other Fighter and the Tank, which is where a Fighter belongs. */
-    armor: 20, armorLv: 2.8, mr: 16, mrLv: 2.6,
+       the other Fighter and the Tank, which is where a Fighter belongs.
+       Balance pass: base HP 720 -> 685 so the hook has a real durability cost. */
+    armor: 20, armorLv: 2.6, mr: 16, mrLv: 2.6,
     range: 100, atkSpd: 0.9, speed: 260,
     passive: {
       name: 'Ironclad', icon: '⚙', id: 'ironclad',
@@ -257,14 +258,14 @@ const HEROES = [
     skills: [
       { name: 'Twin Report', icon: '💥', type: 'skillshot', cd: 7, mana: 40, dmgType: 'physical', dmg: 95, dmgLv: 12, scaleAd: 0.55, range: 640, speed: 1100, radius: 22, pierce: true, desc: 'Fire both pistols in a line, piercing every enemy.' },
       { name: 'Sidestep', icon: '↷', type: 'dash', cd: 10, mana: 40, dist: 240, speed: 1050, buff: { asMult: 1.45, dur: 2.4 }, desc: 'Slide aside and fan the hammers for a burst of attack speed.' },
-      { name: 'Last Call', icon: '🔔', type: 'zone', cd: 38, mana: 95, dmgType: 'physical', range: 580, radius: 200, delay: 0.35, ticks: 5, interval: 0.28, dmg: 55, dmgLv: 8, scaleAd: 0.28, desc: 'Unload a storm of shots into an area, striking 5 times.' },
+      { name: 'Deadeye Round', icon: '🎯', type: 'skillshot', cd: 40, mana: 95, dmgType: 'physical', dmg: 300, dmgLv: 30, scaleAd: 1.0, range: 760, speed: 1500, radius: 20, desc: 'One long-range round for one target. No splash, no storm — the opposite of Zephyr.' },
     ],
   },
   {
     id: 'quill', name: 'Quill', role: 'Marksman', icon: '🎯', color: '#c4b581', projColor: '#e7d9a8',
     desc: 'A trapper who turns the ground into a hunting floor.',
     difficulty: 3, damageStyle: 'physical',
-    hp: 550, hpLv: 74, mp: 210, mpLv: 24, atk: 58, atkLv: 6.6,
+    hp: 520, hpLv: 70, mp: 210, mpLv: 24, atk: 58, atkLv: 6.6,
     armor: 13, armorLv: 2.3, mr: 11, mrLv: 1.7,
     range: 315, atkSpd: 1.02, speed: 248,
     passive: {
@@ -291,7 +292,7 @@ const HEROES = [
     skills: [
       { name: 'Railshot', icon: '━', type: 'skillshot', cd: 8, mana: 50, dmgType: 'physical', dmg: 160, dmgLv: 20, scaleAd: 0.9, range: 820, speed: 1400, radius: 18, pierce: true, desc: 'Fire a piercing rail that rewards long sightlines.' },
       { name: 'Displace', icon: '↩', type: 'dash', cd: 12, mana: 40, dist: 200, speed: 900, desc: 'A short hop to reset your footing. No extra damage.' },
-      { name: 'Overcharge', icon: '✦', type: 'zone', cd: 46, mana: 120, dmgType: 'physical', range: 700, radius: 90, delay: 1.15, dmg: 350, dmgLv: 38, scaleAd: 1.0, stun: 0.5, desc: 'Charge a thin beam that detonates, stunning whoever it catches.' },
+      { name: 'Overcharge', icon: '✦', type: 'zone', cd: 46, mana: 120, dmgType: 'physical', range: 700, radius: 90, delay: 1.15, dmg: 420, dmgLv: 44, scaleAd: 1.0, stun: 0.5, desc: 'Charge a thin beam that detonates on one victim. Single-target damage no AoE ult is allowed to match.' },
     ],
   },
   {
@@ -303,12 +304,12 @@ const HEROES = [
     range: 325, atkSpd: 0.88, speed: 270,
     passive: {
       name: 'Static', icon: '⚡', id: 'static',
-      desc: 'Skill hits cut 6 Magic Resist for 4s, stacking to 5.',
+      desc: 'Skill hits cut 8 Magic Resist for 4s, stacking to 5. The anti-tank mage: nobody else shreds resists.',
     },
     skills: [
       { name: 'Arc Lance', icon: '↯', type: 'skillshot', cd: 6, mana: 50, dmgType: 'magic', dmg: 170, dmgLv: 20, scaleAp: 0.75, range: 680, speed: 1050, radius: 22, pierce: true, desc: 'Throw a bolt that chains through a line of enemies.' },
       { name: 'Flashover', icon: '✳', type: 'nova', cd: 9, mana: 60, dmgType: 'magic', radius: 230, dmg: 140, dmgLv: 16, scaleAp: 0.55, stun: 0.5, desc: 'Detonate a shock around you, briefly stunning.' },
-      { name: 'Thunderhead', icon: '☁', type: 'zone', cd: 40, mana: 115, dmgType: 'magic', range: 600, radius: 220, delay: 0.4, ticks: 5, interval: 0.45, dmg: 70, dmgLv: 9, scaleAp: 0.28, desc: 'A storm cloud that strikes five times.' },
+      { name: 'Thunderhead', icon: '☁', type: 'zone', cd: 40, mana: 115, dmgType: 'magic', range: 600, radius: 220, delay: 0.4, ticks: 5, interval: 0.45, dmg: 64, dmgLv: 8, scaleAp: 0.28, desc: 'A storm cloud that strikes five times. Pays for the shred with softer ticks.' },
     ],
   },
   {
@@ -325,7 +326,7 @@ const HEROES = [
     skills: [
       { name: 'Singularity', icon: '◉', type: 'skillshot', cd: 7, mana: 55, dmgType: 'magic', dmg: 175, dmgLv: 21, scaleAp: 0.8, range: 640, speed: 720, radius: 30, explodeR: 140, slowPct: 0.45, slowDur: 1.4, desc: 'Hurl a collapsing star that explodes and slows.' },
       { name: 'Crush', icon: '⬤', type: 'nova', cd: 10, mana: 65, dmgType: 'magic', radius: 260, dmg: 130, dmgLv: 15, scaleAp: 0.5, knockback: -80, desc: 'Pull nearby enemies inward and damage them.' },
-      { name: 'Implosion', icon: '◎', type: 'zone', cd: 44, mana: 125, dmgType: 'magic', range: 580, radius: 230, delay: 0.85, dmg: 340, dmgLv: 36, scaleAp: 1.05, stun: 1.1, desc: 'After a delay, crush an area and stun everyone inside.' },
+      { name: 'Implosion', icon: '◎', type: 'zone', cd: 44, mana: 125, dmgType: 'magic', range: 580, radius: 260, delay: 0.85, dmg: 320, dmgLv: 34, scaleAp: 1.05, stun: 1.1, desc: 'After a delay, crush a huge area and stun everyone inside. Widest mage ult in the game, paid for with damage.' },
     ],
   },
   {
@@ -342,7 +343,7 @@ const HEROES = [
     skills: [
       { name: 'Glass Needle', icon: '↾', type: 'skillshot', cd: 6, mana: 45, dmgType: 'magic', dmg: 155, dmgLv: 18, scaleAp: 0.65, range: 660, speed: 880, radius: 22, slowPct: 0.25, slowDur: 1.2, desc: 'A shard of fused sand that damages and slows.' },
       { name: 'Dune Wake', icon: '〜', type: 'nova', cd: 9, mana: 55, dmgType: 'magic', radius: 250, dmg: 145, dmgLv: 17, scaleAp: 0.55, slowPct: 0.4, slowDur: 1.6, desc: 'Kick up a scouring ring of sand.' },
-      { name: 'Burial', icon: '⏳', type: 'zone', cd: 41, mana: 110, dmgType: 'magic', range: 560, radius: 210, delay: 0.6, ticks: 4, interval: 0.5, dmg: 65, dmgLv: 8, scaleAp: 0.3, slowPct: 0.3, slowDur: 0.7, desc: 'A sandpit that chews four times and keeps enemies wading.' },
+      { name: 'Burial', icon: '⏳', type: 'zone', cd: 41, mana: 110, dmgType: 'magic', range: 560, radius: 210, delay: 0.6, ticks: 4, interval: 0.5, dmg: 55, dmgLv: 7, scaleAp: 0.3, slowPct: 0.3, slowDur: 0.7, silence: 1.0, desc: 'A sandpit that chews four times and seals voices shut. The only mage ult with a silence.' },
     ],
   },
   {
@@ -354,12 +355,12 @@ const HEROES = [
     range: 345, atkSpd: 0.84, speed: 238,
     passive: {
       name: 'Blight', icon: '🧿', id: 'blight',
-      desc: 'Basic attacks apply a blight that deals 40 (+30% MAGIC) magic damage over 3s. Refreshing it stacks to 2.',
+      desc: 'Basic attacks apply a blight that deals 50 (+30% MAGIC) magic damage over 3s. Refreshing it stacks to 2. The rot mage: weakest upfront hit, strongest damage over time.',
     },
     skills: [
-      { name: 'Hex Bolt', icon: '☽', type: 'skillshot', cd: 7, mana: 50, dmgType: 'magic', dmg: 165, dmgLv: 19, scaleAp: 0.7, range: 690, speed: 820, radius: 24, desc: 'A cursed bolt that carries your blight with it.' },
+      { name: 'Hex Bolt', icon: '☽', type: 'skillshot', cd: 7, mana: 50, dmgType: 'magic', dmg: 145, dmgLv: 17, scaleAp: 0.7, range: 690, speed: 820, radius: 24, desc: 'A cursed bolt that carries your blight with it.' },
       { name: 'Ruin Pulse', icon: '✺', type: 'nova', cd: 10, mana: 60, dmgType: 'magic', radius: 220, dmg: 155, dmgLv: 18, scaleAp: 0.6, desc: 'Pulse hex-fire around you.' },
-      { name: 'Black Mass', icon: '⬤', type: 'zone', cd: 42, mana: 120, dmgType: 'magic', range: 600, radius: 230, delay: 0.5, ticks: 6, interval: 0.4, dmg: 50, dmgLv: 7, scaleAp: 0.22, desc: 'A lingering curse that ticks six times.' },
+      { name: 'Black Mass', icon: '⬤', type: 'zone', cd: 42, mana: 120, dmgType: 'magic', range: 600, radius: 230, delay: 0.5, ticks: 6, interval: 0.4, dmg: 58, dmgLv: 8, scaleAp: 0.22, desc: 'A lingering curse that ticks six times — more ticks than any other mage ult.' },
     ],
   },
   {
@@ -376,7 +377,7 @@ const HEROES = [
     skills: [
       { name: 'Phase Cut', icon: '╱', type: 'dash', cd: 8, mana: 40, dmgType: 'physical', dist: 360, speed: 1200, dmg: 120, dmgLv: 15, scaleAd: 0.65, desc: 'Dash through, carving everyone in the path.' },
       { name: 'Shred', icon: '✕', type: 'nova', cd: 7, mana: 40, dmgType: 'physical', radius: 200, dmg: 115, dmgLv: 14, scaleAd: 0.65, desc: 'A close burst of cuts.' },
-      { name: 'Haunt', icon: '☠', type: 'blinkstrike', cd: 38, mana: 95, dmgType: 'physical', range: 460, dmg: 250, dmgLv: 28, scaleAd: 0.85, silence: 0.7, desc: 'Blink onto a target and steal their voice for a beat.' },
+      { name: 'Haunt', icon: '☠', type: 'blinkstrike', cd: 30, mana: 95, dmgType: 'physical', range: 460, dmg: 265, dmgLv: 30, scaleAd: 0.85, silence: 0.5, desc: 'Blink onto a target for a quick cut. Smaller than Deathmark, back 14s sooner — the skirmisher to Nyx.' },
     ],
   },
   {
@@ -417,12 +418,12 @@ const HEROES = [
     id: 'brass', name: 'Brass', role: 'Fighter', icon: '🔰', color: '#d97706', projColor: '#fbbf24',
     desc: 'A buckler brawler who shrugs hero damage and answers with the rim.',
     difficulty: 1, damageStyle: 'physical',
-    hp: 700, hpLv: 92, mp: 200, mpLv: 22, atk: 58, atkLv: 6.4,
+    hp: 700, hpLv: 92, mp: 200, mpLv: 22, atk: 56, atkLv: 6.2,
     armor: 21, armorLv: 3.2, mr: 15, mrLv: 2.4,
     range: 105, atkSpd: 0.96, speed: 250,
     passive: {
       name: 'Rimguard', icon: '○', id: 'rimguard',
-      desc: 'Take 10% less damage from enemy heroes.',
+      desc: 'Take 10% less damage from enemy heroes. The protector: lowest fighter damage, highest team value.',
     },
     skills: [
       { name: 'Buckler', icon: '◎', type: 'nova', cd: 7, mana: 45, dmgType: 'physical', radius: 200, dmg: 130, dmgLv: 15, scaleAd: 0.55, slowPct: 0.3, slowDur: 1.2, desc: 'Bash the buckler, damaging and slowing.' },
@@ -570,7 +571,7 @@ const HEROES = [
     id: 'pact', name: 'Pact', role: 'Support', icon: '🫀', color: '#9f1239', projColor: '#fb7185',
     desc: 'A blood liturgist who spends her own life to rewrite someone else\'s.',
     difficulty: 3, damageStyle: 'magic',
-    hp: 570, hpLv: 76, mp: 280, mpLv: 30, atk: 52, atkLv: 4.8,
+    hp: 545, hpLv: 72, mp: 280, mpLv: 30, atk: 52, atkLv: 4.8,
     armor: 14, armorLv: 2.6, mr: 12, mrLv: 2.0,
     range: 270, atkSpd: 0.91, speed: 247,
     passive: {
@@ -613,7 +614,7 @@ const BALANCE = {
   passiveGoldPerSec: 1.8,
   passiveXpPerSec: 4,
   /* Padding applied in Hero.recalcStats so every kit gets a longer TTK
-     without rewriting 25 stat blocks. Armor/MR now halve damage around 95. */
+     without rewriting 28 stat blocks. Armor/MR now halve damage around 95. */
   heroHpPad: 55,
   heroArmorPad: 8,
   heroMrPad: 8,
@@ -645,4 +646,5 @@ const BALANCE = {
   /* base regeneration, as a fraction of max per second */
   hpRegenPct: 0.006,
   manaRegenPct: 0.012,
+  recallTime: 6,
 };

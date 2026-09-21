@@ -291,6 +291,7 @@ class Hero extends Unit {
       const table = P.statMod(this);
       if (table) A.addBonus(table);
     }
+    if (this.marks && this.marks.weakenUntil > Game.time) A.addBonus({ armor: -18, mr: -18 });
 
     /* Jungle / epic runes. */
     for (const k in this.runes) {
@@ -427,6 +428,7 @@ class Hero extends Unit {
       if (idx >= BALANCE.ultLevels.length) return false;
       return this.level >= BALANCE.ultLevels[idx];
     }
+    if (i === 1 && this.skillRank[1] === 0 && this.level < 2) return false;
     return true;
   }
   rankUp(i) {
@@ -524,6 +526,7 @@ class Hero extends Unit {
   onDamaged(src, dmg, packet) {
     this.hitFlash = 0.14;
     if (this.recallT > 0) { this.recallT = 0; if (this.isPlayer) UI.announce('Recall interrupted!', 'minor'); }
+    if (typeof Mlbb !== 'undefined') Mlbb.onDamaged(this);
     if (src instanceof Hero && src.team !== this.team) {
       const prev = this.recentDmg.find(r => r.h === src && Game.time - r.t < 8);
       if (prev) { prev.amt = (prev.amt || 0) + dmg; prev.t = Game.time; }
@@ -565,10 +568,11 @@ class Hero extends Unit {
       killer.gainGold(BALANCE.heroKillGold(this) * repeatMult + shutdown);
       killer.fire('onKill', this);
       if (killer.emblem && killer.emblem.id === 'assassin') killer.heal(killer.maxHp * 0.12);
-      if (!Game.firstBlood) { Game.firstBlood = true; UI.announce(`🩸 FIRST BLOOD — ${killer.name}!`, 'major'); Game.fx.shake(8); }
-      else if (killer.streak === 3) UI.announce(`${killer.name} is on a Killing Spree!`, 'minor');
-      else if (killer.streak === 5) UI.announce(`${killer.name} is Unstoppable!`, 'major');
-      else if (killer.streak >= 7) UI.announce(`${killer.name} is LEGENDARY!`, 'major');
+      let firstBloodNow = false;
+      if (!Game.firstBlood) {
+        Game.firstBlood = true; firstBloodNow = true;
+        UI.announce(`🩸 FIRST BLOOD — ${killer.name}!`, 'major'); Game.fx.shake(8);
+      }
       // multi-kill window is shared by every hero so bots announce Savage too
       if (Game.time - killer.lastKillT < 10) killer.comboKills++;
       else killer.comboKills = 1;
@@ -578,16 +582,25 @@ class Hero extends Unit {
         const label = names[Math.min(5, killer.comboKills)];
         UI.announce(`${killer.isPlayer ? '' : killer.name + ' — '}${label}!`, 'major');
         Game.fx.shake(6);
-      } else if (killer.isPlayer) UI.announce('You have slain an enemy', 'kill');
+      }
+      if (typeof Mlbb !== 'undefined')
+        Mlbb.killSlogan(killer, this, { firstBlood: firstBloodNow, combo: killer.comboKills });
+      else if (killer.isPlayer && killer.comboKills < 2) UI.announce('You have slain an enemy', 'kill');
       if (shutdown > 0) UI.announce(`💰 SHUTDOWN — ${killer.name} +${shutdown}`, 'major');
       if (killer.isPlayer) SFX.kill();
       const assisters = this.recentDmg
         .filter(r => r.h !== killer && r.h.alive !== undefined && Game.time - r.t < 8)
         .map(r => r.h);
+      if (typeof Mlbb !== 'undefined') {
+        for (const h of Mlbb.proximityAssists(this, killer)) {
+          if (!assisters.includes(h)) assisters.push(h);
+        }
+      }
       const assistShare = assisters.length ? BALANCE.assistGoldPool / assisters.length : 0;
       for (const assister of assisters) {
         assister.assists++;
-        assister.gainGold(assistShare);
+        const gold = typeof Mlbb !== 'undefined' ? Mlbb.assistGold(assister, assistShare) : assistShare;
+        assister.gainGold(gold);
         assister.fire('onAssist', this);
       }
     }
@@ -656,7 +669,8 @@ class Hero extends Unit {
   startRecall() {
     if (!this.alive || this.recallT > 0) return;
     if (Game.isDuel() || dist(this, Game.fountain(this.team)) < 350) return;
-    this.recallT = 3.2;
+    this.recallT = BALANCE.recallTime || 6.0;
+    this.arrivalT = 0; this.arrivalDest = null;
     Game.fx.ring(this.x, this.y, 70, THEME.blue, 0.5);
   }
 
@@ -873,17 +887,22 @@ class Hero extends Unit {
       this.trackVelocity(dt);
       return;
     }
-    // recall channel
-    if (this.recallT > 0) {
-      if (this.isPlayer && Input.moveVector()) { this.recallT = 0; return; }
-      this.recallT -= dt;
-      if (this.recallT <= 0) {
-        const b = Game.fountain(this.team);
-        Game.fx.ring(this.x, this.y, 80, THEME.blue, 0.5);
-        this.x = b.x + rand(-60, 60); this.y = b.y + rand(-60, 60);
-        Game.fx.ring(this.x, this.y, 90, THEME.blue, 0.6);
-        this.wpIdx = 0;
-        this.nav.path.length = 0; this.nav.index = 0; this.nav.gx = this.nav.gy = NaN;
+    // recall / Arrival channel
+    if (this.recallT > 0 || this.arrivalT > 0) {
+      if (this.isPlayer && Input.moveVector()) {
+        this.recallT = 0; this.arrivalT = 0; this.arrivalDest = null;
+        return;
+      }
+      if (this.recallT > 0) {
+        this.recallT -= dt;
+        if (this.recallT <= 0) {
+          const b = Game.fountain(this.team);
+          Game.fx.ring(this.x, this.y, 80, THEME.blue, 0.5);
+          this.x = b.x + rand(-60, 60); this.y = b.y + rand(-60, 60);
+          Game.fx.ring(this.x, this.y, 90, THEME.blue, 0.6);
+          this.wpIdx = 0;
+          this.nav.path.length = 0; this.nav.index = 0; this.nav.gx = this.nav.gy = NaN;
+        }
       }
       this.trackVelocity(dt);
       return;
@@ -894,7 +913,14 @@ class Hero extends Unit {
           this.cc.dominant !== 'slow') this.castSpell(null);
       this.trackVelocity(dt); return;
     }
-    if (this.isPlayer) this.playerControl(dt);
+    if (this.isPlayer && this.aiTakeover) {
+      this.aiTimer -= dt;
+      if (this.aiTimer <= 0) {
+        this.aiTimer = 0.12 + rand(0, 0.08);
+        this.botThink();
+      }
+      this.botControl(dt);
+    } else if (this.isPlayer) this.playerControl(dt);
     else {
       this.aiTimer -= dt;
       if (this.aiTimer <= 0) {
@@ -943,9 +969,10 @@ class Hero extends Unit {
       const c = Input.spellQueued;
       Input.spellQueued = null;
       // Flicker uses an explicitly aimed point; target/self spells safely ignore it.
+      const aimR = (this.spell && this.spell.aimRange) || 420;
       const point = c.dir
-        ? { x: this.x + c.dir.x * 420, y: this.y + c.dir.y * 420 }
-        : Game.autoAimPoint(this, { range: 420 });
+        ? { x: this.x + c.dir.x * aimR, y: this.y + c.dir.y * aimR }
+        : Game.autoAimPoint(this, { range: aimR });
       this.castSpell(point);
     }
 
@@ -1808,6 +1835,31 @@ class Hero extends Unit {
     if (id === 'aegis') { if (this.hpPct < 0.62 && isHero && d < 560) this.castSpell(null); return; }
     if (id === 'inspire') { if (isHero && d < this.range + 140) this.castSpell(null); return; }
     if (id === 'vengeance') { if (this.hpPct < 0.55 && isHero && d < 480) this.castSpell(null); return; }
+    if (id === 'flameshot') {
+      if (isHero && d < 860 && d > 180) this.castSpell(t);
+      return;
+    }
+    if (id === 'icequake') {
+      let near = 0;
+      for (const h of Game.heroes) if (h.team !== this.team && h.alive && this.distTo(h) < 270) near++;
+      if (near >= 2 || (isHero && d < 260)) this.castSpell(null);
+      return;
+    }
+    if (id === 'weaken') { if (isHero && d < 280) this.castSpell(null); return; }
+    if (id === 'revitalize') {
+      if (this.hpPct < 0.55) this.castSpell(null);
+      else {
+        for (const a of Game.heroes) {
+          if (a.team !== this.team || a === this || !a.alive) continue;
+          if (a.hpPct < 0.5 && this.distTo(a) < 320) { this.castSpell(null); break; }
+        }
+      }
+      return;
+    }
+    if (id === 'arrival') {
+      if (this.aiState === 'retreat' && this.hpPct < 0.28 && dist(this, Game.fountain(this.team)) > 1400)
+        this.castSpell(null);
+    }
   }
 
   /* Step out of a telegraphed zone.
@@ -2314,6 +2366,7 @@ class Minion extends Unit {
       const gold = this.goldValue * (opening && (this.lane === 'top' || this.lane === 'dusk') ? BALANCE.goldLaneMult : 1);
       src.gainGold(gold);
       if (typeof Features !== 'undefined') Features.onMinionDeath(this, src);
+      if (typeof Mlbb !== 'undefined') Mlbb.onMinionKill(this, src);
     }
     for (const h of Game.heroes) {
       if (h.team !== this.team && h.alive && dist(h, this) < 600) {
@@ -2427,6 +2480,7 @@ class Tower extends Unit {
     for (const h of Game.heroes) if (h.team === enemyTeam) h.gainGold(reward);
     UI.announce(this.team === TEAM_BLUE ? '💔 Your turret has fallen!' : '🎉 Enemy turret destroyed!', this.team === TEAM_BLUE ? 'death' : 'kill');
     UI.killFeed(src, this);
+    if (typeof Mlbb !== 'undefined') Mlbb.onTurretKill(this, src);
   }
 }
 
@@ -2484,9 +2538,13 @@ class Monster extends Unit {
     this.alive = false;
     Game.fx.spark(this.x, this.y, THEME.neutral, 10);
     if (src instanceof Hero) {
-      src.gainGold(this.goldValue);
-      src.gainXp(this.xpValue);
-      if (src.isPlayer) UI.announce(`Jungle monster slain +${this.goldValue} 💰`, 'minor');
+      const gold = typeof Mlbb !== 'undefined' ? Mlbb.monsterGold(src, this.goldValue) : this.goldValue;
+      const xp = typeof Mlbb !== 'undefined' ? Mlbb.monsterXp(src, this.xpValue) : this.xpValue;
+      src.gainGold(gold);
+      src.gainXp(xp);
+      src.jungleHits = (src.jungleHits || 0) + 1;
+      if (typeof Mlbb !== 'undefined') Mlbb.onBuffKill(this, src);
+      if (src.isPlayer) UI.announce(`Jungle monster slain +${gold} 💰`, 'minor');
     }
     this.home.respawnT = this.respawn || 55;
   }
