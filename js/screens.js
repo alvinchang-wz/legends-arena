@@ -62,7 +62,9 @@ const Screens = {
 
     // title: any tap or Enter continues
     const go = () => { SFX.ensure(); this.show('lobby'); };
-    this.els.title.addEventListener('pointerup', go);
+    // 'click', not 'pointerup': the lobby appears under the finger synchronously and
+    // a pointerup-driven switch would let the same tap click the lobby's showcase.
+    this.els.title.addEventListener('click', go);
     window.addEventListener('keydown', e => {
       if (this.current === 'title' && (e.code === 'Enter' || e.code === 'Space')) { go(); e.preventDefault(); return; }
       if (e.code === 'Escape' && this.current && this.current !== 'title') {

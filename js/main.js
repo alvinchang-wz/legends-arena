@@ -3822,6 +3822,7 @@ buildDuelMapLayer();
 buildTenMapLayer();
 resize();
 UI.init();
+if (typeof Native !== 'undefined') Native.init();
 Input.init();
 document.addEventListener('pointerdown', () => SFX.ensure(), { once: true });
 document.addEventListener('visibilitychange', () => {

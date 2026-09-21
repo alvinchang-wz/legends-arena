@@ -34,6 +34,29 @@ work, painted at half rate, and replaced the moment a real match starts.
 `manifest.webmanifest` and `icon.svg` make the site installable as a
 landscape, fullscreen app on Android and desktop Chrome.
 
+## Android app
+
+The Android build is a [Capacitor](https://capacitorjs.com) shell around the
+same files: the game is copied into `www/` and packaged inside the APK, so it
+runs fully offline and never loads code from the network. Native glue lives in
+`js/native.js` (back button, immersive bars) and
+`android/app/src/main/java/.../MainActivity.java` (landscape, keep-awake,
+edge-to-edge under the cutout).
+
+Requirements: Node 18+, Android Studio with SDK 35 and its bundled JDK 21.
+
+```bash
+npm install                       # Capacitor CLI + Android platform + plugins
+npm run android:debug             # build www/, sync, then gradle assembleDebug
+# APK: android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+If Gradle cannot find a JDK, set `JAVA_HOME` to Android Studio's JBR
+(`C:\Program Files\Android\Android Studio\jbr` on Windows) before running.
+`npm run android:open` opens the project in Android Studio for signing a
+release build.
+
 ## Headless simulator
 
 The command-line simulator runs the real game state and bot logic without a

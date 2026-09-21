@@ -1,0 +1,14 @@
+{
+  "appId": "com.alvinchang.legendsarena",
+  "appName": "Legends Arena",
+  "webDir": "www",
+  "backgroundColor": "#05080f",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}
