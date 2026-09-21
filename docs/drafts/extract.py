@@ -136,7 +136,16 @@ conn_mask = (abs(r - g) <= 6) & (abs(g - b) <= 6) & (v >= 36) & (v <= 50)
 # closed ring it would swallow the roads inside it as nested contours
 conn_mask = cv2.morphologyEx(conn_mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
 conn_mask = cv2.morphologyEx(conn_mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) > 0
-connections = [{'outer': c['poly'], 'holes': []} for c in contours(conn_mask, 1500)]
+# split the connections: the second diagonal vs the vertical/horizontal cross.
+# The diagonal is the strip within 30 px of the line through its two ends.
+yy, xx = np.mgrid[0:H, 0:W]
+ax, ay, bx, by = 225.0, 204.0, 1300.0, 1278.0
+dist_line = np.abs((by - ay) * xx - (bx - ax) * yy + bx * ay - by * ax) / math.hypot(bx - ax, by - ay)
+diag_mask = conn_mask & (dist_line <= 30)
+cross_mask = conn_mask & (dist_line > 30)
+cross_mask = cv2.morphologyEx(cross_mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)) > 0
+connections = [{'outer': c['poly'], 'holes': [], 'kind': 'diagonal'} for c in contours(diag_mask, 1500)]
+connections += [{'outer': c['poly'], 'holes': [], 'kind': 'cross'} for c in contours(cross_mask, 1500)]
 
 labels = [['TOP', 762, 82], ['BOTTOM', 762, 1400], ['MID', 762, 740], ['Base A', 190, 1410], ['Base B', 1335, 68],
           ['Slice 1', 868, 355], ['Slice 2', 1145, 632], ['Slice 3', 982, 845], ['Slice 4', 868, 957],
