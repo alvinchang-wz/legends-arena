@@ -631,8 +631,8 @@ const Game = {
         label: k === 'lord'
           ? (this.isTen()
             ? ((e.unit && e.unit.evolved) || this.time >= BALANCE.ancientLordAt ? 'Elder Colossus' : 'Colossus')
-            : ((e.unit && e.unit.evolved) || this.time >= BALANCE.ancientLordAt ? 'Ancient Lord' : 'Lord'))
-          : (this.isTen() ? 'Warden' : 'Turtle'),
+            : ((e.unit && e.unit.evolved) || this.time >= BALANCE.ancientLordAt ? 'Elder Warden' : 'Warden'))
+          : (this.isTen() ? 'Sentinel' : 'Leviathan'),
         up: !!(e.unit && e.unit.alive),
         in: Math.max(0, e.next - this.time),
       });
@@ -651,8 +651,8 @@ const Game = {
     help:     { icon: '🆘', label: 'Need help',  color: '#a78bfa' },
     omw:      { icon: '🏃', label: 'On my way',  color: '#4ade80' },
     missing:  { icon: '❓', label: 'Missing',     color: '#e879f9' },
-    turtle:   { icon: '🐢', label: 'Turtle',      color: '#4ade80' },
-    lord:     { icon: '👑', label: 'Lord',        color: '#ffc94a' },
+    turtle:   { icon: '🐢', label: 'Leviathan',   color: '#4ade80' },
+    lord:     { icon: '👑', label: 'Warden',      color: '#ffc94a' },
     careful:  { icon: '👀', label: 'Careful',     color: '#fbbf24' },
   },
   ping(kind, x, y, by) {
@@ -727,7 +727,7 @@ const Game = {
       if (score > bestScore) { bestScore = score; best = lane; }
     }
     for (let i = 0; i < 2; i++) this.minions.push(new LordMinion(team, best, false));
-    UI.announce(this.isTen() ? `🌋 Colossus engines marching ${best}!` : `👑 Lord minions marching ${best}!`, 'minor');
+    UI.announce(this.isTen() ? `🌋 Colossus engines marching ${best}!` : `👑 The Warden's host marching ${best}!`, 'minor');
   },
   enemyUnits(team, opts = {}) {
     const out = [];
@@ -963,8 +963,8 @@ const Game = {
           e.unit = new EpicMonster(k, e.pos);
           this.monsters.push(e.unit);
           const spawnName = this.isTen()
-            ? (k === 'lord' ? '🌋 THE COLOSSUS' : '🕯️ The Warden')
-            : (k === 'lord' ? '👑 THE LORD' : '🐢 Turtle');
+            ? (k === 'lord' ? '🌋 THE COLOSSUS' : '🕯️ The Sentinel')
+            : (k === 'lord' ? '👑 THE WARDEN' : '🐢 The Leviathan');
           UI.announce(`${spawnName} has spawned!`, 'major');
         }
       }
@@ -1020,9 +1020,18 @@ const Game = {
           }
           h.inRiver = best <= 110 * 110;
         } else {
-          const c = segClosest(h.x, h.y, RIVER.a.x, RIVER.a.y, RIVER.b.x, RIVER.b.y);
-          const currentR = 105 * MAP_SCALE;
-          h.inRiver = (h.x - c.x) * (h.x - c.x) + (h.y - c.y) * (h.y - c.y) <= currentR * currentR;
+          // the two streams and the marsh lake carry the current
+          const currentR = 95 * MAP_SCALE;
+          let best = Infinity;
+          for (const s of STREAMS) {
+            for (let i = 1; i < s.length; i++) {
+              const c = segClosest(h.x, h.y, s[i - 1].x, s[i - 1].y, s[i].x, s[i].y);
+              const d = (h.x - c.x) * (h.x - c.x) + (h.y - c.y) * (h.y - c.y);
+              if (d < best) best = d;
+            }
+          }
+          const dl = (h.x - LAKE.x) * (h.x - LAKE.x) + (h.y - LAKE.y) * (h.y - LAKE.y);
+          h.inRiver = best <= currentR * currentR || dl <= LAKE.r * LAKE.r;
         }
       }
     }
@@ -1684,338 +1693,7 @@ function buildMapLayer() {
   mapLayer.width = WORLD * S; mapLayer.height = WORLD * S;
   const g = mapLayer.getContext('2d');
   g.scale(S, S);
-
-  // Forest floor — a lush green field the canopy will cover.
-  const grad = g.createLinearGradient(0, WORLD, WORLD, 0);
-  grad.addColorStop(0, THEME.groundBlue);
-  grad.addColorStop(0.5, THEME.groundMid);
-  grad.addColorStop(1, THEME.groundRed);
-  g.fillStyle = grad;
-  g.fillRect(0, 0, WORLD, WORLD);
-
-  const rndFloor = mapRng(991);
-  for (let i = 0; i < 720; i++) {
-    const x = rndFloor() * WORLD, y = rndFloor() * WORLD;
-    const r = 90 + rndFloor() * 240;
-    g.fillStyle = rndFloor() > 0.55
-      ? `rgba(12, 64, 22, ${0.1 + rndFloor() * 0.16})`
-      : `rgba(70, 140, 48, ${0.08 + rndFloor() * 0.12})`;
-    g.beginPath(); g.ellipse(x, y, r, r * (0.55 + rndFloor() * 0.4), rndFloor() * TAU, 0, TAU);
-    g.fill();
-  }
-  for (let i = 0; i < 180; i++) {
-    const x = rndFloor() * WORLD, y = rndFloor() * WORLD;
-    g.fillStyle = rndFloor() > 0.5
-      ? `rgba(255, 220, 90, ${0.05 + rndFloor() * 0.07})`
-      : `rgba(80, 200, 90, ${0.06 + rndFloor() * 0.08})`;
-    g.beginPath(); g.ellipse(x, y, 28 + rndFloor() * 50, 16 + rndFloor() * 28, rndFloor() * TAU, 0, TAU);
-    g.fill();
-  }
-
-  // Dirt jungle tracks between camps and toward the nearest lane.
-  const nearestLanePt = (x, y) => {
-    let best = { x, y }, bd = Infinity;
-    for (const lane of Object.values(LANES)) {
-      for (let i = 1; i < lane.length; i++) {
-        const c = segClosest(x, y, lane[i - 1].x, lane[i - 1].y, lane[i].x, lane[i].y);
-        const d = (c.x - x) * (c.x - x) + (c.y - y) * (c.y - y);
-        if (d < bd) { bd = d; best = c; }
-      }
-    }
-    return { p: best, d: Math.sqrt(bd) };
-  };
-  g.lineCap = 'round'; g.lineJoin = 'round';
-  const dirtSegs = [];
-  const dirtStroke = (ax, ay, bx, by) => {
-    dirtSegs.push([ax, ay, bx, by]);
-    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by);
-    g.strokeStyle = 'rgba(42, 30, 16, 0.55)'; g.lineWidth = 92; g.stroke();
-    g.strokeStyle = THEME.dirt; g.lineWidth = 70; g.stroke();
-    g.strokeStyle = rgba(THEME.dirtLight, 0.35); g.lineWidth = 28; g.stroke();
-  };
-  const jungleCamps = CAMPS.filter(c => c.kind !== 'crab' && c.kind !== 'litho');
-  for (const c of jungleCamps) {
-    const { p, d } = nearestLanePt(c.x, c.y);
-    if (d < 40) continue;
-    const t = Math.max(0.15, (d - 125) / d);
-    dirtStroke(c.x, c.y, c.x + (p.x - c.x) * t, c.y + (p.y - c.y) * t);
-  }
-  for (let i = 0; i < jungleCamps.length; i++) {
-    for (let j = i + 1; j < jungleCamps.length; j++) {
-      const a = jungleCamps[i], b = jungleCamps[j], d = dist(a, b);
-      if (d < 580 && d > 120) dirtStroke(a.x, a.y, b.x, b.y);
-    }
-  }
-
-  // Teal river with grassy banks, perpendicular to mid, opening into two pits.
-  const riverVisual = [
-    mp(400, 420), mp(780, 760), mp(1100, 1140), mp(1600, 1600),
-    mp(2100, 2060), mp(2420, 2440), mp(2780, 2780),
-  ];
-  g.strokeStyle = 'rgba(18, 64, 24, 0.62)'; g.lineWidth = 400 * MAP_SCALE;
-  traceSoftPath(g, riverVisual); g.stroke();
-  g.strokeStyle = 'rgba(10, 42, 36, 0.7)'; g.lineWidth = 348 * MAP_SCALE;
-  traceSoftPath(g, riverVisual); g.stroke();
-  const riverBands = [
-    [292 * MAP_SCALE, '#0b5c58'],
-    [248 * MAP_SCALE, THEME.river],
-    [168 * MAP_SCALE, rgba(THEME.riverLight, 0.55)],
-    [64 * MAP_SCALE, 'rgba(180, 255, 236, 0.32)'],
-  ];
-  for (const [w, col] of riverBands) {
-    g.strokeStyle = col; g.lineWidth = w;
-    traceSoftPath(g, riverVisual); g.stroke();
-  }
-  for (const p of [LORD_PIT, TURTLE_PIT]) {
-    g.fillStyle = '#083e3c';
-    g.beginPath(); g.arc(p.x, p.y, 430 * MAP_SCALE, 0, TAU); g.fill();
-    g.fillStyle = THEME.river;
-    g.beginPath(); g.arc(p.x, p.y, 390 * MAP_SCALE, 0, TAU); g.fill();
-    const pool = g.createRadialGradient(p.x - 70, p.y - 55, 20, p.x, p.y, 380 * MAP_SCALE);
-    pool.addColorStop(0, 'rgba(150, 255, 230, 0.55)');
-    pool.addColorStop(0.5, 'rgba(40, 190, 175, 0.32)');
-    pool.addColorStop(1, 'rgba(8, 70, 72, 0.18)');
-    g.fillStyle = pool;
-    g.beginPath(); g.arc(p.x, p.y, 380 * MAP_SCALE, 0, TAU); g.fill();
-    g.strokeStyle = 'rgba(200, 255, 236, 0.28)'; g.lineWidth = 6;
-    g.beginPath(); g.arc(p.x, p.y, 210 * MAP_SCALE, 0, TAU); g.stroke();
-  }
-  g.setLineDash([28 * MAP_SCALE, 40 * MAP_SCALE]);
-  g.strokeStyle = 'rgba(220, 255, 246, 0.2)'; g.lineWidth = 5 * MAP_SCALE;
-  traceSoftPath(g, riverVisual); g.stroke();
-  g.setLineDash([]);
-  const rndReed = mapRng(611);
-  const bankW = 168 * MAP_SCALE;
-  for (let i = 1; i < riverVisual.length - 1; i++) {
-    const a = riverVisual[i - 1], b = riverVisual[i];
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
-    for (const side of [-1, 1]) {
-      const x = b.x + nx * bankW * side, y = b.y + ny * bankW * side;
-      if (Math.min(dist({ x, y }, LORD_PIT), dist({ x, y }, TURTLE_PIT)) < 440 * MAP_SCALE) continue;
-      paintReed(g, x, y, 16 + rndReed() * 12, rndReed);
-      paintTuft(g, x + nx * 18, y + ny * 18, 9 + rndReed() * 7, rndReed);
-    }
-  }
-
-  // Neutral-camp clearings make jungle routes readable before a monster is in
-  // vision, instead of hiding every camp in identical procedural foliage.
-  CAMPS.forEach((c, i) => paintCampArena(g, c, i));
-
-  // Objective floors visually bind each monster to its basin and keep the pit
-  // legible even while the objective is waiting to spawn.
-  for (const p of [LORD_PIT, TURTLE_PIT]) {
-    const pg = g.createRadialGradient(p.x, p.y, 20, p.x, p.y, PIT_WALL_R);
-    pg.addColorStop(0, rgba(THEME.gold, 0.15));
-    pg.addColorStop(0.72, 'rgba(28,84,71,0.2)');
-    pg.addColorStop(1, rgba(THEME.surface1, 0));
-    g.fillStyle = pg;
-    g.beginPath(); g.arc(p.x, p.y, PIT_WALL_R - 30, 0, TAU); g.fill();
-  }
-  // Permanent floor emblems keep both epic objectives identifiable before
-  // their spawn timers complete, matching the large symbols in the map guide.
-  if (typeof Icons !== 'undefined') {
-    g.save(); g.globalAlpha = 0.34;
-    Icons.paint(g, 'epic:lord', LORD_PIT.x, LORD_PIT.y, 118 * MAP_SCALE);
-    Icons.paint(g, 'epic:turtle', TURTLE_PIT.x, TURTLE_PIT.y, 105 * MAP_SCALE);
-    g.restore();
-  }
-
-  // Lanes: planted verge, then pale cobblestone like the reference board.
-  const paintCobbles = (lane, seed) => {
-    const rnd = mapRng(seed);
-    for (let i = 1; i < lane.length; i++) {
-      const a = lane[i - 1], b = lane[i];
-      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-      const steps = Math.max(1, Math.round(len / 18));
-      for (let k = 0; k < steps; k++) {
-        const t = (k + 0.5) / steps;
-        const cx = a.x + dx * t, cy = a.y + dy * t;
-        for (let col = -2; col <= 2; col++) {
-          const ox = (col + (rnd() - 0.5) * 0.35) * 26 * MAP_SCALE;
-          const x = cx + nx * ox + ux * (rnd() - 0.5) * 8;
-          const y = cy + ny * ox + uy * (rnd() - 0.5) * 8;
-          const shade = 204 + (rnd() * 28 | 0);
-          g.fillStyle = `rgb(${shade},${shade - 6},${shade - 32})`;
-          g.beginPath();
-          g.ellipse(x, y, 10 + rnd() * 5, 6.5 + rnd() * 3, Math.atan2(dy, dx) + rnd() * 0.5, 0, TAU);
-          g.fill();
-        }
-      }
-    }
-  };
-  let laneSeed = 44001;
-  for (const lane of Object.values(LANES)) {
-    g.lineJoin = 'round'; g.lineCap = 'round';
-    for (const [w, col] of [
-      [238 * MAP_SCALE, 'rgba(18, 52, 22, 0.78)'],
-      [206 * MAP_SCALE, '#468046'],
-      [176 * MAP_SCALE, THEME.laneEdge],
-      [150 * MAP_SCALE, THEME.lane],
-    ]) {
-      g.strokeStyle = col; g.lineWidth = w;
-      traceSoftPath(g, lane); g.stroke();
-    }
-    paintCobbles(lane, laneSeed++);
-    g.strokeStyle = 'rgba(90, 92, 78, 0.35)'; g.lineWidth = 5 * MAP_SCALE;
-    traceSoftPath(g, lane); g.stroke();
-  }
-  const rndTuft = mapRng(4242);
-  for (const lane of Object.values(LANES)) {
-    for (let i = 2; i < lane.length - 2; i += 3) {
-      const a = lane[i - 1], b = lane[i];
-      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len, ny = dx / len;
-      const half = 98 * MAP_SCALE;
-      paintTuft(g, b.x + nx * half, b.y + ny * half, 8 + rndTuft() * 8, rndTuft);
-      paintTuft(g, b.x - nx * half, b.y - ny * half, 8 + rndTuft() * 8, rndTuft);
-    }
-  }
-
-  // Mid crossing: the cobble road continues over the river as a stone pad.
-  const bridge = mp(1600, 1600);
-  g.save(); g.translate(bridge.x, bridge.y); g.rotate(-Math.PI / 4);
-  g.fillStyle = THEME.lane;
-  g.fillRect(-200 * MAP_SCALE, -92 * MAP_SCALE, 400 * MAP_SCALE, 184 * MAP_SCALE);
-  g.fillStyle = 'rgba(40, 48, 36, 0.28)';
-  g.fillRect(-200 * MAP_SCALE, 70 * MAP_SCALE, 400 * MAP_SCALE, 22 * MAP_SCALE);
-  g.strokeStyle = '#6a6e60'; g.lineWidth = 10 * MAP_SCALE;
-  g.strokeRect(-200 * MAP_SCALE, -92 * MAP_SCALE, 400 * MAP_SCALE, 184 * MAP_SCALE);
-  g.strokeStyle = 'rgba(255, 255, 240, 0.16)'; g.lineWidth = 3 * MAP_SCALE;
-  for (let x = -160; x <= 160; x += 40) {
-    g.beginPath(); g.moveTo(x * MAP_SCALE, -84 * MAP_SCALE); g.lineTo(x * MAP_SCALE, 84 * MAP_SCALE); g.stroke();
-  }
-  g.restore();
-
-  // Circular base plazas with team-coloured crystal glow and short stairs.
-  for (const t of [0, 1]) {
-    const b = BASES[t], f = FOUNTAINS[t];
-    const ang = Math.atan2(WORLD / 2 - b.y, WORLD / 2 - b.x);
-    const R = 340 * MAP_SCALE;
-    g.fillStyle = t === 0 ? '#9aa6ac' : '#b49a86';
-    g.beginPath(); g.arc(b.x, b.y, R, 0, TAU); g.fill();
-    const plaza = g.createRadialGradient(b.x - R * 0.2, b.y - R * 0.25, 20, b.x, b.y, R);
-    plaza.addColorStop(0, t === 0 ? 'rgba(210, 230, 240, 0.35)' : 'rgba(240, 210, 180, 0.32)');
-    plaza.addColorStop(1, 'rgba(40, 40, 36, 0.12)');
-    g.fillStyle = plaza;
-    g.beginPath(); g.arc(b.x, b.y, R, 0, TAU); g.fill();
-    g.strokeStyle = rgba(TEAM_COLORS[t], 0.55); g.lineWidth = 16;
-    g.beginPath(); g.arc(b.x, b.y, R, 0, TAU); g.stroke();
-    g.strokeStyle = 'rgba(255,255,240,0.14)'; g.lineWidth = 3;
-    for (let rr = 80; rr < R; rr += 48) {
-      g.beginPath(); g.arc(b.x, b.y, rr, 0, TAU); g.stroke();
-    }
-    g.save(); g.translate(b.x, b.y); g.rotate(ang);
-    g.fillStyle = 'rgba(210, 206, 188, 0.45)';
-    for (let i = 0; i < 4; i++) {
-      const y0 = R * 0.42 + i * 26;
-      g.fillRect(-78 - i * 10, y0, 156 + i * 20, 12);
-    }
-    g.restore();
-
-    const fg = g.createRadialGradient(f.x, f.y, 8, f.x, f.y, 300);
-    fg.addColorStop(0, rgba(TEAM_COLORS[t], 0.7));
-    fg.addColorStop(0.45, rgba(TEAM_COLORS[t], 0.22));
-    fg.addColorStop(1, rgba(TEAM_COLORS[t], 0));
-    g.fillStyle = fg;
-    g.beginPath(); g.arc(f.x, f.y, 300, 0, TAU); g.fill();
-    g.fillStyle = rgba(TEAM_COLORS[t], 0.22);
-    g.beginPath(); g.arc(f.x, f.y, 96, 0, TAU); g.fill();
-    g.strokeStyle = rgba(TEAM_COLORS[t], 0.7); g.lineWidth = 5;
-    g.beginPath(); g.arc(f.x, f.y, 96, 0, TAU); g.stroke();
-    // fountain crystal — pre-stretched against the camera squash so it
-    // stands as a monument instead of lying on the plaza like a decal
-    g.save(); g.translate(f.x, f.y);
-    g.scale(1, 1 / TILT);
-    g.fillStyle = 'rgba(4,8,10,0.35)';
-    g.beginPath(); g.ellipse(0, 26, 30, 10, 0, 0, TAU); g.fill();
-    g.translate(0, -16);
-    g.fillStyle = TEAM_COLORS[t];
-    g.beginPath();
-    g.moveTo(0, -54); g.lineTo(22, 0); g.lineTo(0, 42); g.lineTo(-22, 0);
-    g.closePath(); g.globalAlpha = 0.9; g.fill();
-    g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 2; g.stroke();
-    g.globalAlpha = 1; g.restore();
-  }
-
-  // Dense canopy. Generated on one half and rotated so both jungles match.
-  const forestOpen = (x, y) => {
-    for (const lane of Object.values(LANES)) {
-      if (distToPolyline(x, y, lane) < 126) return false;
-    }
-    const rc = segClosest(x, y, RIVER.a.x, RIVER.a.y, RIVER.b.x, RIVER.b.y);
-    if ((x - rc.x) * (x - rc.x) + (y - rc.y) * (y - rc.y) < 175 * 175) return false;
-    for (const c of CAMPS) {
-      if ((x - c.x) * (x - c.x) + (y - c.y) * (y - c.y) < 190 * 190) return false;
-    }
-    for (const p of [LORD_PIT, TURTLE_PIT]) {
-      if ((x - p.x) * (x - p.x) + (y - p.y) * (y - p.y) < (PIT_WALL_R + 16) * (PIT_WALL_R + 16)) return false;
-    }
-    for (const b of BASES) {
-      if ((x - b.x) * (x - b.x) + (y - b.y) * (y - b.y) < 360 * 360) return false;
-    }
-    for (const f of FOUNTAINS) {
-      if ((x - f.x) * (x - f.x) + (y - f.y) * (y - f.y) < 230 * 230) return false;
-    }
-    for (const [ax, ay, bx, by] of dirtSegs) {
-      const c = segClosest(x, y, ax, ay, bx, by);
-      if ((x - c.x) * (x - c.x) + (y - c.y) * (y - c.y) < 52 * 52) return false;
-    }
-    return true;
-  };
-  const trees = [];
-  const rndTree = mapRng(20260814);
-  const spacing = 64;
-  for (let gy = 36; gy < WORLD - 36; gy += spacing) {
-    for (let gx = 36; gx < WORLD - 36; gx += spacing) {
-      if (gx + gy > WORLD) continue;
-      const x = gx + (rndTree() - 0.5) * 46;
-      const y = gy + (rndTree() - 0.5) * 46;
-      if (x + y > WORLD || !forestOpen(x, y)) continue;
-      const s = 50 + rndTree() * 48;
-      const seed = (rndTree() * 1e6) | 0;
-      trees.push({ x, y, s, seed });
-      const tw = rotPt({ x, y });
-      if ((tw.x - x) * (tw.x - x) + (tw.y - y) * (tw.y - y) > 64) trees.push({ x: tw.x, y: tw.y, s, seed });
-    }
-  }
-  trees.sort((a, b) => a.y - b.y);
-  for (const t of trees) paintTree(g, t.x, t.y, t.s, mapRng(t.seed));
-
-  for (const b of BUSHES) paintBushBed(g, b);
-
-  // Stone outcrops sit on the collision ridges, so decorative rock is honest.
-  const rndRock = mapRng(78123);
-  for (const w of MAP_WALLS) {
-    const step = Math.max(1, Math.floor(w.pts.length / 5));
-    for (let i = 0; i < w.pts.length; i += step) {
-      const p = w.pts[i], n = w.pts[Math.min(i + 1, w.pts.length - 1)];
-      paintStoneCluster(g, p.x, p.y, w.r * (0.9 + rndRock() * 0.35),
-        Math.atan2(n.y - p.y, n.x - p.x), rndRock);
-    }
-  }
-
-  // Light stone frame — the board is a bright forest, not a dark void.
-  g.strokeStyle = 'rgba(28, 40, 24, 0.82)'; g.lineWidth = 80;
-  g.strokeRect(0, 0, WORLD, WORLD);
-  g.strokeStyle = 'rgba(186, 198, 160, 0.42)'; g.lineWidth = 12;
-  g.strokeRect(44, 44, WORLD - 88, WORLD - 88);
-
-  const edge = g.createRadialGradient(WORLD / 2, WORLD / 2, WORLD * 0.28, WORLD / 2, WORLD / 2, WORLD * 0.74);
-  edge.addColorStop(0, 'rgba(0,0,0,0)');
-  edge.addColorStop(1, 'rgba(6, 20, 10, 0.2)');
-  g.fillStyle = edge;
-  g.fillRect(0, 0, WORLD, WORLD);
-
-  // Low sun from the top-left: one broad wash gives the whole board a lit
-  // side and a shaded side, which the standing pieces' shadows agree with.
-  const sun = g.createLinearGradient(0, 0, WORLD, WORLD);
-  sun.addColorStop(0, 'rgba(255, 244, 196, 0.16)');
-  sun.addColorStop(0.45, 'rgba(0,0,0,0)');
-  sun.addColorStop(1, 'rgba(6, 14, 28, 0.2)');
-  g.fillStyle = sun;
-  g.fillRect(0, 0, WORLD, WORLD);
+  MapArt.paintCrown(g);
 }
 
 /* The duel arena is a separate static layer rather than a crop of the 5v5
@@ -2667,6 +2345,7 @@ function drawMinionKind(m) {
    segments fuse into one continuous ridge. */
 function drawWallPiece(a, b, r) {
   const ten = Game.isTen();
+  if (!ten && typeof MapArt !== 'undefined') { MapArt.drawWall(ctx, a, b, r); return; }
   const h = r * 1.05 + 28;
   const base = ten ? '#241b16' : '#2e3830';
   const mid = ten ? '#4a3a2e' : THEME.wall;

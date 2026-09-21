@@ -93,18 +93,40 @@ const mp = (x, y) => ({ x: x * MAP_SCALE, y: y * MAP_SCALE });
 const mirrorPt = p => ({ x: WORLD - p.y, y: WORLD - p.x });
 const rotPt = p => ({ x: WORLD - p.x, y: WORLD - p.y });
 
-const TOP_CONTROL = [
-  mp(430, 2770), mp(350, 2500), mp(305, 2140), mp(300, 1760),
-  mp(315, 1370), mp(350, 1010), mp(430, 720), mp(560, 560),
-  mp(720, 430), mp(1010, 350), mp(1370, 315), mp(1760, 300),
-  mp(2140, 305), mp(2500, 350), mp(2770, 430),
-];
+/* ============================================================
+   THE SUNDERED CROWN — the 5v5 board.
+
+   Blue base bottom-left, Red base top-right, mid on the diagonal. The
+   board mirrors across the OTHER diagonal (y = x): that swaps the two
+   bases while keeping each side lane what it is. So both teams walk the
+   same two roads, and the two roads are deliberately different:
+
+     top  — the Cliff Road. Long, hugs the edge, almost no bushes. The
+            safe farming lane.
+     bot  — the Marsh Road. Short, cuts the corner, thick with reeds and
+            standing water. The ambush lane.
+
+   Two streams rise beside the Warden's fort on the cliff side, cross
+   mid at the West and East fords either side of the Crown Isle, and
+   merge in the marsh lake where the Leviathan lives. */
+const swapPt = p => ({ x: p.y, y: p.x });
+const swapPath = pts => pts.map(swapPt).reverse();
+/* A lane authored from Blue's base to the y = x line, completed by its own
+   reflection, so every point on Red's half is the mirror of Blue's. */
+const wholeLane = blueHalf => [...blueHalf, ...swapPath(blueHalf).slice(1)];
+
+const TOP_CONTROL = wholeLane([
+  mp(430, 2770), mp(340, 2500), mp(300, 2100), mp(300, 1700),
+  mp(305, 1300), mp(340, 940), mp(400, 660), mp(470, 470),
+]);
 const MID_CONTROL = [
-  mp(470, 2730), mp(790, 2460), mp(1030, 2140), mp(1350, 1840),
-  mp(1600, 1600), mp(1850, 1360), mp(2170, 1060), mp(2410, 740),
-  mp(2730, 470),
+  mp(470, 2730), mp(760, 2440), mp(1050, 2150), mp(1300, 1900),
+  mp(1600, 1600), mp(1900, 1300), mp(2150, 1050), mp(2440, 760), mp(2730, 470),
 ];
-const BOT_CONTROL = TOP_CONTROL.map(mirrorPt);
+const BOT_CONTROL = wholeLane([
+  mp(470, 2740), mp(760, 2740), mp(1050, 2740), mp(1340, 2720),
+  mp(1620, 2680), mp(1880, 2590), mp(2090, 2450), mp(2250, 2250),
+]);
 
 const LANES = {          // blue -> red
   top: resamplePath(TOP_CONTROL),
@@ -208,12 +230,8 @@ const DUEL_MAP = (() => {
   };
 })();
 
-/* Three defensive tiers per lane, matching the macro rhythm of established
-   mobile MOBAs: outer towers own the lane, middle towers protect rotations,
-   and inner towers create high ground. Physical positions are pulled back
-   from the river so the two outer threat circles leave a genuine teamfight
-   field between them. Mid is shorter, so each of its tiers uses a slightly
-   tighter spacing. Canonical `frac` values stay unchanged for tier rules. */
+/* Three defensive tiers per lane. Mid is shorter, so each of its tiers
+   uses a slightly tighter spacing. Canonical `frac` values stay unchanged. */
 const TOWER_TIERS = [
   { frac: 0.13, sidePos: 0.13, midPos: 0.11 },
   { frac: 0.27, sidePos: 0.23, midPos: 0.195 },
@@ -223,91 +241,49 @@ const TOWER_SPOTS = [];
 for (const lane of ['top', 'mid', 'bot']) {
   for (const tier of TOWER_TIERS) {
     const pos = lane === 'mid' ? tier.midPos : tier.sidePos;
-    // `frac` is kept on the spot so health and shielding can distinguish the
-    // 0.13 inner, 0.27 middle and 0.40 outer tiers without re-deriving position.
     TOWER_SPOTS.push({ ...pathPoint(LANES[lane], pos), team: TEAM_BLUE, lane, frac: tier.frac, posFrac: pos });
     TOWER_SPOTS.push({ ...pathPoint(LANES[lane], 1 - pos), team: TEAM_RED, lane, frac: tier.frac, posFrac: pos });
   }
 }
 
-/* Imperial Sanctuary jungle: each quadrant holds one major buff and four
-   lizard camps. Mirroring Sage's pocket onto gold gives Fury; rotating the
-   whole blue half stamps red's identical jungle. River camps sit outside that
-   loop so Lithowanderers and scavenger crabs do not get duplicated onto the
-   diagonal. */
-const sageBuff = mp(650, 1580);
-const expLizards = [
-  mp(470, 1320),   // river pocket, first-clear camp
-  mp(900, 1900),   // inner corridor toward mid
-  mp(530, 1860),   // EXP-lane gank camp
-  mp(700, 2160),   // high-ground pocket near the base exit
+/* ---- the centre ----
+   The Crown Isle is a walled plaza on the mid lane; the fords are where the
+   streams cross mid on either side of it. The Warden's fort is up on the
+   cliff side, the Leviathan's lake down in the marsh — both on y = x, so
+   each is the same walk from either base. */
+const ISLE = { ...mp(1600, 1600), r: 250 * MAP_SCALE };
+const FORDS = [mp(1300, 1900), mp(1900, 1300)];
+const LORD_PIT   = mp(1080, 1080);   // the Warden
+const TURTLE_PIT = mp(2120, 2120);   // the Leviathan
+const LAKE = { ...TURTLE_PIT, r: 300 * MAP_SCALE };
+const streamA = [
+  mp(930, 1230), mp(1080, 1420), mp(1180, 1640), mp(1300, 1900),
+  mp(1480, 2080), mp(1760, 2160), mp(2120, 2120),
 ];
-const BLUE_CAMPS = [
-  { ...sageBuff, kind: 'blueBuff' },
-  ...expLizards.map(p => ({ ...p, kind: 'normal' })),
-  { ...mirrorPt(sageBuff), kind: 'redBuff' },
-  ...expLizards.map(p => ({ ...mirrorPt(p), kind: 'normal' })),
+const STREAMS = [streamA, streamA.map(swapPt)];
+/* Kept for older callers: the axis the two streams straddle. */
+const RIVER = { a: LORD_PIT, b: TURTLE_PIT };
+
+/* ---- jungle ----
+   Each side owns a cliff pocket (Ridge buff, three camps) and a marsh pocket
+   (Bog buff, three camps). Blue's are authored; Red's are the swap. */
+const blueCamps = [
+  { ...mp(700, 1900), kind: 'blueBuff' },     // Ridge buff, cliff pocket
+  { ...mp(520, 1420), kind: 'normal' },
+  { ...mp(960, 1680), kind: 'normal' },
+  { ...mp(760, 2260), kind: 'normal' },
+  { ...mp(1850, 2400), kind: 'redBuff' },     // Bog buff, marsh pocket
+  { ...mp(1420, 2480), kind: 'normal' },
+  { ...mp(1660, 2260), kind: 'normal' },
+  { ...mp(2280, 2600), kind: 'normal' },
+  { ...mp(1220, 2020), kind: 'crab' },        // West ford crab
+  { ...mp(1560, 2160), kind: 'litho' },       // stream patrol
 ];
-const jungleCamps = BLUE_CAMPS.flatMap(c => [c, { ...rotPt(c), kind: c.kind }]);
+const CAMPS = [...blueCamps, ...blueCamps.map(c => ({ ...swapPt(c), kind: c.kind }))];
 
-/* Two Lithowanderers patrol the river banks between the pits (rotated pair).
-   Four scavenger crabs sit at the gold/EXP river mouths — authored on gold,
-   mirrored to EXP, then rotated to red. */
-const litho = { ...mp(1280, 1580), kind: 'litho' };
-const scavenger = { ...mp(580, 1120), kind: 'crab' };
-const CAMPS = [
-  ...jungleCamps,
-  litho, { ...rotPt(litho), kind: 'litho' },
-  scavenger,
-  { ...mirrorPt(scavenger), kind: 'crab' },
-  { ...rotPt(scavenger), kind: 'crab' },
-  { ...rotPt(mirrorPt(scavenger)), kind: 'crab' },
-];
-
-const RIVER = { a: mp(540, 540), b: mp(2660, 2660) };
-
-/* Epic-objective pits, at opposite ends of the river so contesting one concedes
-   map position near the other. Both sit off the mid-lane diagonal by design — a
-   pit sitting on the lane would be farmed by minions.
-
-   They sit ON the river line (x == y) for a reason that is pure balance: the
-   bases are reflections of each other across that line, so any point on it is
-   the same walk from both. The old hand-placed pits were off it, which put Lord
-   677 units nearer red's base and Turtle 580 nearer blue's — and since Lord is
-   the objective that ends games, that asymmetry was worth more to red. Keeping
-   them a rotated pair of each other keeps the whole board symmetric. */
-/* Anywhere on x == y is equally fair, so the exact spot along the river is free
-   to choose — and it was chosen for elbow room. At 1090 a walled pit clears the
-   nearest jungle camp by 81 and the nearest bush by 42; slide it down toward
-   880 and the ring starts swallowing a camp. */
-const LORD_PIT   = mp(1100, 1100);
-const TURTLE_PIT = rotPt(LORD_PIT);
-
-/* ---- pit walls ----
-   Turtle and Lord are the two fights worth losing map position over, and until
-   now they happened on open ground with a dashed circle painted on it. Walling
-   each pit turns "we are doing Lord" into a position rather than a place: you
-   commit through one of two doorways, the team holding them decides the terms,
-   and the Retribution steal is a real risk instead of a formality.
-
-   The mouths open ALONG the river, not toward the bases. Facing them at the
-   bases is the obvious choice and it is wrong: both pits sit on the river, so
-   base-facing doors put a solid wall across the one route the Aether Current
-   exists to make attractive, and rotating down the river would mean climbing
-   out of it twice. Opening them along the river instead keeps that route whole
-   and hands the walls to the jungles either side — approach from your own half
-   and you have to come round to a river mouth. Both doorways still sit on the
-   line that is equidistant from the two bases, so neither team is nearer one,
-   and a 180° turn maps each pit's doors onto the other's.
-
-   Everything else on the 5v5 board is deliberately still open ground: these sit
-   ~580 units off the nearest lane, far enough that no wave paths near them. */
-/* Three-door objective pits. Two mouths connect the river and the narrower
-   rear mouth connects the adjacent jungle — a steal or collapse can now come
-   from a meaningfully different angle instead of from either end of one tube. */
+/* ---- walls ---- */
 const PIT_WALL_R = 340;
-const RIVER_ANG = Math.atan2(1, 1);
-function ringWallsWithGaps(pit, gaps) {
+function ringWalls(centre, radius, gaps, thick = 46) {
   const sorted = gaps.map(g => ({ a: (g.a % TAU + TAU) % TAU, half: g.half }))
     .sort((a, b) => a.a - b.a);
   const out = [];
@@ -316,88 +292,77 @@ function ringWallsWithGaps(pit, gaps) {
     const start = g.a + g.half;
     let end = next.a - next.half;
     if (i === sorted.length - 1) end += TAU;
-    if (end - start > 0.12) out.push(wallArc(pit.x, pit.y, PIT_WALL_R, start, end, 46, 12));
+    if (end - start > 0.12) out.push(wallArc(centre.x, centre.y, radius, start, end, thick, 12));
   }
   return out;
 }
-const lordGaps = [
-  { a: RIVER_ANG, half: 0.40 },
-  { a: RIVER_ANG + Math.PI, half: 0.40 },
-  { a: RIVER_ANG + Math.PI / 2, half: 0.27 },
-];
+const angleTo = (from, to) => Math.atan2(to.y - from.y, to.x - from.x);
+const DIAG = Math.PI / 4;                       // toward the marsh corner
+/* Warden's fort: a door toward the isle and one toward each cliff pocket. */
 const EPIC_WALLS = [
-  ...ringWallsWithGaps(LORD_PIT, lordGaps),
-  ...ringWallsWithGaps(TURTLE_PIT, lordGaps.map(g => ({ a: g.a + Math.PI, half: g.half }))),
+  ...ringWalls(LORD_PIT, PIT_WALL_R, [
+    { a: DIAG, half: 0.36 },
+    { a: angleTo(LORD_PIT, mp(700, 1900)), half: 0.3 },
+    { a: angleTo(LORD_PIT, mp(1900, 700)), half: 0.3 },
+  ]),
+  /* Leviathan's lake: reed banks with wide openings — the marsh is open ground. */
+  ...ringWalls(TURTLE_PIT, PIT_WALL_R, [
+    { a: DIAG + Math.PI, half: 0.5 },
+    { a: angleTo(TURTLE_PIT, mp(1850, 2400)), half: 0.42 },
+    { a: angleTo(TURTLE_PIT, mp(2400, 1850)), half: 0.42 },
+  ], 40),
+  /* Crown Isle: ruined walls with the mid lane running straight through and
+     two side doors toward the Warden and the lake. */
+  ...ringWalls(ISLE, ISLE.r + 10, [
+    { a: DIAG + Math.PI / 2, half: 0.4 },     // toward blue along mid
+    { a: DIAG - Math.PI / 2, half: 0.4 },     // toward red along mid
+    { a: DIAG + Math.PI, half: 0.34 },        // toward the Warden
+    { a: DIAG, half: 0.34 },                  // toward the lake
+  ], 44),
 ];
 
-/* Jungle ridges turn the four forests into the dense, nested camp corridors of
-   the reference board. These six live in Blue's upper jungle; reflecting them
-   across the anti-diagonal supplies Blue's lower jungle, and rotating both
-   through the centre supplies Red's two jungles. Every visible formation is
-   therefore also real collision terrain and every side receives the same
-   routes, camp pockets and invade entrances. */
-const authoredJungleWalls = [
-  { pts: [mp(430, 2390), mp(500, 2290), mp(525, 2140)], r: 52 },
-  { pts: [mp(585, 1190), mp(700, 1230), mp(780, 1360)], r: 54 },
-  { pts: [mp(485, 1690), mp(590, 1770), mp(720, 1785)], r: 56 },
-  { pts: [mp(825, 1540), mp(950, 1470), mp(1080, 1480)], r: 54 },
-  { pts: [mp(1040, 1920), mp(1160, 1850), mp(1230, 1730)], r: 56 },
-  { pts: [mp(470, 965), mp(570, 855), mp(715, 800)], r: 52 },
-  { pts: [mp(395, 1780), mp(415, 1960), mp(430, 2120)], r: 46 },
-  { pts: [mp(820, 2220), mp(940, 2180), mp(1020, 2060)], r: 50 },
-];
 const mapWall = (w, fn) => ({ pts: w.pts.map(fn), r: w.r });
-const JUNGLE_WALLS = authoredJungleWalls.flatMap(w => {
-  const m = mapWall(w, mirrorPt);
-  return [w, m, mapWall(w, rotPt), mapWall(m, rotPt)];
-});
+/* Blue's cliff pocket is ridged like a real cliff; the marsh has one low bank. */
+const blueJungleWalls = [
+  { pts: [mp(430, 2350), mp(500, 2250), mp(540, 2100)], r: 52 },
+  { pts: [mp(560, 1230), mp(690, 1280), mp(790, 1400)], r: 54 },
+  { pts: [mp(480, 1720), mp(600, 1780), mp(730, 1790)], r: 56 },
+  { pts: [mp(940, 2040), mp(1050, 1960), mp(1090, 1840)], r: 56 },
+  { pts: [mp(470, 960), mp(570, 860), mp(710, 800)], r: 52 },
+  { pts: [mp(1300, 2330), mp(1420, 2290), mp(1540, 2340)], r: 46 },
+];
+const JUNGLE_WALLS = blueJungleWalls.flatMap(w => [w, mapWall(w, swapPt)]);
 
-/* Two stone shoulders split each base entrance into the three lane funnels
-   familiar from high-ground defence, without crossing any minion path. */
+/* Two stone shoulders split each base entrance into the three lane funnels. */
 const blueBaseShoulder = { pts: [mp(480, 2550), mp(560, 2470)], r: 52 };
 const blueBaseShoulderMirror = mapWall(blueBaseShoulder, mirrorPt);
 const BASE_WALLS = [
   blueBaseShoulder, blueBaseShoulderMirror,
-  mapWall(blueBaseShoulder, rotPt), mapWall(blueBaseShoulderMirror, rotPt),
+  mapWall(blueBaseShoulder, swapPt), mapWall(blueBaseShoulderMirror, swapPt),
 ];
 
 const MAP_WALLS = [...EPIC_WALLS, ...JUNGLE_WALLS, ...BASE_WALLS];
 
-/* Tall-grass thickets along river crossings, jungle pockets and lane
-   approaches — the concealing beds of the reference board. Authored on
-   Blue's gold-side, then mirrored to EXP and rotated to Red so every
-   patch has a 180° twin. Occupancy only tints the hero; vision is still
-   the fog grid (walls stay out of that pipeline). */
-const authoredBushes = [
-  { ...mp(430, 920), r: 82 },   // gold-lane river thicket
-  { ...mp(700, 640), r: 74 },   // gold elbow, jungle side
-  { ...mp(380, 1420), r: 68 },  // gold-lane jungle lip
-  { ...mp(1240, 1510), r: 72 }, // mid-river approach
-  { ...mp(980, 1280), r: 70 },  // river bank toward Lord
-  { ...mp(780, 1720), r: 66 },  // jungle near Sage
-  { ...mp(1080, 1860), r: 64 }, // jungle corridor
-  { ...mp(540, 2280), r: 72 },  // inner gold, base exit
-  { ...mp(620, 1240), r: 70 },  // scavenger-crab river mouth
-  { ...mp(510, 1760), r: 66 },  // EXP gank thicket
-  { ...mp(1320, 1680), r: 68 }, // lithowanderer bank
-  { ...mp(860, 760), r: 72 },   // gold-river outer bank
-  { ...mp(1100, 1020), r: 66 }, // river path toward Lord
-  { ...mp(640, 2480), r: 70 },  // inner jungle, high ground
+/* ---- bushes ----
+   The cliff side gets two thickets per team; the marsh side gets six. That
+   asymmetry IS the lane design: the Marsh Road hides ganks, the Cliff Road
+   does not. Blue's are authored, Red's are the swap. */
+const blueBushes = [
+  { ...mp(400, 1520), r: 68 },    // cliff road lip
+  { ...mp(860, 2060), r: 66 },    // cliff pocket exit toward mid
+  { ...mp(1200, 1800), r: 70 },   // west ford bank
+  { ...mp(1000, 2620), r: 72 },   // marsh road, outer
+  { ...mp(1500, 2600), r: 70 },   // marsh road, middle
+  { ...mp(1300, 2180), r: 68 },   // marsh pocket entrance
+  { ...mp(1750, 2380), r: 66 },   // beside the Bog buff
+  { ...mp(2050, 2560), r: 72 },   // marsh road, inner
+  { ...mp(2250, 2450), r: 66 },   // marsh road corner
 ];
 const BUSHES = (() => {
-  const seeds = authoredBushes.filter(b =>
-    !MAP_WALLS.some(w => wallBlocks(w, b.x, b.y, b.r * 0.4)));
+  const seeds = blueBushes.flatMap(b => [b, { ...swapPt(b), r: b.r }])
+    .filter(b => !MAP_WALLS.some(w => wallBlocks(w, b.x, b.y, b.r * 0.4)));
   const out = [];
-  const add = b => {
-    if (out.some(p => dist(p, b) < 12)) return;
-    out.push(b);
-  };
-  for (const b of seeds) {
-    add(b);
-    add({ ...mirrorPt(b), r: b.r });
-    add({ ...rotPt(b), r: b.r });
-    add({ ...rotPt(mirrorPt(b)), r: b.r });
-  }
+  for (const b of seeds) if (!out.some(p => dist(p, b) < 12)) out.push(b);
   return out;
 })();
 

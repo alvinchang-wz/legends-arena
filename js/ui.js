@@ -1247,7 +1247,7 @@ const UI = {
       if (u instanceof Inhibitor) return `<span style="color:${tc}">${this.icon('misc:gate', 17, '🚪')} Inhibitor</span>`;
       if (u instanceof Tower) return `<span style="color:${tc}">${this.icon('misc:turret', 17, '🗼')} ${u.isBase ? 'Base' : 'Turret'}</span>`;
       if (u instanceof Minion) {
-        const k = u.kind === 'super' ? 'Super Minion' : u.kind === 'lord' ? 'Lord Minion' : 'Minion';
+        const k = u.kind === 'super' ? 'Super Minion' : u.kind === 'lord' ? 'Warden Minion' : 'Minion';
         return `<span style="color:${tc}">${k}</span>`;
       }
       if (u instanceof Monster) return `<span style="color:${THEME.neutral}">${u.buff ? u.buff.name : 'Monster'}</span>`;
@@ -1509,15 +1509,22 @@ const UI = {
           : (c.kind === 'litho' || c.kind === 'crab') ? 2.8 : 3.2;
         g.beginPath(); g.arc(mx(c.x), my(c.y), rr, 0, TAU); g.fill();
       }
-      g.strokeStyle = '#0e4a48'; g.lineWidth = 16; g.lineCap = 'round';
-      g.beginPath(); g.moveTo(mx(RIVER.a.x), my(RIVER.a.y));
-      g.lineTo(mx(RIVER.b.x), my(RIVER.b.y)); g.stroke();
-      g.strokeStyle = rgba(THEME.river, 0.95); g.lineWidth = 11;
-      g.beginPath(); g.moveTo(mx(RIVER.a.x), my(RIVER.a.y));
-      g.lineTo(mx(RIVER.b.x), my(RIVER.b.y)); g.stroke();
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      for (const [w, col] of [[9, '#0e4a48'], [6, rgba(THEME.river, 0.95)]]) {
+        g.strokeStyle = col; g.lineWidth = w;
+        for (const s of STREAMS) {
+          g.beginPath(); g.moveTo(mx(s[0].x), my(s[0].y));
+          for (const q of s) g.lineTo(mx(q.x), my(q.y));
+          g.stroke();
+        }
+      }
+      g.fillStyle = rgba(THEME.river, 0.95);
+      g.beginPath(); g.arc(mx(LAKE.x), my(LAKE.y), LAKE.r * k, 0, TAU); g.fill();
+      g.fillStyle = rgba(THEME.lane, 0.7);
+      g.beginPath(); g.arc(mx(ISLE.x), my(ISLE.y), ISLE.r * k * 0.9, 0, TAU); g.fill();
       for (const p of [LORD_PIT, TURTLE_PIT]) {
         g.fillStyle = rgba(THEME.riverLight, 0.8);
-        g.beginPath(); g.arc(mx(p.x), my(p.y), 12, 0, TAU); g.fill();
+        g.beginPath(); g.arc(mx(p.x), my(p.y), 8, 0, TAU); g.fill();
       }
     }
     const lanes = Game.isDuel() ? DUEL_MAP.lanes : Game.isTen() ? TEN_MAP.lanes : LANES;

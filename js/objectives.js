@@ -23,12 +23,12 @@ const JUNGLE_BUFFS = {
     desc: '+18 Attack, +22 Magic Power, +20% Tenacity',
   },
   lord: {
-    name: "Lord's Favour", icon: '👑', color: '#ffc94a', dur: 90,
+    name: "Crown's Sight", icon: '👑', color: '#ffc94a', dur: 90,
     stats: { physAtk: 22, magicPower: 28, maxHp: 350 },
     desc: '+22 Attack, +28 Magic Power, +350 HP',
   },
   turtle: {
-    name: 'Turtle Blessing', icon: '🐢', color: '#4ade80', dur: 60,
+    name: 'Tidewave', icon: '🐢', color: '#4ade80', dur: 60,
     stats: { physAtk: 12, magicPower: 15, hpRegen: 12 },
     desc: '+12 Attack, +15 Magic Power, +12 HP/s',
   },
@@ -99,7 +99,7 @@ class EpicMonster extends Unit {
     const ten = typeof Game !== 'undefined' && Game.isTen && Game.isTen();
     this.color = lord ? THEME.gold : (ten ? '#f0b429' : THEME.hp);
     this.icon = lord ? (ten ? '🌋' : '👑') : (ten ? '🕯️' : '🐢');
-    this.name = lord ? (ten ? 'Colossus' : 'Lord') : (ten ? 'Warden' : 'Turtle');
+    this.name = lord ? (ten ? 'Colossus' : 'Warden') : (ten ? 'Sentinel' : 'Leviathan');
     this.evolved = false;
     this.target = null; this.leashed = false;
     if (lord && Game.time >= BALANCE.ancientLordAt) this.evolve();
@@ -108,7 +108,7 @@ class EpicMonster extends Unit {
     if (this.epic !== 'lord' || this.evolved) return false;
     const pct = this.maxHp > 0 ? this.hp / this.maxHp : 1;
     this.evolved = true;
-    this.name = Game.isTen && Game.isTen() ? 'Elder Colossus' : 'Ancient Lord';
+    this.name = Game.isTen && Game.isTen() ? 'Elder Colossus' : 'Elder Warden';
     this.radius = 54;
     this.maxHp = 9000;
     this.hp = Math.max(1, Math.round(this.maxHp * pct));
