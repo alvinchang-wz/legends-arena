@@ -97,13 +97,39 @@ bases = {'A': base((68, 54, 41), (190, 1312)), 'B': base((52, 65, 51), (1335, 17
 # lanes and connections: mid-gray bands (also where they pass through range tints)
 lane_mask = gray & (v >= 55) & (v <= 80)
 lane_mask |= (abs(r - 63) <= 6) & (abs(g - 60) <= 6) & (abs(b - 58) <= 6)
-lane_mask = cv2.morphologyEx(lane_mask.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) > 0
+# every wall and camp has a thin anti-aliased rim in this same gray; open the
+# mask so only real roads (40+ px wide) survive, then close small gaps
+lane_mask = cv2.morphologyEx(lane_mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((15, 15), np.uint8))
+lane_mask = cv2.morphologyEx(lane_mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) > 0
 near_lane = cv2.dilate(lane_mask.astype(np.uint8), np.ones((41, 41), np.uint8)) > 0
-loose = np.zeros((H, W), np.uint8)
+# where a loose rock sat on a lane it left a hole or a notch. Heal the lane
+# there by closing the band across the gap, and only there, so the rock's own
+# outline never becomes part of the road
+# Fit the local band (a straight strip) from the lane pixels around the rock,
+# then restore only the footprint pixels that fall inside that strip.
 for w in walls:
-    if not w['nearCamp']: cv2.fillPoly(loose, [np.array(w['poly'], dtype=np.int32)], 1)
-loose = cv2.dilate(loose, np.ones((9, 9), np.uint8)) > 0
-lane_mask |= loose & near_lane
+    if w['nearCamp']: continue
+    foot = np.zeros((H, W), np.uint8)
+    cv2.fillPoly(foot, [np.array(w['poly'], dtype=np.int32)], 1)
+    foot = cv2.dilate(foot, np.ones((7, 7), np.uint8)) > 0
+    # only rocks that actually sit on the road: a real share of the footprint
+    # must border lane pixels, not just brush past the verge
+    if (foot & near_lane).sum() < 0.35 * foot.sum(): continue
+    cx, cy = int(w['cx']), int(w['cy'])
+    y0, y1, x0, x1 = max(0, cy - 120), min(H, cy + 120), max(0, cx - 120), min(W, cx + 120)
+    win = lane_mask[y0:y1, x0:x1] & ~foot[y0:y1, x0:x1]
+    ys, xs = np.nonzero(win)
+    if len(xs) < 200: continue
+    pts = np.stack([xs + x0, ys + y0], 1).astype(float)
+    mean = pts.mean(0)
+    _, _, vt = np.linalg.svd(pts - mean, full_matrices=False)
+    normal = vt[1]
+    proj = (pts - mean) @ normal
+    lo, hi = np.percentile(proj, 1), np.percentile(proj, 99)
+    fy, fx = np.nonzero(foot)
+    fp = (np.stack([fx, fy], 1) - mean) @ normal
+    inside = (fp >= lo) & (fp <= hi)
+    lane_mask[fy[inside], fx[inside]] = True
 lanes = regions(lane_mask, 3000)
 conn_mask = (abs(r - g) <= 6) & (abs(g - b) <= 6) & (v >= 36) & (v <= 50)
 # open first: the anti-aliased rim of every lane is this gray too, and as a
