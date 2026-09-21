@@ -887,10 +887,6 @@ const Features = {
     this.fillWhatsNew();
     this.fillHistory();
     this.applySettingsDom();
-    const hint = document.querySelector('#select .hint');
-    if (hint && FEATURE_CATALOG.length) {
-      hint.insertAdjacentHTML('afterend', `<p class="hint" id="featTip">Tip: ${FEATURE_CATALOG[3]} · ${FEATURE_CATALOG[21]} · ${FEATURE_CATALOG[41]}</p>`);
-    }
     document.getElementById('emoteWheel')?.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', () => {
         this.emote(b.dataset.em);
@@ -914,6 +910,7 @@ const Features = {
     el.classList.toggle('hidden');
   },
   fillHistory() {
+    if (typeof Screens !== 'undefined' && Screens.renderHistory) { Screens.renderHistory(); return; }
     const host = document.getElementById('matchHist');
     if (!host) return;
     let hist = [];

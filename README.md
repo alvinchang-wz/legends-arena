@@ -16,6 +16,24 @@ Then open <http://localhost:8642>. Works on desktop and mobile (landscape).
 edits always take effect; any static server works, but bump the `?v=` tags
 in `index.html` after editing files if yours sends cache headers.)
 
+## Screens
+
+The game opens on a title screen with a live bot match playing behind it,
+then a lobby (profile, featured hero, recent matches, mode picker and one
+START button), a mode select (Classic 5v5, Caldera 10v10, 1v1 Duel, plus
+watch-only AI matches), the draft screen (team columns, role-filtered
+roster, hero showcase, battle spell and emblem), and a post-match screen.
+The flow lives in `js/screens.js` and `css/screens.css`; the layout follows
+the landscape mobile-MOBA convention (primary action bottom-right, back
+top-left, secondary nav on the left) and scales from a 390px-tall phone up
+to desktop via the `--ms` menu-scale variable.
+
+The match behind the menus is "attract mode" (`Game.attract`): muted, no HUD
+work, painted at half rate, and replaced the moment a real match starts.
+
+`manifest.webmanifest` and `icon.svg` make the site installable as a
+landscape, fullscreen app on Android and desktop Chrome.
+
 ## Headless simulator
 
 The command-line simulator runs the real game state and bot logic without a

@@ -22,6 +22,7 @@ const Game = {
   cam: { x: BASES[0].x, y: BASES[0].y, zoom: 1, zoomWant: 1 },
   kills: [0, 0], firstBlood: false,
   spectate: false, simSpeed: 1, followHero: null, autoTrain: false,
+  attract: false,         // bot match running silently behind the menus (see screens.js)
   paused: false,
   mode: 'standard',       // 'standard' (5v5), 'ten' (10v10 Caldera), or 'duel'
   DUEL_TO: 5,             // first to N kills wins a practice duel
@@ -269,6 +270,12 @@ const Game = {
 
   endGame(winnerTeam) {
     if (this.state !== 'play') return;
+    if (this.attract) {
+      // the menu background finished a match: no history, no end screen, roll another
+      this.state = 'end';
+      setTimeout(() => { if (typeof Screens !== 'undefined') Screens.attractRestart(); }, 1800);
+      return;
+    }
     this.resume();
     this.state = 'end';
     this.lastWinner = winnerTeam;
@@ -1060,6 +1067,7 @@ const Game = {
   },
 
   pause() {
+    if (this.attract) return;   // nothing to protect; the frame loop already idles when hidden
     if (this.paused || this.state !== 'play' || this.spectate) return;
     this.paused = true;
     if (UI.showPause) UI.showPause(true);
@@ -3752,10 +3760,11 @@ function frame(now) {
   /* High-refresh displays were painting this canvas twice a frame for no
      visible gain. Cap the paint + HUD at 60 Hz; the sim already steps there. */
   drawAcc += raw;
-  if (drawAcc < RENDER_STEP * 0.85) return;
+  const step = Game.attract ? RENDER_STEP * 2 : RENDER_STEP;
+  if (drawAcc < step * 0.85) return;
   const hudDt = drawAcc;
-  drawAcc -= RENDER_STEP;
-  if (drawAcc > RENDER_STEP) drawAcc = 0;
+  drawAcc -= step;
+  if (drawAcc > step) drawAcc = 0;
   render();
   UI.syncHUD(hudDt);
 }

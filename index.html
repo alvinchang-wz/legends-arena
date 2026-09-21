@@ -4,8 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05080f">
-<title>Legends Arena — 5v5, 10v10 & 1v1</title>
-<link rel="stylesheet" href="css/style.css?v=69">
+<title>Legends Arena</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="css/style.css?v=70">
+<link rel="stylesheet" href="css/screens.css?v=1">
 </head>
 <body>
 <div id="app">
@@ -52,51 +59,6 @@
     <div id="aimCancelZone" class="hidden">
       <b>✕ CANCEL</b>
       <small>drag here · Esc · right-click</small>
-    </div>
-
-    <div id="settingsPanel" class="hidden" role="dialog" aria-label="Control settings">
-      <div class="settingsHead">
-        <b>Control settings</b>
-        <button id="btnSettingsClose" aria-label="Close settings">✕</button>
-      </div>
-      <label class="settingRow" for="setReleaseAim">
-        <span>
-          <b>Release to cast</b>
-          <small>On by default for mouse/keyboard. Hold a skill key to aim at the cursor, release to cast; tap for quick cast. Press <kbd>Esc</kbd> or right-click to cancel.</small>
-        </span>
-        <input id="setReleaseAim" type="checkbox">
-      </label>
-      <label class="settingRow settingSelect" for="setTargetPriority">
-        <span>
-          <b>Hero targeting</b>
-          <small>Fallback when the cursor isn’t over a unit. Attacks follow the mouse; click or hold to swing.</small>
-        </span>
-        <select id="setTargetPriority">
-          <option value="lowHp">Lowest HP</option>
-          <option value="nearest">Nearest</option>
-        </select>
-      </label>
-      <div class="settingsKey"><span>Attack</span><kbd>Click</kbd> / <kbd>Space</kbd></div>
-      <div class="settingsKey"><span>Attack-move</span><kbd>Q</kbd></div>
-      <div class="settingsKey"><span>Halt</span><kbd>H</kbd></div>
-      <div class="settingsKey"><span>Camera lock</span><kbd>Y</kbd></div>
-      <div class="settingsKey"><span>Center camera</span><kbd>R</kbd></div>
-      <div class="settingsKey"><span>Battle spell</span><kbd>F</kbd></div>
-      <div class="settingsKey"><span>Consumables</span><kbd>4</kbd> <kbd>5</kbd> <kbd>6</kbd></div>
-      <div class="settingsKey"><span>Emotes</span><kbd>E</kbd></div>
-      <div class="settingsKey"><span>Missing ping</span><kbd>`</kbd></div>
-      <div class="settingsKey"><span>Quick chat</span><kbd>Enter</kbd></div>
-      <div class="settingsKey"><span>Undo buy</span><kbd>U</kbd></div>
-      <label class="settingRow" for="setCamLock"><span><b>Camera lock</b><small>Keep the camera on your hero. Toggle with Y.</small></span><input id="setCamLock" type="checkbox" checked></label>
-      <label class="settingRow" for="setAutoAtk"><span><b>Auto-attack</b><small>Attack nearest when standing still.</small></span><input id="setAutoAtk" type="checkbox" checked></label>
-      <label class="settingRow" for="setAlwaysRange"><span><b>Always show attack range</b></span><input id="setAlwaysRange" type="checkbox"></label>
-      <label class="settingRow" for="setFps"><span><b>FPS counter</b></span><input id="setFps" type="checkbox"></label>
-      <label class="settingRow" for="setLargeMini"><span><b>Large minimap</b></span><input id="setLargeMini" type="checkbox"></label>
-      <label class="settingRow" for="setColorblind"><span><b>Colorblind outlines</b><small>Blue/orange rings on every hero.</small></span><input id="setColorblind" type="checkbox"></label>
-      <label class="settingRow settingSelect" for="setPeek"><span><b>Camera peek</b><small>Shift the view toward the cursor. Off by default.</small></span><input id="setPeek" type="range" min="0" max="1.6" step="0.1" value="0"></label>
-      <label class="settingRow settingSelect" for="setShake"><span><b>Screen shake</b></span><input id="setShake" type="range" min="0" max="1.5" step="0.1" value="1"></label>
-      <label class="settingRow settingSelect" for="setSfx"><span><b>SFX volume</b></span><input id="setSfx" type="range" min="0" max="1" step="0.05" value="1"></label>
-      <label class="settingRow settingSelect" for="setAmb"><span><b>Ambience</b></span><input id="setAmb" type="range" min="0" max="1" step="0.05" value="0.7"></label>
     </div>
 
     <div id="specBar" class="hidden">
@@ -199,84 +161,179 @@
     <div id="scoreboard" class="hidden"></div>
   </div>
 
-  <!-- Hero select -->
-  <div id="select">
-    <h1>LEGENDS ARENA</h1>
-    <p class="sub">5v5 on the Dawn board · 10v10 on the Auric Caldera · or a 1v1 duel</p>
-    <div id="selectBody">
-      <div id="pickCol">
+  <!-- ===== Out-of-match screens (js/screens.js, css/screens.css) ===== -->
+  <div id="menuShade"></div>
+
+  <section id="title" class="screen" hidden>
+    <div class="titleLogo">
+      <div class="logoWord goldText">LEGENDS</div>
+      <div class="logoWord second goldText">ARENA</div>
+      <div class="logoRule"></div>
+      <div class="titleSub">5V5 MOBA · PLAY ANYWHERE</div>
+    </div>
+    <div class="titleTap">TAP TO START</div>
+    <div class="titleFoot"><span id="titleVer"></span><span>28 HEROES · 3 MODES · NO ACCOUNT NEEDED</span></div>
+  </section>
+
+  <section id="lobby" class="screen" hidden>
+    <header class="lobbyTop">
+      <button type="button" id="lbProfile" class="profile" title="Change your name">
+        <span class="pfAvatar" id="pfAvatar"></span>
+        <span class="pfText"><b id="pfName">PLAYER</b><small id="pfSub"></small></span>
+      </button>
+      <div class="lobbyTopRight">
+        <span class="pill" id="pfRecord"></span>
+        <button type="button" class="iconBtn" id="lbNews" title="What's new">✦</button>
+        <button type="button" class="iconBtn" id="lbSettings" title="Settings">⚙</button>
+      </div>
+    </header>
+    <div class="lobbyMid">
+      <nav class="lobbyNav">
+        <button type="button" id="lbHeroes"><span class="navIco">🛡</span><span>Heroes</span></button>
+        <button type="button" id="lbSpectate"><span class="navIco">👁</span><span>Watch</span></button>
+        <button type="button" id="lbHistory"><span class="navIco">📜</span><span>History</span></button>
+      </nav>
+      <div class="showcase" id="showcase" title="Open the hero roster">
+        <div class="scRing" id="scRing"></div>
+        <div class="scName" id="scName"></div>
+        <div class="scRole" id="scRole"></div>
+        <div class="scTag">Featured hero · tap to browse</div>
+      </div>
+      <aside class="lobbySide panel">
+        <div class="sideTitle">RECENT MATCHES <small>LAST 8</small></div>
+        <div id="matchHist"></div>
+      </aside>
+    </div>
+    <footer class="lobbyBottom">
+      <button type="button" id="lbMode" class="modePill"><small>MODE</small><b id="lbModeName">CLASSIC 5V5</b><span class="chev">▾</span></button>
+      <button type="button" id="lbStart" class="cta">START</button>
+    </footer>
+  </section>
+
+  <section id="modes" class="screen" hidden>
+    <header class="screenHead"><button type="button" class="backBtn" data-back aria-label="Back">‹</button><h2>SELECT MODE</h2></header>
+    <div class="modeBody">
+      <div class="groupLabel">PLAY</div>
+      <div class="modeCards" id="modeCards"></div>
+      <div class="groupLabel">WATCH · AI VS AI</div>
+      <div class="modeCards" id="specCards"></div>
+      <div id="matchup">
+        <span class="muLabel">BOTS</span>
+        <span class="muSide">
+          <b style="color:var(--team-blue)">BLUE</b>
+          <button class="muBtn sel" data-team="0" data-type="heuristic">Heuristic</button><button
+                  class="muBtn" data-team="0" data-type="neural">Neural</button>
+        </span>
+        <span class="muVs">vs</span>
+        <span class="muSide">
+          <b style="color:var(--team-red)">RED</b>
+          <button class="muBtn sel" data-team="1" data-type="heuristic">Heuristic</button><button
+                  class="muBtn" data-team="1" data-type="neural">Neural</button>
+        </span>
+        <span id="muStatus"></span>
+      </div>
+    </div>
+    <footer class="modeFoot"><button type="button" id="btnModeConfirm" class="cta">CONFIRM</button></footer>
+  </section>
+
+  <section id="pick" class="screen" hidden>
+    <header class="screenHead">
+      <button type="button" class="backBtn" data-back aria-label="Back">‹</button>
+      <div class="phase"><b id="pickPhase">PICK YOUR HERO</b><small id="draftHint"></small></div>
+      <span class="spacer"></span>
+      <div id="banRow"></div>
+      <div class="pickTools">
+        <button type="button" id="btnDraftRandom">🎲 Random</button>
+        <button type="button" id="btnDraftClear">Clear</button>
+      </div>
+    </header>
+    <div class="pickBody">
+      <aside class="teamCol blue"><span class="teamLabel">BLUE</span><div class="draftSlots" id="draftBlue"></div></aside>
+      <div class="roster">
         <div id="roleFilter"></div>
         <div id="heroGrid"></div>
-        <div id="draft">
-          <div class="draftRow">
-            <span class="draftLabel" style="color:var(--team-blue)">BLUE</span>
-            <div class="draftSlots" id="draftBlue"></div>
-          </div>
-          <div class="draftRow">
-            <span class="draftLabel" style="color:var(--team-red)">RED</span>
-            <div class="draftSlots" id="draftRed"></div>
-          </div>
-          <div class="draftTools">
-            <span id="draftHint">Pick a slot, then a hero · empty slots roll random</span>
-            <button type="button" id="btnSlots5" class="slotSize sel">5 slots</button>
-            <button type="button" id="btnSlots10" class="slotSize">10 slots</button>
-            <button id="btnDraftRandom">🎲 Random</button>
-            <button id="btnDraftClear">Clear</button>
-          </div>
-          <div id="banRow"></div>
-        </div>
       </div>
-      <div id="sideCol">
+      <aside class="teamCol red"><span class="teamLabel">RED</span><div class="draftSlots" id="draftRed"></div></aside>
+      <div class="showcaseCol">
         <div id="heroInfo"><p class="pickHint">Select a hero to see their skills</p></div>
         <div id="loadout">
-          <div class="loRow"><span class="loLabel">Battle spell</span><div id="spellPick"></div></div>
+          <div class="loRow"><span class="loLabel">Spell</span><div id="spellPick"></div></div>
           <div class="loRow"><span class="loLabel">Emblem</span><div id="emblemPick"></div></div>
           <div id="loDesc" class="loDesc"></div>
         </div>
       </div>
     </div>
-    <div class="btnRow">
-      <button id="btnStart" disabled>ENTER 5V5</button>
-      <button id="btnTen" disabled title="A larger original board: four outer roads around a molten crater. Not the 5v5 map.">ENTER 10V10</button>
-      <button id="btnDuel" disabled title="Your hero versus Red slot 1; empty means a random opponent">⚔ 1V1 DUEL</button>
-    </div>
-    <div class="btnRow">
-      <button id="btnSpectate">👁 SPECTATE 5V5</button>
-      <button id="btnSpectateTen">👁 SPECTATE 10V10</button>
-    </div>
-    <div class="btnRow">
-      <button type="button" id="btnWhatsNew">✦ 50 MLBB FEATURES</button>
-      <button type="button" id="btnFavHero">★ Favorite this hero</button>
-    </div>
-    <div id="matchHist"></div>
-    <div id="whatsNew" class="hidden">
-      <div class="wnHead"><b>What’s new — Mobile Legends systems</b><button id="wnClose">✕</button></div>
-      <ol id="wnList"></ol>
-    </div>
-    <div id="matchup">
-      <span class="muLabel">Spectator matchup</span>
-      <span class="muSide">
-        <b style="color:var(--team-blue)">BLUE</b>
-        <button class="muBtn sel" data-team="0" data-type="heuristic">Heuristic</button><button
-                class="muBtn" data-team="0" data-type="neural">Neural</button>
-      </span>
-      <span class="muVs">vs</span>
-      <span class="muSide">
-        <b style="color:var(--team-red)">RED</b>
-        <button class="muBtn sel" data-team="1" data-type="heuristic">Heuristic</button><button
-                class="muBtn" data-team="1" data-type="neural">Neural</button>
-      </span>
-      <span id="muStatus"></span>
-    </div>
-    <p class="hint">🕹 Move: joystick / WASD &nbsp;·&nbsp; ⚔ Attack: click / Space · hero G · lane T &nbsp;·&nbsp; ✨ Skills: tap or drag to aim / 1·2·3 &nbsp;·&nbsp; 💫 Battle spell: F &nbsp;·&nbsp; 🏠 Recall: B</p>
-    <p class="hint">📈 Level a skill: <kbd>Shift</kbd>+<kbd>1/2/3</kbd> &nbsp;·&nbsp; 📊 Scoreboard: <kbd>Tab</kbd> &nbsp;·&nbsp; 💡 hold a skill button to read it</p>
+    <footer class="pickFoot">
+      <button type="button" id="btnFavHero" class="ghostBtn">★ Favorite</button>
+      <span class="spacer"></span>
+      <button type="button" id="btnStart" class="cta" disabled>ENTER BATTLE</button>
+    </footer>
+  </section>
+
+  <!-- modals shared by the lobby -->
+  <div id="modalBackdrop" class="hidden"></div>
+  <div id="whatsNew" class="modal hidden">
+    <div class="wnHead"><b>WHAT'S NEW</b><button type="button" id="wnClose" aria-label="Close">✕</button></div>
+    <ol id="wnList"></ol>
   </div>
+  <div id="histModal" class="modal hidden">
+    <div class="wnHead"><b>RECENT MATCHES</b><button type="button" id="histClose" aria-label="Close">✕</button></div>
+    <div id="histList"></div>
+  </div>
+    <div id="settingsPanel" class="hidden" role="dialog" aria-label="Control settings">
+      <div class="settingsHead">
+        <b>Control settings</b>
+        <button id="btnSettingsClose" aria-label="Close settings">✕</button>
+      </div>
+      <label class="settingRow" for="setReleaseAim">
+        <span>
+          <b>Release to cast</b>
+          <small>On by default for mouse/keyboard. Hold a skill key to aim at the cursor, release to cast; tap for quick cast. Press <kbd>Esc</kbd> or right-click to cancel.</small>
+        </span>
+        <input id="setReleaseAim" type="checkbox">
+      </label>
+      <label class="settingRow settingSelect" for="setTargetPriority">
+        <span>
+          <b>Hero targeting</b>
+          <small>Fallback when the cursor isn’t over a unit. Attacks follow the mouse; click or hold to swing.</small>
+        </span>
+        <select id="setTargetPriority">
+          <option value="lowHp">Lowest HP</option>
+          <option value="nearest">Nearest</option>
+        </select>
+      </label>
+      <div class="settingsKey"><span>Attack</span><kbd>Click</kbd> / <kbd>Space</kbd></div>
+      <div class="settingsKey"><span>Attack-move</span><kbd>Q</kbd></div>
+      <div class="settingsKey"><span>Halt</span><kbd>H</kbd></div>
+      <div class="settingsKey"><span>Camera lock</span><kbd>Y</kbd></div>
+      <div class="settingsKey"><span>Center camera</span><kbd>R</kbd></div>
+      <div class="settingsKey"><span>Battle spell</span><kbd>F</kbd></div>
+      <div class="settingsKey"><span>Consumables</span><kbd>4</kbd> <kbd>5</kbd> <kbd>6</kbd></div>
+      <div class="settingsKey"><span>Emotes</span><kbd>E</kbd></div>
+      <div class="settingsKey"><span>Missing ping</span><kbd>`</kbd></div>
+      <div class="settingsKey"><span>Quick chat</span><kbd>Enter</kbd></div>
+      <div class="settingsKey"><span>Undo buy</span><kbd>U</kbd></div>
+      <label class="settingRow" for="setCamLock"><span><b>Camera lock</b><small>Keep the camera on your hero. Toggle with Y.</small></span><input id="setCamLock" type="checkbox" checked></label>
+      <label class="settingRow" for="setAutoAtk"><span><b>Auto-attack</b><small>Attack nearest when standing still.</small></span><input id="setAutoAtk" type="checkbox" checked></label>
+      <label class="settingRow" for="setAlwaysRange"><span><b>Always show attack range</b></span><input id="setAlwaysRange" type="checkbox"></label>
+      <label class="settingRow" for="setFps"><span><b>FPS counter</b></span><input id="setFps" type="checkbox"></label>
+      <label class="settingRow" for="setLargeMini"><span><b>Large minimap</b></span><input id="setLargeMini" type="checkbox"></label>
+      <label class="settingRow" for="setColorblind"><span><b>Colorblind outlines</b><small>Blue/orange rings on every hero.</small></span><input id="setColorblind" type="checkbox"></label>
+      <label class="settingRow settingSelect" for="setPeek"><span><b>Camera peek</b><small>Shift the view toward the cursor. Off by default.</small></span><input id="setPeek" type="range" min="0" max="1.6" step="0.1" value="0"></label>
+      <label class="settingRow settingSelect" for="setShake"><span><b>Screen shake</b></span><input id="setShake" type="range" min="0" max="1.5" step="0.1" value="1"></label>
+      <label class="settingRow settingSelect" for="setSfx"><span><b>SFX volume</b></span><input id="setSfx" type="range" min="0" max="1" step="0.05" value="1"></label>
+      <label class="settingRow settingSelect" for="setAmb"><span><b>Ambience</b></span><input id="setAmb" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+    </div>
+
 
   <!-- End screen -->
   <div id="end" class="hidden">
     <h1 id="endTitle">VICTORY</h1>
     <div id="endStats"></div>
-    <button id="btnAgain">PLAY AGAIN</button>
+    <footer class="endFoot">
+      <button type="button" id="btnHome" class="ghostBtn">HOME</button>
+      <button type="button" id="btnAgain" class="cta">PLAY AGAIN</button>
+    </footer>
   </div>
 
   <div id="rotate" class="hidden">↻ Please rotate your device to landscape</div>
@@ -298,9 +355,10 @@
 <script src="js/objectives.js?v=69"></script>
 <script src="js/items.js?v=71"></script>
 <script src="js/input.js?v=69"></script>
-<script src="js/ui.js?v=72"></script>
-<script src="js/features.js?v=70"></script>
+<script src="js/ui.js?v=73"></script>
+<script src="js/features.js?v=71"></script>
 <script src="js/mlbb.js?v=1"></script>
-<script src="js/main.js?v=74"></script>
+<script src="js/screens.js?v=1"></script>
+<script src="js/main.js?v=75"></script>
 </body>
 </html>

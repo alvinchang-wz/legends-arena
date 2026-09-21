@@ -21,6 +21,7 @@ const SFX = {
     else if (typeof Game !== 'undefined' && Game.state === 'play') this.startAmbience();
   },
   tone(freq, dur, type = 'sine', vol = 0.06, slide = 0) {
+    if (Game.attract) return;
     if (typeof Features !== 'undefined') vol *= Features.prefs.sfx;
     if (!this.on || !this.ctx || this.ctx.state !== 'running') return;
     const t0 = this.ctx.currentTime;
@@ -34,6 +35,7 @@ const SFX = {
     o.start(t0); o.stop(t0 + dur + 0.02);
   },
   noise(dur, vol = 0.05, hp = 1600) {
+    if (Game.attract) return;
     if (!this.on || !this.ctx || this.ctx.state !== 'running') return;
     const ctx = this.ctx, t0 = ctx.currentTime;
     const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
@@ -184,10 +186,9 @@ const UI = {
   },
 
   init() {
-    const ids = ['hud', 'select', 'end', 'heroGrid', 'heroInfo', 'btnStart', 'btnAgain', 'scoreBlue', 'scoreRed',
+    const ids = ['hud', 'pick', 'end', 'heroGrid', 'heroInfo', 'btnStart', 'btnAgain', 'scoreBlue', 'scoreRed',
       'clock', 'killfeed', 'announce', 'minimap', 'ppIcon', 'ppHp', 'ppMp', 'ppHpT', 'ppLevel', 'ppKda', 'ppGold',
       'ppGear', 'deathOverlay', 'deathTimer', 'deathBy', 'deathRecap', 'endTitle', 'endStats', 'btnMute', 'rotate',
-      'btnSpectate', 'btnSpectateTen', 'btnDuel', 'btnTen', 'btnSlots5', 'btnSlots10',
       'specBar', 'specFollow', 'btnSpeed', 'btnLeave', 'btnAuto',
       'matchup', 'muStatus', 'specTypes', 'skillTip',
       'draftBlue', 'draftRed', 'draftHint', 'btnDraftRandom', 'btnDraftClear',
@@ -236,38 +237,6 @@ const UI = {
       this.els.pauseOverlay.addEventListener('click', () => Game.resume());
       this.els.pauseOverlay.addEventListener('pointerdown', () => Game.resume());
     }
-    this.els.btnStart.addEventListener('click', () => {
-      if (!this.selectedHero) return;
-      SFX.ensure();
-      this.setDraftSize(5);
-      Game.mode = 'standard';
-      Game.draft = this.draft;
-      this.els.select.classList.add('hidden');
-      this.els.hud.classList.remove('hidden', 'duel', 'ten');
-      Game.start(this.selectedHero);
-    });
-    if (this.els.btnTen) this.els.btnTen.addEventListener('click', () => {
-      if (!this.selectedHero) return;
-      SFX.ensure();
-      this.setDraftSize(10);
-      Game.mode = 'ten';
-      Game.draft = this.draft;
-      this.els.select.classList.add('hidden');
-      this.els.hud.classList.remove('hidden', 'duel');
-      this.els.hud.classList.add('ten');
-      Game.start(this.selectedHero);
-    });
-    if (this.els.btnDuel) this.els.btnDuel.addEventListener('click', () => {
-        if (!this.selectedHero) return;
-        SFX.ensure();
-        Game.mode = 'duel';
-        Game.draft = this.draft;
-        this.els.select.classList.add('hidden');
-        this.els.hud.classList.remove('hidden', 'ten');
-        this.els.hud.classList.add('duel');
-        Game.start(this.selectedHero);
-      });
-    this.els.btnAgain.addEventListener('click', () => this.returnToSelect());
     this.els.btnMute.addEventListener('click', () => SFX.toggle());
     this.botTypes = ['heuristic', 'heuristic'];
     this.els.matchup.querySelectorAll('.muBtn').forEach(btn => {
@@ -282,27 +251,6 @@ const UI = {
     });
     this.updateMatchupStatus();
 
-    const beginSpectate = async (ten) => {
-      SFX.ensure();
-      if (ten) this.setDraftSize(10); else this.setDraftSize(5);
-      Game.mode = ten ? 'ten' : 'standard';
-      if (this.botTypes.includes('neural') && !NeuralRuntime.ready) await this.ensureModel();
-      Game.botTypes = this.botTypes.slice();
-      Game.draft = this.draft;
-      this.els.select.classList.add('hidden');
-      this.els.hud.classList.remove('hidden', 'duel');
-      this.els.hud.classList.toggle('ten', !!ten);
-      this.els.hud.classList.add('spectating');
-      this.els.specBar.classList.remove('hidden');
-      Game.start(null);
-      SFX.startAmbience();
-      this.els.specTypes.innerHTML =
-        `<b style="color:${TEAM_COLORS[0]}">${this.label(0)}</b> vs ` +
-        `<b style="color:${TEAM_COLORS[1]}">${this.label(1)}</b>` +
-        (ten ? ' · Caldera' : '');
-    };
-    this.els.btnSpectate.addEventListener('click', () => beginSpectate(false));
-    if (this.els.btnSpectateTen) this.els.btnSpectateTen.addEventListener('click', () => beginSpectate(true));
     this.els.btnSpeed.addEventListener('click', () => {
       const i = this.SIM_SPEEDS.indexOf(Game.simSpeed);
       Game.simSpeed = this.SIM_SPEEDS[(i + 1) % this.SIM_SPEEDS.length];
@@ -322,6 +270,32 @@ const UI = {
     this.bindMinimap();
     window.addEventListener('resize', () => this.checkOrientation());
     this.checkOrientation();
+    if (typeof Screens !== 'undefined') Screens.init();
+  },
+
+  /* Start a match from the pick screen. `mode` is 'standard' | 'ten' | 'duel';
+     `spectate` runs it bot-vs-bot with the spectator bar. Screens has already
+     hidden the menus and stopped the attract match. */
+  async launch(mode, spectate) {
+    if (!spectate && !this.selectedHero) return;
+    SFX.ensure();
+    this.setDraftSize(mode === 'ten' ? 10 : 5);
+    Game.mode = mode;
+    Game.draft = this.draft;
+    this.els.hud.classList.remove('hidden', 'duel', 'ten', 'spectating');
+    if (mode === 'ten') this.els.hud.classList.add('ten');
+    if (mode === 'duel') this.els.hud.classList.add('duel');
+    if (!spectate) { Game.start(this.selectedHero); return; }
+    if (this.botTypes.includes('neural') && !NeuralRuntime.ready) await this.ensureModel();
+    Game.botTypes = this.botTypes.slice();
+    this.els.hud.classList.add('spectating');
+    this.els.specBar.classList.remove('hidden');
+    Game.start(null);
+    SFX.startAmbience();
+    this.els.specTypes.innerHTML =
+      `<b style="color:${TEAM_COLORS[0]}">${this.label(0)}</b> vs ` +
+      `<b style="color:${TEAM_COLORS[1]}">${this.label(1)}</b>` +
+      (mode === 'ten' ? ' · Caldera' : '');
   },
 
   /* Keep draft/loadout selections instead of a hard reload. */
@@ -341,7 +315,8 @@ const UI = {
     this.showPause(false);
     Game.player = null;
     Game.followHero = null;
-    this.els.select.classList.remove('hidden');
+    Game.attract = false;
+    if (typeof Screens !== 'undefined') Screens.show('lobby');
   },
 
   /* neural bots need the trained weights; load once, on demand */
@@ -587,7 +562,7 @@ const UI = {
     const hostBlue = this.els.draftBlue, hostRed = this.els.draftRed;
     if (hostBlue) hostBlue.innerHTML = '';
     if (hostRed) hostRed.innerHTML = '';
-    if (this.els.select) this.els.select.classList.toggle('tenDraft', n === 10);
+    if (this.els.pick) this.els.pick.classList.toggle('tenDraft', n === 10);
     this.draft = [Array(n).fill(null), Array(n).fill(null)];
     if (prev) {
       for (const team of [TEAM_BLUE, TEAM_RED]) {
@@ -614,14 +589,10 @@ const UI = {
       }
     }
     this.syncDraft();
-    if (this.els.btnSlots5) this.els.btnSlots5.classList.toggle('sel', n === 5);
-    if (this.els.btnSlots10) this.els.btnSlots10.classList.toggle('sel', n === 10);
   },
 
   buildDraft() {
     this.setDraftSize(5);
-    if (this.els.btnSlots5) this.els.btnSlots5.addEventListener('click', () => this.setDraftSize(5));
-    if (this.els.btnSlots10) this.els.btnSlots10.addEventListener('click', () => this.setDraftSize(10));
     this.els.btnDraftRandom.addEventListener('click', () => {
       const n = this.draftSize;
       for (const team of [TEAM_BLUE, TEAM_RED]) {
@@ -676,9 +647,8 @@ const UI = {
 
   syncDraft() {
     this.selectedHero = this.draft[TEAM_BLUE][0];
-    this.els.btnStart.disabled = !this.selectedHero;
-    if (this.els.btnDuel) this.els.btnDuel.disabled = !this.selectedHero;
-    if (this.els.btnTen) this.els.btnTen.disabled = !this.selectedHero;
+    if (typeof Screens !== 'undefined') Screens.syncConfirm();
+    else this.els.btnStart.disabled = !this.selectedHero;
     this.renderDraft();
   },
 
@@ -707,9 +677,10 @@ const UI = {
         .join('');
     }
     const a = this.activeSlot;
-    this.els.draftHint.textContent = a.team === TEAM_BLUE && a.i === 0
-      ? 'Picking YOUR hero — click a card'
-      : `Picking ${TEAM_NAMES[a.team]} slot ${a.i + 1} (${this.laneLabels()[a.team][a.i]} road) — empty slots roll random`;
+    const spectating = typeof Screens !== 'undefined' && Screens.spectate;
+    this.els.draftHint.textContent = a.team === TEAM_BLUE && a.i === 0 && !spectating
+      ? 'Tap a hero card to pick yours · empty slots roll random'
+      : `Filling ${TEAM_NAMES[a.team]} ${this.laneLabels()[a.team][a.i]} slot · empty slots roll random`;
   },
 
   /* ---------------- in-game tooltips ----------------
@@ -1294,7 +1265,7 @@ const UI = {
   },
 
   syncHUD(dt) {
-    if (Game.state === 'select') {
+    if (Game.state === 'select' || Game.attract) {
       if (SFX.amb) SFX.stopAmbience();
       return;
     }

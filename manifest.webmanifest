@@ -1,0 +1,14 @@
+{
+  "name": "Legends Arena",
+  "short_name": "Legends Arena",
+  "description": "A 5v5 MOBA you can play in the browser or install on your phone.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05080f",
+  "theme_color": "#05080f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
