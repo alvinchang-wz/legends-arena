@@ -7,145 +7,79 @@
   html, body { margin: 0; background: #1b1b1b; color: #ddd; font: 14px system-ui, sans-serif; }
   #wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px; }
   canvas { max-width: 100%; height: auto; background: #1e1e1e; }
-  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: #aaa; }
-  .legend i { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; border-radius: 3px; }
+  .note { font-size: 13px; color: #aaa; max-width: 900px; }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="c" width="1421" height="1437"></canvas>
-  <div class="legend">
-    <span><i style="background:#8a8a8a"></i>lane / connection</span>
-    <span><i style="background:#2b3140;border:2px dashed #667"></i>jungle camp (big = buff)</span>
-    <span><i style="background:#9a9a9a"></i>wall</span>
-    <span><i style="background:#5fb35f"></i>bush</span>
-    <span><i style="background:#e0a060"></i>A turret + range</span>
-    <span><i style="background:#7ec27e"></i>B turret + range</span>
-  </div>
+  <canvas id="c" width="1520" height="1567"></canvas>
+  <div class="note">Base layer: the user's drawing (draft-a-original.png), untouched. Everything in OVERLAY is drawn on top and is up for discussion.</div>
 </div>
 <script>
 /* ============================================================
-   Draft A — the user's own layout, traced from their drawing.
-   Coordinates are the drawing's pixels (1421 x 1437). A = bottom-left,
-   B = top-right. TOP lane runs up the left edge and along the top;
-   BOTTOM lane runs along the bottom and up the right edge; MID is the
-   diagonal. A second diagonal, a vertical and a horizontal connection
-   cut the board into eight sectors ("slices").
-   Edit the DATA block, reload, and the blockout redraws.
+   Draft A — the user's own layout.
+
+   The drawing itself is the base layer, pixel for pixel. Proposed
+   changes are listed in OVERLAY and drawn over it in a distinct colour
+   (amber = proposal, red = "remove this"), so nothing the user drew is
+   ever reinterpreted. Coordinates are the drawing's pixels (1520 x 1567).
+   A = bottom-left, B = top-right; TOP runs up the left edge and along
+   the top, BOTTOM along the bottom and up the right edge, MID diagonal.
    ============================================================ */
-const DATA = {
-  bases: { A: { x: 137, y: 1310 }, B: { x: 1279, y: 167 }, r: 44 },
-  laneW: 56, connW: 38,
-  // main lanes, as polylines (rounded corners are drawn from the points)
-  lanes: {
-    TOP: [[137, 1310], [137, 320], [160, 240], [230, 190], [320, 167], [1279, 167]],
-    MID: [[137, 1310], [1279, 167]],
-    BOTTOM: [[137, 1310], [1100, 1310], [1200, 1290], [1260, 1240], [1279, 1150], [1279, 167]],
-  },
-  connections: {
-    diag2: [[195, 230], [1225, 1255]],
-    vertical: [[710, 167], [710, 1310]],
-    horizontal: [[137, 738], [1279, 738]],
-  },
-  towerRange: 68,
-  towers: {
-    A: [[137, 499], [137, 829], [137, 1101], [347, 1310], [617, 1310], [947, 1310], [290, 1160], [445, 1002], [604, 842]],
-    B: [[470, 167], [797, 167], [1068, 167], [1279, 377], [1279, 649], [1279, 978], [1129, 318], [972, 477], [813, 634]],
-  },
-  // big camps (buff) and small camps; `arcs` are wall pieces around them in radians [start, end]
-  camps: [
-    { slice: 8, x: 528, y: 367, r: 40, arcs: [[2.4, 4.4], [5.4, 7.0]] },
-    { slice: 7, x: 340, y: 560, r: 40, arcs: [[0.9, 2.9], [3.9, 5.5]] },
-    { slice: 1, x: 952, y: 313, r: 42, arcs: [[1.2, 3.2], [4.2, 5.8]] },
-    { slice: 2, x: 1128, y: 490, r: 42, arcs: [[2.0, 3.9], [4.9, 6.5]] },
-    { slice: 6, x: 287, y: 975, r: 44, arcs: [[1.5, 3.6], [4.6, 6.2]] },
-    { slice: 5, x: 470, y: 1160, r: 44, arcs: [[0.6, 2.7], [3.7, 5.3]] },
-    { slice: 3, x: 1078, y: 918, r: 40, arcs: [[2.9, 4.9], [5.8, 7.4]] },
-    { slice: 4, x: 887, y: 1108, r: 40, arcs: [[0.2, 2.2], [3.2, 4.8]] },
-    { slice: 1, x: 829, y: 483, r: 22, small: true, arcs: [[2.2, 4.0], [5.0, 6.6]] },
-    { slice: 2, x: 964, y: 620, r: 22, small: true, arcs: [[0.4, 2.2], [3.2, 4.8]] },
-    { slice: 6, x: 453, y: 858, r: 22, small: true, arcs: [[2.8, 4.6], [5.6, 7.2]] },
-    { slice: 5, x: 590, y: 995, r: 22, small: true, arcs: [[1.0, 2.8], [3.8, 5.4]] },
-  ],
-  // loose walls: rounded quads given as centre, length, thickness, angle (deg)
-  walls: [
-    [555, 285, 90, 34, -20], [520, 455, 90, 34, 40], [250, 585, 40, 60, 80], [430, 545, 70, 34, 70],
-    [800, 290, 80, 34, 30], [1060, 410, 40, 50, 70], [1150, 640, 60, 34, -40], [950, 630, 60, 34, 60],
-    [258, 840, 40, 60, 60], [1170, 870, 70, 34, 60], [980, 930, 80, 34, 50], [890, 1020, 80, 34, -50],
-    [610, 1185, 80, 34, 40], [850, 1200, 80, 34, 20], [380, 1090, 40, 34, -60],
-  ],
-  // small hexagonal rocks at lane corners
-  rocks: [[625, 195], [930, 195], [1250, 520], [1250, 820], [163, 655], [163, 960], [485, 1285], [792, 1285]],
-  bushes: [
-    [400, 290], [632, 270], [258, 428], [645, 570], [243, 665], [545, 682],
-    [858, 268], [880, 393], [1050, 565], [1180, 590],
-    [875, 800], [1173, 812], [768, 905], [1160, 1045], [1020, 1188], [783, 1205],
-    [238, 888], [363, 912], [535, 1082], [558, 1215],
-  ],
-  labels: [
-    ['TOP', 710, 80], ['BOTTOM', 710, 1400], ['MID', 710, 738],
-    ['Base A', 137, 1410], ['Base B', 1279, 66],
-    ['Slice 1', 815, 353], ['Slice 2', 1092, 632], ['Slice 3', 926, 842], ['Slice 4', 815, 955],
-    ['Slice 5', 604, 1120], ['Slice 6', 327, 842], ['Slice 7', 492, 632], ['Slice 8', 604, 520],
-  ],
+const OVERLAY = {
+  // { x, y, r, label } — proposed epic objective pits
+  objectives: [],
+  // { x, y, len, thick, deg } — proposed extra walls
+  walls: [],
+  // { x, y } — proposed bushes
+  bushes: [],
+  // { x, y, r } — things proposed for removal (drawn as a red cross-out)
+  remove: [],
+  // { x, y, text } — short notes
+  notes: [],
 };
 
+const img = new Image();
+img.src = 'draft-a-original.png';
+img.onload = draw;
 const c = document.getElementById('c'), g = c.getContext('2d');
 const TAU = Math.PI * 2;
+
 function draw() {
-  g.fillStyle = '#1e1e1e'; g.fillRect(0, 0, c.width, c.height);
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(img, 0, 0);
   g.lineCap = 'round'; g.lineJoin = 'round';
-  const path = pts => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts) g.lineTo(p[0], p[1]); };
-  // connections under lanes
-  for (const pts of Object.values(DATA.connections)) { path(pts); g.strokeStyle = 'rgba(160,160,160,0.28)'; g.lineWidth = DATA.connW; g.stroke(); }
-  for (const pts of Object.values(DATA.lanes)) { path(pts); g.strokeStyle = 'rgba(160,160,160,0.28)'; g.lineWidth = DATA.laneW; g.stroke(); }
-  // turret ranges then turrets
-  for (const [team, list] of Object.entries(DATA.towers)) {
-    const col = team === 'A' ? '#e0a060' : '#7ec27e';
-    for (const [x, y] of list) {
-      g.fillStyle = col; g.globalAlpha = 0.12; g.beginPath(); g.arc(x, y, DATA.towerRange, 0, TAU); g.fill(); g.globalAlpha = 1;
-      g.strokeStyle = col; g.lineWidth = 2; g.setLineDash([6, 5]); g.beginPath(); g.arc(x, y, DATA.towerRange, 0, TAU); g.stroke(); g.setLineDash([]);
-      g.fillStyle = col; g.fillRect(x - 10, y - 10, 20, 20); g.strokeStyle = '#1e1e1e'; g.lineWidth = 2; g.strokeRect(x - 10, y - 10, 20, 20);
-    }
+  const AMBER = '#ffb347', RED = '#ff5a5a';
+  for (const o of OVERLAY.objectives) {
+    g.fillStyle = 'rgba(255,179,71,0.18)'; g.beginPath(); g.arc(o.x, o.y, o.r, 0, TAU); g.fill();
+    g.strokeStyle = AMBER; g.lineWidth = 4; g.setLineDash([12, 8]); g.stroke(); g.setLineDash([]);
+    if (o.label) { g.fillStyle = AMBER; g.font = 'bold 20px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(o.label, o.x, o.y); }
   }
-  // bases
-  for (const [k, b] of Object.entries(DATA.bases)) {
-    if (k === 'r') continue;
-    const col = k === 'A' ? '#e0a060' : '#7ec27e';
-    g.fillStyle = k === 'A' ? '#3a2e22' : '#2a3a2a'; g.beginPath(); g.arc(b.x, b.y, DATA.bases.r, 0, TAU); g.fill();
-    g.strokeStyle = col; g.lineWidth = 3; g.stroke();
-    g.fillStyle = '#eee'; g.font = 'bold 22px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(k, b.x, b.y + 1);
+  g.fillStyle = 'rgba(255,179,71,0.85)';
+  for (const w of OVERLAY.walls) {
+    g.save(); g.translate(w.x, w.y); g.rotate(w.deg * Math.PI / 180);
+    g.beginPath(); g.roundRect(-w.len / 2, -w.thick / 2, w.len, w.thick, 8); g.fill(); g.restore();
   }
-  // camps with wall arcs
-  for (const cp of DATA.camps) {
-    g.fillStyle = '#2b3140'; g.beginPath(); g.arc(cp.x, cp.y, cp.r, 0, TAU); g.fill();
-    g.strokeStyle = '#6a7390'; g.lineWidth = 2; g.setLineDash([5, 4]); g.stroke(); g.setLineDash([]);
-    g.strokeStyle = '#9a9a9a'; g.lineWidth = cp.small ? 12 : 16; g.lineCap = 'butt';
-    for (const [a0, a1] of cp.arcs) { g.beginPath(); g.arc(cp.x, cp.y, cp.r + (cp.small ? 12 : 16), a0, a1); g.stroke(); }
-    g.lineCap = 'round';
-  }
-  // loose walls + rocks
-  g.fillStyle = '#9a9a9a';
-  for (const [x, y, L, T, deg] of DATA.walls) {
-    g.save(); g.translate(x, y); g.rotate(deg * Math.PI / 180);
-    g.beginPath(); g.roundRect(-L / 2, -T / 2, L, T, 8); g.fill(); g.restore();
-  }
-  for (const [x, y] of DATA.rocks) {
-    g.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + 0.3; g.lineTo(x + Math.cos(a) * 22, y + Math.sin(a) * 22); } g.closePath(); g.fill();
-  }
-  // bushes: hatched green blobs
-  for (const [x, y] of DATA.bushes) {
-    g.save(); g.translate(x, y); g.rotate(0.5);
-    g.fillStyle = '#3f7a3f'; g.beginPath(); g.ellipse(0, 0, 18, 11, 0, 0, TAU); g.fill();
-    g.strokeStyle = '#7fd07f'; g.lineWidth = 1.5;
+  for (const b of OVERLAY.bushes) {
+    g.save(); g.translate(b.x, b.y); g.rotate(0.5);
+    g.fillStyle = 'rgba(255,179,71,0.35)'; g.beginPath(); g.ellipse(0, 0, 18, 11, 0, 0, TAU); g.fill();
+    g.strokeStyle = AMBER; g.lineWidth = 1.5;
     for (let i = -14; i <= 14; i += 5) { g.beginPath(); g.moveTo(i, -10); g.lineTo(i + 6, 10); g.stroke(); }
     g.restore();
   }
-  // labels
-  g.fillStyle = '#eee'; g.font = 'bold 20px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (const [t, x, y] of DATA.labels) g.fillText(t, x, y);
+  for (const r of OVERLAY.remove) {
+    g.strokeStyle = RED; g.lineWidth = 4;
+    g.beginPath(); g.arc(r.x, r.y, r.r, 0, TAU); g.stroke();
+    g.beginPath(); g.moveTo(r.x - r.r * 0.7, r.y - r.r * 0.7); g.lineTo(r.x + r.r * 0.7, r.y + r.r * 0.7); g.stroke();
+  }
+  for (const n of OVERLAY.notes) {
+    g.font = 'bold 18px system-ui'; g.textAlign = 'left'; g.textBaseline = 'middle';
+    const w = g.measureText(n.text).width + 16;
+    g.fillStyle = 'rgba(20,20,20,0.85)'; g.fillRect(n.x - 8, n.y - 14, w, 28);
+    g.strokeStyle = AMBER; g.lineWidth = 1.5; g.strokeRect(n.x - 8, n.y - 14, w, 28);
+    g.fillStyle = AMBER; g.fillText(n.text, n.x, n.y);
+  }
 }
-draw();
 </script>
 </body>
 </html>
