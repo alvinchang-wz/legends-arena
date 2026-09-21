@@ -10,6 +10,7 @@ im = np.array(Image.open(SRC).convert('RGB')).astype(int)
 H, W, _ = im.shape
 r, g, b = im[..., 0], im[..., 1], im[..., 2]
 gray = (abs(r - g) <= 8) & (abs(g - b) <= 8)
+yy, xx = np.mgrid[0:H, 0:W]
 v = (r + g + b) // 3
 
 def regions(mask, min_area):
@@ -130,7 +131,25 @@ for w in walls:
     fp = (np.stack([fx, fy], 1) - mean) @ normal
     inside = (fp >= lo) & (fp <= hi)
     lane_mask[fy[inside], fx[inside]] = True
+# The mid lane becomes a clean straight band from base to base: measure its
+# width from the mask, then cut the ragged pixels out of the ring lanes.
+A, B = bases['A'], bases['B']
+ax_, ay_, bx_, by_ = A['x'], A['y'], B['x'], B['y']
+L = math.hypot(bx_ - ax_, by_ - ay_)
+ux, uy = (bx_ - ax_) / L, (by_ - ay_) / L
+nx, ny = -uy, ux
+widths = []
+for t in np.linspace(0.3, 0.7, 9):
+    px, py = ax_ + ux * t * L, ay_ + uy * t * L
+    hits = [k for k in range(-60, 61) if lane_mask[int(py + ny * k), int(px + nx * k)]]
+    if hits: widths.append(max(hits) - min(hits) + 1)
+mid_w = float(np.median(widths))
+along = (xx - ax_) * ux + (yy - ay_) * uy
+across = np.abs((xx - ax_) * nx + (yy - ay_) * ny)
+mid_zone = (across <= mid_w / 2 + 14) & (along > A['r'] + 40) & (along < L - B['r'] - 40)
+lane_mask &= ~mid_zone
 lanes = regions(lane_mask, 3000)
+mid_lane = {'from': [ax_, ay_], 'to': [bx_, by_], 'width': mid_w}
 conn_mask = (abs(r - g) <= 6) & (abs(g - b) <= 6) & (v >= 36) & (v <= 50)
 # open first: the anti-aliased rim of every lane is this gray too, and as a
 # closed ring it would swallow the roads inside it as nested contours
@@ -138,19 +157,33 @@ conn_mask = cv2.morphologyEx(conn_mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones
 conn_mask = cv2.morphologyEx(conn_mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8)) > 0
 # split the connections: the second diagonal vs the vertical/horizontal cross.
 # The diagonal is the strip within 30 px of the line through its two ends.
-yy, xx = np.mgrid[0:H, 0:W]
 ax, ay, bx, by = 225.0, 204.0, 1300.0, 1278.0
 dist_line = np.abs((by - ay) * xx - (bx - ax) * yy + bx * ay - by * ax) / math.hypot(bx - ax, by - ay)
 diag_mask = conn_mask & (dist_line <= 30)
 cross_mask = conn_mask & (dist_line > 30)
 cross_mask = cv2.morphologyEx(cross_mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)) > 0
+# the diagonal, like mid, is stored as a clean straight band: measure width,
+# find how far it runs along the line, and keep it as a segment
+dm_along = ((xx - ax) * (bx - ax) + (yy - ay) * (by - ay)) / math.hypot(bx - ax, by - ay)
+vals = dm_along[diag_mask]
+dwidths = []
+for t in np.linspace(0.25, 0.45, 5):
+    px_, py_ = ax + (bx - ax) * t, ay + (by - ay) * t
+    nnx, nny = -(by - ay), (bx - ax); nl = math.hypot(nnx, nny); nnx, nny = nnx / nl, nny / nl
+    hits = [k for k in range(-50, 51) if diag_mask[int(py_ + nny * k), int(px_ + nnx * k)]]
+    if hits: dwidths.append(max(hits) - min(hits) + 1)
+dw = float(np.median(dwidths))
+lo_t, hi_t = float(vals.min() + dw / 2), float(vals.max() - dw / 2)
+dl = math.hypot(bx - ax, by - ay)
+diagonal = {'from': [ax + (bx - ax) * lo_t / dl, ay + (by - ay) * lo_t / dl],
+            'to': [ax + (bx - ax) * hi_t / dl, ay + (by - ay) * hi_t / dl], 'width': dw}
 connections = [{'outer': c['poly'], 'holes': [], 'kind': 'diagonal'} for c in contours(diag_mask, 1500)]
 connections += [{'outer': c['poly'], 'holes': [], 'kind': 'cross'} for c in contours(cross_mask, 1500)]
 
 labels = [['TOP', 762, 82], ['BOTTOM', 762, 1400], ['MID', 762, 740], ['Base A', 190, 1410], ['Base B', 1335, 68],
           ['Slice 1', 868, 355], ['Slice 2', 1145, 632], ['Slice 3', 982, 845], ['Slice 4', 868, 957],
           ['Slice 5', 658, 1122], ['Slice 6', 380, 845], ['Slice 7', 545, 632], ['Slice 8', 658, 520]]
-data = {'size': [W, H], 'bases': bases, 'lanes': lanes, 'connections': connections, 'towers': towers,
+data = {'size': [W, H], 'bases': bases, 'lanes': lanes, 'midLane': mid_lane, 'diagonal': diagonal, 'connections': connections, 'towers': towers,
         'camps': camps, 'walls': walls, 'bushes': bushes, 'labels': labels}
 json.dump(data, open('docs/drafts/draft-a.json', 'w'))
 print('camps', len(camps), 'big', sum(c['big'] for c in camps), '| walls', len(walls), 'near camps', sum(w['nearCamp'] for w in walls),
