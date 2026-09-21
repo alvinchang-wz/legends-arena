@@ -11,7 +11,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const out = path.join(root, 'www');
-const SHIP = ['index.html', 'icon.svg', 'manifest.webmanifest', 'css', 'js', 'models'];
+const SHIP = ['index.html', 'icon.svg', 'manifest.webmanifest', '_headers', 'css', 'js', 'models'];
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });

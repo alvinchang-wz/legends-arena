@@ -1,0 +1,12 @@
+# Security headers for the hosted site (Cloudflare Pages reads this file from
+# the deploy output; scripts/build-www.js copies it into www/). The game ships
+# no inline scripts, no eval and no third-party assets, so the policy can be
+# strict: everything must come from this origin, and the page cannot be framed.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  X-Robots-Tag: noindex, nofollow
