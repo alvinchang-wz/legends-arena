@@ -225,7 +225,9 @@ class Hero extends Unit {
     this.farmsWithSkills = true;  // clear creeps with the kit, not just autos
     this.advancedAI = true;       // power, economy, focus-fire and secure logic
     this.botType = 'heuristic';
-    this.p = this.isPlayer ? null : defaultBotParams();
+    // every hero carries bot parameters: the idle autopilot drives the player's
+    // hero through the same heuristics, so a null here crashed every frame
+    this.p = defaultBotParams();
     const lanes = Game.lanesFor(team);
     this.path = lane && lanes[lane] ? lanes[lane] : null;
     this.curTarget = null;
