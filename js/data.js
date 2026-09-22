@@ -328,19 +328,27 @@ const HEROES = [
   },
   {
     id: 'quill', name: 'Quill', role: 'Marksman', icon: '🎯', color: '#c4b581', projColor: '#e7d9a8',
-    desc: 'A trapper who turns the ground into a hunting floor.',
+    desc: 'A trapper who owns the ground: pre-placed snares, a boomerang bola and a Killbox that grinds whoever is caught.',
     difficulty: 3, damageStyle: 'physical',
-    hp: 520, hpLv: 70, mp: 210, mpLv: 24, atk: 58, atkLv: 6.6,
-    armor: 13, armorLv: 2.3, mr: 11, mrLv: 1.7,
-    range: 315, atkSpd: 1.02, speed: 248,
+    /* docs/design/heroes.md, Marksmen: Quill. The only hero who places a
+       hostile object (F9 trap): Snare arms after 0.7 s, waits 20 s, and the
+       first enemy hero on it is struck, rooted and revealed; three at once,
+       the fourth removes the oldest, and they outlive him. Bola is the only
+       return projectile (F10). No dash. Bot fields: botBush plants Snares
+       at the nearest bush centre while he has no hero to fight and one
+       between him and the chaser when he runs; botCrowd gates Killbox on
+       2+ heroes inside it, or one who is slowed, rooted or stunned. */
+    hp: 550, hpLv: 72, mp: 220, mpLv: 24, atk: 58, atkLv: 6.6,
+    armor: 14, armorLv: 2.4, mr: 11, mrLv: 1.7,
+    range: 320, atkSpd: 1.02, speed: 245,
     passive: {
-      name: 'Barbed', icon: '📌', id: 'barbed',
-      desc: 'Skills apply a barb for 3s. Barbed enemies take 12% more damage from your basic attacks.',
+      name: 'Quarry', icon: '📌', id: 'quarry',
+      desc: 'Enemies hit by Quill\'s skills or traps are marked for 4s. Basics on a marked target deal +12% damage and grant +8% move speed for 1.5s (stacks to 3).',
     },
     skills: [
-      { name: 'Caltrops', icon: '✴', type: 'zone', cd: 8, mana: 50, dmgType: 'physical', range: 520, radius: 170, delay: 0.25, dmg: 110, dmgLv: 14, scaleAd: 0.4, slowPct: 0.4, slowDur: 2, desc: 'Seed an area with caltrops that damage and slow.' },
-      { name: 'Bola', icon: '◎', type: 'skillshot', cd: 11, mana: 55, dmgType: 'physical', dmg: 90, dmgLv: 11, scaleAd: 0.45, range: 600, speed: 780, radius: 28, immobilize: 1.1, desc: 'Throw a weighted net that roots the first enemy hit.' },
-      { name: 'Killbox', icon: '⬡', type: 'zone', cd: 42, mana: 110, dmgType: 'physical', range: 560, radius: 240, delay: 0.55, ticks: 3, interval: 0.6, dmg: 80, dmgLv: 10, scaleAd: 0.4, slowPct: 0.35, slowDur: 1, desc: 'Drop a snare field that bites three times and keeps prey slow.' },
+      { name: 'Snare', icon: '✴', type: 'trap', cd: 8, cdLv: -0.4, mana: 45, manaLv: 4, range: 540, triggerRadius: 110, armDelay: 0.7, lifetime: 20, maxActive: 3, heroOnly: true, enemyVisibleWithin: 120, revealDur: 2, dmgType: 'physical', dmg: 110, dmgLv: 15, scaleAd: 0.5, immobilize: 1.0, botBush: true, desc: 'Plant a snare (up to 3, 20s, armed after 0.7s). The first enemy hero to step within 110 takes 110+15/rank (+50% ATK), is rooted 1s and revealed 2s. Enemies only see it within 120. Snares outlive Quill.' },
+      { name: 'Bola', icon: '◎', type: 'skillshot', cd: 10, cdLv: -0.3, mana: 50, boomerang: true, dmgType: 'physical', dmg: 80, dmgLv: 11, scaleAd: 0.45, range: 620, speed: 850, radius: 28, pierce: false, returnSlowPct: 0.4, returnSlowDur: 1.2, desc: 'Throw a bola 620 units; it turns on its first hit or at max range and flies back to Quill. Each pass hits one enemy for 80+11/rank (+45% ATK); the return also slows 40% for 1.2s.' },
+      { name: 'Killbox', icon: '⬡', type: 'zone', cd: [44, 38, 32], mana: [100, 120, 140], dmgType: 'physical', range: 580, radius: 260, delay: 0.6, ticks: 3, interval: 0.6, dmg: [100, 130, 160], scaleAd: 0.45, slowPct: 0.4, slowDur: 0.8, botCrowd: true, desc: 'After 0.6s a 260 snare field bites three times over 1.8s for 100/130/160 (+45% ATK) each, slowing 40% with every bite.' },
     ],
   },
   {

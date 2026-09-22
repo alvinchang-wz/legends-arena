@@ -1844,6 +1844,29 @@ class Hero extends Unit {
     const best = this.heuristicSelectTarget();
     this.aiTarget = best;
     if (best) this.botCast(best);
+    if (!best || best.type !== 'hero') this.botIdlePlant();
+  }
+  /* F29 (Quill's hint): with no hero to fight, a botBush trap goes at the
+     nearest bush centre inside its range that has none of his traps within
+     200 and no enemy turret over it, until maxActive - 1 are down (the last
+     is kept for planting under a hero in a fight). */
+  botIdlePlant() {
+    for (let i = 0; i < 3; i++) {
+      const s = this.skills[i];
+      if (!s || s.type !== 'trap' || !s.botBush || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
+      if (this.usesMana() && this.maxMana && this.mana < this.maxMana * this.p.farmManaFloor) continue;
+      const mine = Game.objects.filter(o => !o.dead && o.owner === this && o.mode === 'trap');
+      if (mine.length >= (s.maxActive || 1) - 1) continue;
+      let best = null, bd = s.range || 400;
+      for (const b of Game.bushes()) {
+        const d = this.distTo(b);
+        if (d >= bd || d < 80) continue;
+        if (mine.some(o => Math.hypot(o.x - b.x, o.y - b.y) < 200)) continue;
+        if (this.enemyTowerCovering(b)) continue;
+        bd = d; best = b;
+      }
+      if (best) this.castSkill(i, { x: best.x, y: best.y });
+    }
   }
 
   /* Tried and rejected: a "botIdleCast" that let a bot with no target still
@@ -2497,6 +2520,11 @@ class Hero extends Unit {
       if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
       if (s.charges && !(this.skillCharges[i] > 0)) continue;   // F8
       if (s.type === 'heal') { if (this.hpPct < 0.7) this.castSkill(i, null); continue; }
+      // F29 (Quill's hint): a trap goes down between him and the chaser as he runs
+      if (s.type === 'trap') {
+        if (threat && bd < 700) { const k = Math.min(1, 140 / Math.max(1, bd)); this.castSkill(i, { x: this.x + (threat.x - this.x) * k, y: this.y + (threat.y - this.y) * k }); }
+        continue;
+      }
       // a self-buff (Rampage's regen and tenacity) is at its best mid-escape
       if (s.type === 'buff') { if (threat && bd < 560) this.castSkill(i, null); continue; }
       // F22: a dashBack flies away from the aim, so it is aimed AT the chaser
@@ -2549,6 +2577,12 @@ class Hero extends Unit {
   /* F29 (Lumen's hint): a unit that cannot run right now — slowed, rooted,
      stunned, airborne, suppressed or channelling. */
   unitHeld(u) { return !!(u && u.cc && (u.cc.has('slow') || !u.cc.canMove || u.channelS)); }
+  /* F29 (Quill's hint): enemy heroes a zone centred on `t` would cover. */
+  zoneCrowd(s, t) {
+    let n = 0;
+    for (const h of Game.heroes) if (h.team !== this.team && h.alive && h.distTo(t) < s.radius + h.radius) n++;
+    return n;
+  }
   /* F29 (Vesper's hint): where a botClearLine dash should land so the
      first skill (a charge shot that stops on the first unit) has a clear
      line to `t`: only when it has a charge and the line from here is
@@ -2616,6 +2650,7 @@ class Hero extends Unit {
           !(s.botAllyEngaged && this.allyEngagedNear(t)) &&   // F29 (Omen's hint): an ally has engaged
           !(s.tether && s.tether.multi && this.gaolCrowd(s).leaving) &&   // F29 (Karn's hint): someone is leaving
           !(s.type === 'zone' && s.wallStun && s.knockback && this.wallShoveDir(t, s.knockback + 10)) &&   // F29 (Tide's hint): a wall to throw at
+          !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.unitHeld(t))) &&   // F29 (Quill's hint): a crowd in the box, or a held hero
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2644,6 +2679,8 @@ class Hero extends Unit {
         }
         if (locked && !cc) return 860;
         if (cc && isHero && !locked) return 820;
+        // F29 (Quill's hint): a boomerang is best at a hero walking toward him, so the return pass crosses them too
+        if (s.boomerang && isHero && (t.vx || 0) * (this.x - t.x) + (t.vy || 0) * (this.y - t.y) > 40 * d) return 560;
         return isHero ? 500 : 220;
       case 'cone':       // F11: instant, so it wants the target well inside its length
         if (d >= (s.length || 400) - 20 || !(isHero || farmOk)) return 0;
@@ -2703,6 +2740,12 @@ class Hero extends Unit {
         return cc && isHero && !locked ? 780 : 360;
       case 'zone':
         if (d >= s.range || !(isHero || farmOk)) return 0;
+        // F29 (Quill's hint): a crowd zone (botCrowd) wants 2+ heroes inside its radius around the target, or one who is held
+        if (s.botCrowd) {
+          if (!isHero) return 0;
+          if (this.zoneCrowd(s, t) >= 2) return 880;
+          return this.unitHeld(t) ? 820 : 0;
+        }
         // F29 (Tide's hint): High Water when the target can be thrown into a wall
         if (s.wallStun && s.knockback && isHero && this.wallShoveDir(t, s.knockback + 10)) return 850;
         if (s.bank) {   // F29 (Marrow's hint): Catacomb on 2+ heroes in its radius, best within 6 s of two other casts

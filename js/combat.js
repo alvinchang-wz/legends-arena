@@ -697,15 +697,26 @@ const PASSIVES = {
     },
   },
 
-  barbed: {
+  /* Quill — a skill or trap hit marks the victim 4 s (marks.quarryT);
+     basics on a marked target deal +12% and stack +8% move speed for
+     1.5 s, three at most, refreshed per hit. */
+  quarry: {
+    init(h) { h.pv = { n: 0, t: 0 }; },
     onSkillHit(h, target) {
       if (!target.marks || target.isStructure) return;
-      target.marks.barbT = Game.time + 3;
+      target.marks.quarryT = Game.time + 4;
     },
     onDealDamage(h, target, amount, pkt) {
-      if (!pkt || !pkt.isBasic || !target.marks || target.marks.barbT < Game.time) return amount;
+      if (!pkt || !pkt.isBasic || !target.marks || !(target.marks.quarryT > Game.time)) return amount;
       return amount * 1.12;
     },
+    onBasicHit(h, target) {
+      if (!target.marks || !(target.marks.quarryT > Game.time)) return;
+      h.pv.n = Math.min(3, (h.pv.t > 0 ? h.pv.n : 0) + 1);
+      h.pv.t = 1.5;
+      h.addTimedBuff('speedPct', 0.08 * h.pv.n, 1.5);
+    },
+    tick(h, dt) { if (h.pv && h.pv.t > 0) { h.pv.t -= dt; if (h.pv.t <= 0) h.pv.n = 0; } },
   },
 
   aperture: {

@@ -344,4 +344,151 @@ T.test('Vesper bot: rounds are held on a blocked line and banked to two out of a
   assert.ok(away.x > open.x + 150, `lands away from Torren: ${away.x - open.x}`);
 });
 
+/* ---------------- Quill ---------------- */
+
+T.test('Quill: base stats and skill numbers match the spec; the only trap and the only boomerang in the roster', () => {
+  reset();
+  const d = quill.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [550, 72, 220, 24, 58, 6.6, 14, 2.4, 11, 1.7, 320, 1.02, 245]);
+  assert.equal(d.passive.id, 'quarry');
+  const [s1, s2, s3] = quill.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.range, s1.triggerRadius, s1.armDelay, s1.lifetime, s1.maxActive, s1.heroOnly, s1.enemyVisibleWithin, s1.revealDur, s1.dmg, s1.dmgLv, s1.scaleAd, s1.immobilize],
+    ['trap', 8, -0.4, 45, 4, 540, 110, 0.7, 20, 3, true, 120, 2, 110, 15, 0.5, 1.0]);
+  assert.equal(rankVal(s1, 'dmg', 6), 185); assert.equal(rankVal(s1, 'mana', 6), 65); assert.ok(Math.abs(quill.cooldownFor(s1, 6) - 6) < 1e-9);
+  assert.deepEqual([s2.type, s2.boomerang, s2.pierce, s2.cd, s2.cdLv, s2.mana, s2.dmg, s2.dmgLv, s2.scaleAd, s2.range, s2.speed, s2.radius, s2.returnSlowPct, s2.returnSlowDur, s2.immobilize],
+    ['skillshot', true, false, 10, -0.3, 50, 80, 11, 0.45, 620, 850, 28, 0.4, 1.2, undefined]);
+  assert.equal(rankVal(s2, 'dmg', 6), 135); assert.ok(Math.abs(quill.cooldownFor(s2, 6) - 8.5) < 1e-9);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.radius, s3.delay, s3.ticks, s3.interval, s3.dmg, s3.scaleAd, s3.slowPct, s3.slowDur],
+    ['zone', [44, 38, 32], [100, 120, 140], 580, 260, 0.6, 3, 0.6, [100, 130, 160], 0.45, 0.4, 0.8]);
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'trap')).length, 1);
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.boomerang)).length, 1);
+  assert.ok(!quill.skills.some(s => s.type === 'dash'), 'no dash');
+  for (const s of quill.skills) assert.ok(s.desc && s.desc.length > 20);
+});
+
+T.test('Quill: Snare arms after 0.7 s, triggers on the first enemy hero within 110 (never a creep), roots 1 s, reveals 2 s, marks; three at most, they outlive him and expire at 20 s', () => {
+  reset();
+  T.place(quill, open.x, open.y);
+  const at = { x: open.x + 300, y: open.y };
+  const mana0 = quill.mana;
+  assert.ok(quill.castSkill(0, at));
+  assert.ok(Math.abs(quill.mana - (mana0 - 65)) < 1e-9, 'rank-6 mana 65'); assert.ok(Math.abs(quill.skillCd[0] - 6) < 1e-9, 'rank-6 cd 6');
+  const o = G.objects[G.objects.length - 1];
+  assert.ok(o && o.mode === 'trap' && o.owner === quill && Math.abs(o.x - at.x) < 1, 'a trap at the aim point');
+  assert.equal(o.radius, 110); assert.ok(Math.abs(o.t - 20) < 1e-9 && Math.abs(o.armT - 0.7) < 1e-9);
+  const m = creep(1, at.x + 20, at.y);
+  T.place(vesper, at.x + 60, at.y);            // standing on it while it arms
+  T.frames(G, 30);                              // 0.5 s: not armed yet
+  assert.ok(!o.dead && vesper.stats.dmgTaken === 0, 'not armed at 0.5 s');
+  T.frames(G, 20);
+  assert.ok(o.dead, 'armed at 0.7 s and sprung by the hero');
+  assert.ok(vesper.stats.dmgTaken > 0, 'struck'); assert.equal(m.hp, m.maxHp, 'the creep on it was ignored');
+  assert.ok(vesper.cc.t.immobilize > 0.8 && vesper.cc.t.immobilize <= 1.0, `rooted 1 s (sprung 0.13 s ago): ${vesper.cc.t.immobilize}`);
+  assert.ok(vesper.revealT > 1.8 && vesper.revealT <= 2, `revealed 2 s (sprung 0.13 s ago): ${vesper.revealT}`);
+  assert.ok(vesper.marks.quarryT > G.time + 3.8 && vesper.marks.quarryT <= G.time + 4, 'Quarry mark 4 s');
+  // three at most: the fourth removes the oldest; Quill's death leaves them
+  reset();
+  T.place(quill, open.x, open.y);
+  for (let k = 0; k < 4; k++) { quill.skillCd[0] = 0; quill.mana = quill.maxMana; assert.ok(quill.castSkill(0, { x: open.x + 200 + k * 60, y: open.y + 150 })); }
+  const mine = G.objects.filter(x => !x.dead && x.owner === quill);
+  assert.equal(mine.length, 3, 'three live');
+  assert.ok(Math.abs(mine[0].x - (open.x + 260)) < 1, 'the oldest was removed');
+  quill.hp = 1; quill.die(vesper);
+  T.seconds(G, 1);
+  assert.equal(G.objects.filter(x => !x.dead && x.owner === quill).length, 3, 'traps persist through his death');
+  quill.alive = true; quill.respawnT = 0; quill.hp = quill.maxHp; T.place(quill, open.x, open.y);
+  T.seconds(G, 19.5);
+  assert.equal(G.objects.filter(x => !x.dead && x.owner === quill).length, 0, 'gone at 20 s');
+});
+
+T.test('Quill: Bola turns on its first hit and hits again on the way back with a 40% slow for 1.2 s; Quarry makes basics on a marked target +12% and stacks +8% speed to 3', () => {
+  reset();
+  T.place(quill, open.x, open.y); T.place(bastion, open.x + 300, open.y); T.place(vesper, open.x + 150, open.y + 200);
+  G.update(1 / 60);
+  assert.ok(quill.castSkill(1, { x: open.x + 600, y: open.y }));
+  const p = G.projectiles[G.projectiles.length - 1];
+  assert.ok(p.boomerang && !p.pierce);
+  T.frames(G, 25);
+  assert.ok(bastion.stats.dmgTaken > 0 && p.returning, 'hit Bastion on the way out and turned');
+  assert.ok(!bastion.cc.has('slow'), 'no slow on the outbound pass');
+  T.place(vesper, open.x + 150, open.y);       // step onto the return path
+  T.frames(G, 20);
+  assert.ok(vesper.stats.dmgTaken > 0, 'hit on the way back');
+  assert.ok(Math.abs(vesper.cc.slowPct - 0.4) < 1e-9 && vesper.cc.t.slow > 0.8 && vesper.cc.t.slow <= 1.2, `return slow 40% 1.2 s: ${vesper.cc.slowPct} ${vesper.cc.t.slow}`);
+  assert.ok(vesper.marks.quarryT > G.time && bastion.marks.quarryT > G.time, 'both marked');
+  // Quarry on basics
+  const spd0 = quill.curSpeed();
+  assert.ok(Math.abs(quill.onDealDamage(vesper, 100, { isBasic: true }) - 112) < 1e-9, '+12% on a marked target');
+  assert.equal(quill.onDealDamage(vesper, 100, { skill: quill.skills[1] }), 100, 'skills unchanged');
+  assert.equal(quill.onDealDamage(grom, 100, { isBasic: true }), 100, 'unmarked: nothing');
+  quill.onBasicLanded(vesper, 50, { isBasic: true });
+  assert.equal(quill.pv.n, 1); assert.ok(Math.abs(quill.curSpeed() / spd0 - 1.08) < 1e-6, '+8%');
+  quill.onBasicLanded(vesper, 50, { isBasic: true }); quill.onBasicLanded(vesper, 50, { isBasic: true }); quill.onBasicLanded(vesper, 50, { isBasic: true });
+  assert.equal(quill.pv.n, 3, 'stacks to 3'); assert.ok(Math.abs(quill.curSpeed() / spd0 - 1.24) < 1e-6, '+24%');
+  quill.onBasicLanded(grom, 50, { isBasic: true });
+  assert.equal(quill.pv.n, 3, 'an unmarked target adds nothing');
+  T.seconds(G, 1.6);
+  assert.equal(quill.pv.n, 0, 'lapsed');
+});
+
+T.test('Quill: Killbox bites three times 0.6 s apart after a 0.6 s delay for 160 (+45% ATK) each at rank 3, slowing 40%', () => {
+  reset();
+  T.place(quill, open.x, open.y); T.place(bastion, open.x + 400, open.y);
+  const mana0 = quill.mana;
+  assert.ok(quill.castSkill(2, bastion));
+  assert.equal(quill.skillCd[2], 32); assert.ok(Math.abs(quill.mana - (mana0 - 140)) < 1e-9);
+  const z = G.zones[G.zones.length - 1];
+  assert.ok(Math.abs(z.dmg - (160 + quill.curAtk() * 0.45)) < 1e-6 && z.radius === 260 && z.ticks === 3);
+  T.seconds(G, 0.5);
+  assert.equal(bastion.stats.dmgTaken, 0, 'nothing before the delay');
+  T.seconds(G, 0.2);
+  const one = bastion.stats.dmgTaken;
+  assert.ok(one > 0, 'first bite at 0.6 s');
+  assert.ok(Math.abs(bastion.cc.slowPct - 0.4) < 1e-9, 'slowed 40%');
+  T.seconds(G, 0.6);
+  assert.ok(bastion.stats.dmgTaken > one * 1.9, 'second bite');
+  T.seconds(G, 0.6);
+  assert.ok(bastion.stats.dmgTaken > one * 2.9, 'third bite');
+  T.seconds(G, 0.6);
+  assert.ok(bastion.stats.dmgTaken < one * 3.2, 'no fourth');
+});
+
+T.test('Quill bot: Snares go at the nearest bush while idle and between him and a chaser when he runs; Killbox on 2+ heroes inside it or one held hero; Bola prefers a hero walking at him', () => {
+  reset();
+  const bush = G.bushes().find(b => !G.wallAt(b.x, b.y, 40) && !G.wallAt(b.x + 300, b.y, 60) && !G.structures().some(s => Math.hypot(s.x - b.x, s.y - b.y) < 800));
+  assert.ok(bush, 'a bush to test with');
+  T.place(quill, bush.x + 300, bush.y);
+  quill.botIdlePlant();
+  let mine = G.objects.filter(o => !o.dead && o.owner === quill);
+  assert.equal(mine.length, 1, 'one Snare planted with nobody around');
+  assert.ok(Math.hypot(mine[0].x - bush.x, mine[0].y - bush.y) < 45, 'at the bush');
+  quill.skillCd[0] = 0; quill.botIdlePlant(); quill.skillCd[0] = 0; quill.botIdlePlant();
+  mine = G.objects.filter(o => !o.dead && o.owner === quill);
+  assert.ok(mine.length <= 2, `keeps the last charge for a fight: ${mine.length}`);
+  // running from a chaser: a trap between them
+  reset();
+  T.place(quill, open.x, open.y); T.place(brass, open.x + 400, open.y);
+  quill.botEscapeCast();
+  mine = G.objects.filter(o => !o.dead && o.owner === quill);
+  assert.equal(mine.length, 1);
+  assert.ok(Math.abs(mine[0].x - (open.x + 140)) < 1 && Math.abs(mine[0].y - open.y) < 1, `140 toward the chaser: ${mine[0].x - open.x}`);
+  // Killbox
+  reset();
+  T.place(quill, open.x, open.y); T.place(bastion, open.x + 500, open.y);
+  assert.equal(quill.botSkillUrgency(2, bastion, 500, true, false), 0, 'one healthy free hero: held');
+  T.place(vesper, open.x + 620, open.y + 150);   // inside 260 of Bastion, 630 from Quill
+  assert.equal(quill.botSkillUrgency(2, bastion, 500, true, false), 880, 'two heroes in the box');
+  T.place(vesper, FAR.x, FAR.y);
+  bastion.cc.applySlow(0.3, 1, 0);
+  assert.equal(quill.botSkillUrgency(2, bastion, 500, true, false), 820, 'a slowed hero');
+  bastion.cc.clear();
+  // Bola
+  bastion.vx = -200; bastion.vy = 0;
+  assert.equal(quill.botSkillUrgency(1, bastion, 500, true, false), 560, 'walking at him');
+  bastion.vx = 200;
+  assert.equal(quill.botSkillUrgency(1, bastion, 500, true, false), 500, 'walking away');
+  bastion.vx = 0;
+});
+
 T.done();
