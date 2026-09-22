@@ -58,3 +58,15 @@ test('duel mode converts both sides to autonomous bots', () => {
   assert.equal(snapshot.structures.length, 0);
   assert.equal(snapshot.objectives[0].id, 'shrine');
 });
+
+test('same seed is bit-identical to 300 s of game time: final state and event log', () => {
+  const runs = [1, 2].map(() => {
+    const simulator = createSimulator({ seed: 4242, intervalMs: 1000 });
+    const events = [];
+    const result = simulator.run({ durationMs: 300000, onSnapshot: s => events.push(...s.events) });
+    return { finalState: JSON.stringify(simulator.snapshot()), events: JSON.stringify(events), result };
+  });
+  assert.equal(runs[0].result.finalTimeMs, 300000);
+  assert.equal(runs[0].events, runs[1].events);
+  assert.equal(runs[0].finalState, runs[1].finalState);
+});

@@ -140,6 +140,23 @@ function buildGameFactory() {
       TEAM_NEUTRAL,
       WORLD,
       Hero,
+      /* Entity classes and helpers, so headless instrumentation (stats,
+         environment) can wrap prototypes instead of editing the game. */
+      Unit,
+      Minion,
+      SuperMinion,
+      LordMinion,
+      Tower,
+      Inhibitor,
+      Monster,
+      BuffMonster,
+      EpicMonster,
+      Projectile,
+      Zone,
+      ITEM_BY_ID,
+      ITEM_SLOTS,
+      BATTLE_SPELLS,
+      dist,
       events: __headlessEvents,
       Math,
     };
@@ -229,6 +246,7 @@ class HeadlessSimulator {
 
     this.warnings = [];
     this.runtime = loadGameRuntime(message => this.warnings.push(message));
+    this.context = this.runtime;   // alias: the game's globals, as one object
     this.Game = this.runtime.Game;
     this.sequence = 0;
     this.outputTimeMs = 0;
