@@ -299,6 +299,7 @@ class Hero extends Unit {
     this.channelS = null;     // F18 channel {s, t, i, rank}
     this.basicRangeState = null;   // F25 {s, rank, count, t}: basics are thrown at rangeSet
     this.basicMod = null;     // F7 {s, rank, t, asMult}: basics are piercing volleys
+    this.recast = null;       // F22 {x, y, until, skillIdx, s}: a Return is open on that button
     /* F8 charge skills: charges banked per skill and the seconds left on the
        one charge that is recharging (one at a time, never reduced by cdr) */
     this.skillCharges = [0, 0, 0];
@@ -358,9 +359,20 @@ class Hero extends Unit {
   passiveDef() { return this.passive ? PASSIVES[this.passive.id] : null; }
   /* Invoke a passive hook if the hero has one. Hooks take (hero, ...args). */
   fire(hook, ...args) {
+    // F24: a takedown refunds part of every skill that carries resetOnKill / resetOnAssist
+    if (hook === 'onKill') this.resetCooldowns('resetOnKill');
+    else if (hook === 'onAssist') this.resetCooldowns('resetOnAssist');
     const P = this.passiveDef();
     if (P && P[hook]) return P[hook](this, ...args);
     return undefined;
+  }
+  /* F24: take `fraction x fullCd` off each skill carrying `key`. */
+  resetCooldowns(key) {
+    for (let i = 0; i < 3; i++) {
+      const s = this.skills[i];
+      if (!s || !(s[key] > 0) || !(this.skillCd[i] > 0)) continue;
+      this.skillCd[i] = Math.max(0, this.skillCd[i] - s[key] * this.cooldownFor(s, this.skillRank[i]));
+    }
   }
 
   /* ---------- stats ----------
@@ -414,7 +426,7 @@ class Hero extends Unit {
       else if (k === 'armor') A.addBonus({ armor: b.value });
       else if (k === 'mr') A.addBonus({ mr: b.value });
       else if (k === 'tenacity') A.addBonus({ tenacity: b.value });
-      else if (k === 'atkSpd') A.addBonus({ atkSpd: b.value });
+      // 'atkSpd' is read by curAtkSpd (max against a steroid, F26), not summed here
     }
 
     /* F25: while the basic-range state runs, range reads rangeSet exactly */
@@ -450,12 +462,17 @@ class Hero extends Unit {
     const m = this.buffAtkT > 0 ? this.buffAtkMult : 1;
     return this.attrs.get('physAtk') * m;
   }
-  /* Attack-speed steroids never multiply each other: a dash asMult and a
-     basicMod asMult (F7) resolve to the larger one. */
+  /* Attack-speed steroids never stack on each other: a dash asMult and a
+     basicMod asMult (F7) resolve to the larger one, and the additive
+     `atkSpd` timed buff (an allybuff's asAdd, F26; Inspire) is taken as
+     the max against that multiplier rather than on top of it. */
   curAtkSpd() {
+    const base = this.attrs.get('atkSpd');
     let m = this.buffAsT > 0 ? this.buffAsMult : 1;
     if (this.basicMod && this.basicMod.asMult > m) m = this.basicMod.asMult;
-    return this.attrs.get('atkSpd') * m;
+    const b = this.buffs.atkSpd;
+    const add = b && b.t > 0 ? b.value : 0;
+    return Math.max(base * m, base + add);
   }
   curSpeed() {
     const pct = this.buffs.speedPct && this.buffs.speedPct.t > 0 ? this.buffs.speedPct.value : 0;
@@ -743,7 +760,7 @@ class Hero extends Unit {
      against non-heroes, never against structures), the consumeMark bonus
      (F12), bonusVsMark and the caster's own missing-HP terms. Callers that
      hit several units call this once per victim. */
-  skillDmg(s, rank, target) {
+  skillDmg(s, rank, target, o) {
     const r = rank !== undefined ? rank : this.skillRankOf(s);
     let dmg = (rankVal(s, 'dmg', r) || 0)
       + this.curAtk() * (s.scaleAd || 0)
@@ -753,10 +770,10 @@ class Hero extends Unit {
       const missing = 1 - this.hpPct;
       dmg *= 1 + Math.min(b.max || Infinity, missing / (b.per || 1) * (b.perPct || 0));
     }
-    if (s.selfMissingPct) {
-      const cap = (s.selfMissingCap || 1) * this.maxHp;
-      dmg += Math.min(this.maxHp - this.hp, cap) * (rankVal(s, 'selfMissingPct', r) || 0);
-    }
+    /* F21: the caster's own missing HP, computed once at cast for a multi-victim
+       skill (o.selfMissing) so lifesteal off the first victim does not shrink it */
+    if (o && o.selfMissing !== undefined) dmg += o.selfMissing;
+    else if (s.selfMissingPct) dmg += this.selfMissingAmount(s, r);
     if (target && !target.isStructure) {
       const hero = target.type === 'hero';
       if (s.pctMaxHp) {
@@ -777,6 +794,14 @@ class Hero extends Unit {
     }
     if (s.dmgMult) dmg *= s.dmgMult;
     return dmg;
+  }
+  /* F21: selfMissingPct (per rank) of the caster's missing HP, capped at
+     selfMissingCap of max HP. */
+  selfMissingAmount(s, rank) {
+    if (!s.selfMissingPct) return 0;
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    const cap = (s.selfMissingCap || 1) * this.maxHp;
+    return Math.min(this.maxHp - this.hp, cap) * (rankVal(s, 'selfMissingPct', r) || 0);
   }
   skillHeal(s, rank) {
     const r = rank !== undefined ? rank : this.skillRankOf(s);
@@ -885,7 +910,7 @@ class Hero extends Unit {
      `mult` (an explosion's 0.8), `pen`, `slowPct` (a zone tick's ramp),
      `crit` (pre-rolled, F28), `noCC` and `zone` (centre stacks, F12). */
   skillHit(u, s, rank, o) {
-    let amount = this.skillDmg(s, rank, u);
+    let amount = this.skillDmg(s, rank, u, o);
     if (o && o.mult) amount *= o.mult;
     let dealt = 0;
     if (amount > 0) {
@@ -1037,7 +1062,7 @@ class Hero extends Unit {
     this.alive = false;
     this.deaths++; this.deathStreak++; this.streak = 0;
     this.dashS = null; this.forced = null; this.recallT = 0; this.hot = null;
-    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null; this.basicMod = null;
+    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null; this.basicMod = null; this.recast = null;
     this.cc.clear(); this.shields = []; this.dots = []; this.marks = {};
     this.runes = {};
     this.curTarget = null; this.aiTarget = null;
@@ -1203,9 +1228,35 @@ class Hero extends Unit {
         o = { mult: COMBAT.CRIT_DMG_BASE + this.attrs.get('critDmg'), crit: true };
       }
     }
+    if (s.selfMissingPct) { o = o || {}; o.selfMissing = this.selfMissingAmount(s, r); }   // F21: once per cast
     for (const u of Game.enemyUnits(this.team, { neutral: true })) {
       if (dist(this, u) <= s.radius + u.radius) this.skillHit(u, s, r, o);
     }
+  }
+  /* F22 recast Return: dash back to the stored takeoff point at the recast
+     speed, no damage, no CC, unhookable, free. Uses Flicker's wall back-off
+     so a point that has since become rock stops short along the line. */
+  dashBackTo(rc) {
+    const spec = (rc.s && rc.s.recast) || {};
+    const dx0 = rc.x - this.x, dy0 = rc.y - this.y, d0 = Math.hypot(dx0, dy0);
+    if (d0 < 1) return true;
+    const dir = { x: dx0 / d0, y: dy0 / d0 };
+    let distBack = d0;
+    if (Game.wallAt(rc.x, rc.y, this.radius + 8)) {
+      distBack = 0;
+      for (let t = 0.95; t >= 0.15; t -= 0.05) {
+        if (!Game.wallAt(this.x + dir.x * d0 * t, this.y + dir.y * d0 * t, this.radius + 8)) { distBack = d0 * t; break; }
+      }
+    }
+    this.recallT = 0;
+    this.dashS = {
+      dx: dir.x, dy: dir.y, remaining: distBack, speed: spec.speed || 1300,
+      dmg: 0, hitSet: new Set(), s: null, stopOnHero: false, endNova: null, rank: 1, unhookable: true,
+    };
+    Game.fx.ghost(this);
+    Game.fx.flash(this.x, this.y, 34, this.color);
+    if (this.isPlayer) SFX.skill();
+    return true;
   }
   /* Cone (F11): instant; every enemy unit whose circle meets the sector
      (apex = caster, `angle` degrees wide, `length` long, along `dir`) is
@@ -1239,6 +1290,17 @@ class Hero extends Unit {
       this.endState();
       return true;
     }
+    // F22 recast: while the Return is open, the button flies back instead of casting
+    if (this.recast && this.recast.skillIdx === i) {
+      const rc = this.recast;
+      if (Game.time >= rc.until) this.recast = null;   // expired: nothing happens, the cast below applies
+      else {
+        if (!this.cc.canCast || this.dashS || this.forced || this.channelS) return false;
+        this.recast = null;
+        return this.dashBackTo(rc);
+      }
+    }
+    const ox = this.x, oy = this.y;   // the takeoff point a recast returns to
     if (this.skillCd[i] > 0 || !this.canAfford(s0, rank)) return false;
     if (rank < 1) return false;                          // ultimate not learned yet
     if (s0.charges && !(this.skillCharges[i] > 0)) return false;   // F8: nothing banked
@@ -1363,13 +1425,29 @@ class Hero extends Unit {
         break;
       case 'dash': {
         if (s.buff) { this.buffAsMult = s.buff.asMult || 1; this.buffAsT = s.buff.dur || 3; }
+        /* F22: dashToPoint stops at the aim point when that is nearer than
+           dist; dashBack flies the other way from the aim */
+        let ddx = dir.x, ddy = dir.y, remaining = s.dist;
+        if (s.dashBack) { ddx = -ddx; ddy = -ddy; }
+        if (s.dashToPoint && point) remaining = Math.min(s.dist, Math.hypot(point.x - this.x, point.y - this.y));
         this.dashS = {
-          dx: dir.x, dy: dir.y, remaining: s.dist, speed: s.speed,
+          dx: ddx, dy: ddy, remaining, speed: s.speed,
           dmg: s.dmg ? this.skillDmg(s, this.skillRank[i]) : 0, hitSet: new Set(), s,
           stopOnHero: !!s.stopOnHero, endNova: s.endNova || null,
-          rank: this.skillRank[i],
+          rank: this.skillRank[i], keepFacing: !!s.dashBack,
         };
-        castAt = { x: this.x + dir.x * s.dist, y: this.y + dir.y * s.dist };
+        castAt = { x: this.x + ddx * remaining, y: this.y + ddy * remaining };
+        break;
+      }
+      case 'allybuff': {   // F26: attack speed and move speed for every allied hero around (incl. self)
+        const asAdd = rankVal(s, 'asAdd', rank) || 0, dur = s.dur || 3, rad = s.radius || 380;
+        for (const h of Game.heroes) {
+          if (h.team !== this.team || !h.alive || dist(this, h) > rad) continue;
+          if (asAdd) h.addTimedBuff('atkSpd', asAdd, dur);
+          if (s.spdAdd) h.addTimedBuff('speed', s.spdAdd, dur);
+          if (h !== this) Game.fx.ring(h.x, h.y, h.radius + 18, this.color, 0.4);
+        }
+        Game.fx.ring(this.x, this.y, rad, this.color, 0.5);
         break;
       }
       case 'zone': {
@@ -1422,6 +1500,16 @@ class Hero extends Unit {
         break;
       }
     }
+    /* F27: a damage skill's own shield and resist buffs land on the caster after the effect
+       (a selfState owns its armorAdd / mrAdd for its own duration, see above) */
+    if (s.type !== 'selfState') {
+      if (s.selfShieldPct) this.addShield(this.maxHp * s.selfShieldPct, s.selfShieldDur || 3);
+      const bd = s.buffDur || 3;
+      if (s.armorAdd) this.addTimedBuff('armor', s.armorAdd, bd);
+      if (s.mrAdd) this.addTimedBuff('mr', s.mrAdd, bd);
+    }
+    // F22: open the Return window; the cooldown below starts now, the Return itself is free
+    if (s.recast) this.recast = { x: ox, y: oy, until: Game.time + (s.recast.window || 3), skillIdx: i, s: s0 };
     this.payCost(s0, rank);
     if (overheated) { this.mana = 0; Game.fx.ring(this.x, this.y, this.radius + 30, this.color, 0.5); }
     if (s0.charges) {
@@ -1464,6 +1552,7 @@ class Hero extends Unit {
     if (this.buffAsT > 0) this.buffAsT -= dt;
     if (this.basicMod) { this.basicMod.t -= dt; if (this.basicMod.t <= 0) this.basicMod = null; }
     if (this.basicRangeState) { this.basicRangeState.t -= dt; if (this.basicRangeState.t <= 0) this.endBasicRange(); }
+    if (this.recast && Game.time >= this.recast.until) this.recast = null;   // F22: an unused Return just closes
     if (this.revealT > 0) this.revealT -= dt;
     if (this.concealT > 0) this.concealT -= dt;
     if (this.state) { this.state.t -= dt; if (this.state.t <= 0) this.endState(); }
@@ -1511,7 +1600,7 @@ class Hero extends Unit {
       const step = Math.min(d.remaining, d.speed * dt);
       this.x += d.dx * step; this.y += d.dy * step;
       d.remaining -= step;
-      this.facing = Math.atan2(d.dy, d.dx);
+      if (!d.keepFacing) this.facing = Math.atan2(d.dy, d.dx);   // a dashBack keeps facing the enemy
       this.clampWorld();
       // afterimage every ~45 world units so a dash reads as a trail, not a teleport
       d._trail = (d._trail || 0) + step;
@@ -1536,6 +1625,7 @@ class Hero extends Unit {
       }
       if (d.remaining <= 0.5) {
         if (d.endNova) { this.doNova(d.endNova, d.rank); Game.fx.skillCast(this, d.endNova, null); }
+        if (d.s && d.s.energyRefund) this.gainEnergy(d.s.energyRefund);   // F22: Recoil lands with Focus back
         this.dashS = null;
       }
       this.trackVelocity(dt);
@@ -1639,7 +1729,8 @@ class Hero extends Unit {
       if (c.dir) {
         const maxR = s.range || s.dist || (s.allyTarget && s.allyTarget.range) || 500;
         const fr = c.dist ? clamp((c.dist - 20) / 70, 0.3, 1) : 1;
-        point = { x: this.x + c.dir.x * maxR * (s.type === 'zone' ? fr : 1), y: this.y + c.dir.y * maxR * (s.type === 'zone' ? fr : 1) };
+        const pull = (s.type === 'zone' || s.dashToPoint) ? fr : 1;   // F22: a short joystick pull shortens a leap-to-point
+        point = { x: this.x + c.dir.x * maxR * pull, y: this.y + c.dir.y * maxR * pull };
       } else if (!s.allyTarget) {
         point = Game.autoAimPoint(this, s);
       }
@@ -2324,11 +2415,16 @@ class Hero extends Unit {
     this.botCastSpell(threat);
     for (let i = 0; i < 3; i++) {
       const s = this.skills[i];
-      if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
+      if (!s || this.skillRank[i] < 1) continue;
+      // F22: the Return is the cleanest exit there is
+      if (this.recast && this.recast.skillIdx === i && Game.time < this.recast.until) { this.castSkill(i, null); continue; }
+      if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
       if (s.charges && !(this.skillCharges[i] > 0)) continue;   // F8
       if (s.type === 'heal') { if (this.hpPct < 0.7) this.castSkill(i, null); continue; }
       // a self-buff (Rampage's regen and tenacity) is at its best mid-escape
       if (s.type === 'buff') { if (threat && bd < 560) this.castSkill(i, null); continue; }
+      // F22: a dashBack flies away from the aim, so it is aimed AT the chaser
+      if (s.type === 'dash' && s.dashBack) { if (threat && bd < 620) this.castSkill(i, { x: threat.x, y: threat.y }); continue; }
       if (s.type === 'dash' && threat && bd < 620) {
         /* Dashes ignore terrain — that is the whole reason a wall is an escape
            tool rather than a second health bar. A bot that only ever dashes
@@ -2355,7 +2451,14 @@ class Hero extends Unit {
   botSkillUrgency(i, t, d, isHero, farmOk) {
     const s = this.skills[i];
     const p = this.p;
-    if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
+    if (!s || this.skillRank[i] < 1) return 0;
+    // F22: an open Return outranks everything when the dive went wrong
+    if (this.recast && this.recast.skillIdx === i && Game.time < this.recast.until) {
+      let near = 0;
+      for (const h of Game.heroes) if (h.team !== this.team && h.alive && this.distTo(h) < 300) near++;
+      return (this.hpPct < 0.45 || near >= 2) ? 950 : 0;
+    }
+    if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
     if (s.charges && !(this.skillCharges[i] > 0)) return 0;   // F8
     if (i === 2 && s.type !== 'basicMod') {
       if (!isHero) return 0;
@@ -2389,6 +2492,7 @@ class Hero extends Unit {
         return isHero ? 480 : 200;
       }
       case 'dash':
+        if (s.dashBack) return isHero && d < 260 ? 600 : 0;   // F22: a hop away from whoever got close
         if (d <= 150 || d >= s.dist + 100) return 0;
         if (!(isHero || (farmOk && (s.dmg || s.endNova)))) return 0;
         if (isHero && this.advancedAI && !this.gapCloseLegal(t)) return 0;
@@ -2451,6 +2555,15 @@ class Hero extends Unit {
       case 'basicRange': // F25: thrown blades for a target just past melee reach
         if (!isHero || d < 150 || d >= (s.rangeSet || 300)) return 0;
         return 560;
+      case 'allybuff': { // F26: when someone it would reach (self included) is on an enemy hero
+        if (!isHero) return 0;
+        const rad = s.radius || 380;
+        for (const h of Game.heroes) {
+          if (h.team !== this.team || !h.alive || this.distTo(h) > rad) continue;
+          if (h.distTo(t) < 520) return 520;
+        }
+        return 0;
+      }
     }
     return 0;
   }
@@ -2507,6 +2620,9 @@ class Hero extends Unit {
         this.castSkill(i, t);
         break;
       case 'basicRange':
+        this.castSkill(i, null);
+        break;
+      case 'allybuff':
         this.castSkill(i, null);
         break;
     }

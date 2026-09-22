@@ -1603,6 +1603,9 @@ const Game = {
         case 'basicRange': // F25: the thrown-blade reach
           this.range({ unit: h, r: s.rangeSet || 300, color: c, dur: 0.8, dash: true, lw: 2 });
           break;
+        case 'allybuff':   // F26: who it reached
+          this.range({ unit: h, r: s.radius || 380, color: c, dur: 0.8, fill: true, grow: true });
+          break;
         default:   // skillshot / zone / blinkstrike — show the cast range
           this.range({ unit: h, r: s.range || 400, color: c, dur: 0.7, dash: true, lw: 2.5 });
           if (s.type === 'zone' && at) this.range({ x: at.x, y: at.y, r: s.radius, color: c, dur: 0.9 });
@@ -1680,6 +1683,10 @@ const Game = {
         case 'basicRange':
           this.ring(h.x, h.y, 70, c, 0.4);
           this.spark(h.x, h.y, c, 5);
+          break;
+        case 'allybuff':
+          this.rays(h.x, h.y, c, (s.radius || 380) * 0.5, 12);
+          this.flash(h.x, h.y, 60, c);
           break;
         case 'dash':
           this.ghost(h);

@@ -1400,7 +1400,18 @@ const UI = {
       const num = btn.querySelector('.cdNum');
       const learned = p.skillRank[i] > 0;
       const ch = s.charges ? p.skillCharges[i] : -1;   // F8: charges banked
-      if (s.charges && learned && ch <= 0 && p.skillRecharge[i] > 0) {
+      // F22: while a Return is open the button is relabelled and pressable, cooldown or not
+      const rc = p.recast && p.recast.skillIdx === i && Game.time < p.recast.until ? p.recast : null;
+      let lbl = btn.querySelector('.sLabel');
+      if (rc && !lbl) { lbl = document.createElement('span'); lbl.className = 'sLabel'; btn.appendChild(lbl); }
+      if (lbl) {
+        lbl.classList.toggle('hidden', !rc);
+        if (rc) this.setTxt(lbl, (rc.s.recast && rc.s.recast.label) || 'Return');
+      }
+      btn.classList.toggle('recast', !!rc);
+      if (rc) {
+        mask.style.display = 'none'; this.setTxt(num, '');
+      } else if (s.charges && learned && ch <= 0 && p.skillRecharge[i] > 0) {
         // F8: nothing banked — the ring is the charge on its way
         mask.style.setProperty('--p', p.skillRecharge[i] / p.rechargeFor(s));
         mask.style.display = 'block';
@@ -1421,9 +1432,9 @@ const UI = {
           cp.innerHTML = Array.from({ length: s.charges }, (_, k) => `<i class="${k < ch ? 'on' : ''}"></i>`).join('');
         }
       }
-      btn.classList.toggle('nomana', !p.canAfford(s) || (s.charges && learned && ch <= 0));
+      btn.classList.toggle('nomana', !rc && (!p.canAfford(s) || (s.charges && learned && ch <= 0)));
       btn.classList.toggle('locked', !learned);
-      btn.classList.toggle('ready', i === 2 && learned && cd <= 0 && p.canAfford(s));
+      btn.classList.toggle('ready', !!rc || (i === 2 && learned && cd <= 0 && p.canAfford(s)));
       // rank pips + the "spend a point here" affordance
       let pips = btn.querySelector('.rankPips');
       if (!pips) {

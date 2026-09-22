@@ -497,6 +497,16 @@ kbd {
   border-radius: var(--r-full); background: rgba(255,255,255,0.22);
 }
 .rankPips i.on { background: var(--gold); }
+/* F22: an open Return relabels the button over its icon. */
+.skillBtn .sLabel {
+  position: absolute; left: 0; right: 0; bottom: calc(14px * var(--hud-scale));
+  text-align: center; font-size: calc(11px * var(--hud-scale)); font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--gold);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9); pointer-events: none; z-index: 3;
+}
+.skillBtn .sLabel.hidden { display: none; }
+.skillBtn.recast .sIcon { filter: brightness(0.55); }
+.skillBtn.recast { border-color: var(--gold); animation: rankPulse 0.9s ease-in-out infinite; }
 /* F8: charge pips ride the top edge of a charge skill's button. */
 .chargePips {
   position: absolute; top: calc(4px * var(--hud-scale)); left: 0; right: 0;
