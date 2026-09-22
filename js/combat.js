@@ -373,6 +373,8 @@ function applyMark(src, target, s, rank, over) {
     const d = a.dot, mp = src.magicPower ? src.magicPower() : 0;
     let per = (d.base || 0) + mp * (d.scaleAp || 0) + target.maxHp * ((d.pctMaxHp || 0) + (d.pctPerMp || 0) * mp);
     if (target.type !== 'hero' && d.capNonHero) per = Math.min(per, d.capNonHero);
+    // perSec: the per-stack amount (and its non-hero cap) is per second, not the whole dot (Sable's Venom)
+    if (d.perSec) per *= d.dur || dur;
     if (per > 0) target.addDot({ src, total: per * n, dur: d.dur || dur, type: d.type || s.dmgType || 'magic', color: src.color, tag: a.tag });
   }
   return n;
@@ -842,6 +844,12 @@ const PASSIVES = {
     },
   },
 
+  /* Sable — hero kills grant 18% spell vamp 5 s, assists 8% 3 s (a kill's
+     vamp is never downgraded by an assist). A basic on a hero carrying her
+     Venom (the skill-owned mark of Needle and Lunge, F12) refreshes the
+     mark and its dot to full, once per stack lifetime: marks.venomAt is
+     stamped by every application, and a refresh remembers the stamp it
+     answered, so the next basic only refreshes after a new stack lands. */
   venom: {
     init(h) { h.pv = { vamp: 0, t: 0 }; },
     statMod(h) { return { spellVamp: h.pv && h.pv.t > 0 ? h.pv.vamp : 0 }; },
@@ -854,6 +862,12 @@ const PASSIVES = {
       if (!victim || victim.type !== 'hero' || !h.pv) return;
       if (h.pv.vamp >= 0.18 && h.pv.t > 0) return;
       h.pv.vamp = 0.08; h.pv.t = 3;
+    },
+    onBasicHit(h, target) {
+      if (target.type !== 'hero' || !target.marks || !markStacks(target, 'venom')) return;
+      const m = target.marks;
+      if (m.venomRefreshedAt === m.venomAt) return;   // this stack lifetime already had its refresh
+      if (refreshMark(h, target, { tag: 'venom' })) { m.venomRefreshedAt = m.venomAt; Game.fx.ring(target.x, target.y, 20, h.color, 0.3); }
     },
   },
 

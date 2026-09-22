@@ -292,4 +292,142 @@ T.test('Wraith bot: Phase Cut only from 55 energy; Phantom Blades for a target 1
   assert.equal(wraith.heuristicStateStep(), false, 'with energy back: fights');
 });
 
+/* ---------------- Sable ---------------- */
+
+T.test('Sable: base stats and skill numbers match the spec (the only hero-only projectile, the only %-max-HP kit, Venom marks that refresh instead of consuming)', () => {
+  reset();
+  const d = sable.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [508, 67, 240, 26, 60, 6.4, 12, 2.0, 12, 1.8, 92, 1.12, 272, 3]);
+  assert.equal(d.passive.id, 'venom');
+  const [s1, s2, s3] = sable.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.heroOnly, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce],
+    ['skillshot', 5, -0.2, 40, true, 90, 12, 0.5, 560, 1000, 20, false]);
+  assert.deepEqual(s1.applyMark, { tag: 'venom', max: 3, dur: 4, stacks: 1, dot: { pctMaxHp: 0.015, pctPerMp: 0.0001, perSec: true, dur: 4, capNonHero: 40 } });
+  assert.equal(rankVal(s1, 'dmg', 6), 150); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Needle cd at rank 6');
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAp],
+    ['dash', 9, -0.3, 45, 300, 1100, 110, 14, 0.5]);
+  assert.equal(s2.applyMark, s1.applyMark, 'Lunge applies the same Venom (one stack, the same dot)');
+  assert.equal(rankVal(s2, 'dmg', 6), 180); near(rankVal(s2, 'cd', 6), 7.5, 1e-9, 'Lunge cd at rank 6');
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.dmg, s3.dmgLv, s3.scaleAp, s3.pctMaxHp, s3.pctMaxHpCap, s3.slowPct, s3.slowDur, s3.refreshMark],
+    ['blinkstrike', [38, 34, 30], 100, 460, 220, 40, 0.7, [0.08, 0.10, 0.12], 500, 0.5, 1.5, { tag: 'venom' }]);
+  assert.ok(!s3.consumeMark, 'Kiss refreshes, never consumes');
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'skillshot' && s.heroOnly)).length, 1, 'the only hero-only projectile');
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.pctMaxHp)).length, 1, 'the only %-max-HP skill');
+  for (const s of sable.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Sable: Needle flies through a creep to the hero behind it and applies Venom, a dot of 1.5% (+0.01% per MAGIC) of max HP per second per stack (cap 40/s vs non-heroes); Lunge adds a stack; three at most; basics refresh the timer once per stack lifetime', () => {
+  reset();
+  T.place(sable, open.x, open.y);
+  const m = creep(0, open.x + 200, open.y);
+  T.place(grom, open.x + 420, open.y);
+  assert.ok(sable.castSkill(0, grom));
+  T.frames(G, 30);
+  assert.equal(m.stats ? m.stats.dmgTaken : m.hp < m.maxHp, false, 'the creep on the line was not touched');
+  assert.ok(grom.stats.dmgTaken > 0, 'the hero behind it was hit');
+  assert.equal(markStacks(grom, 'venom'), 1);
+  let dot = grom.dots.find(x => x.tag === 'venom');
+  assert.ok(dot, 'a Venom dot');
+  near(dot.perSec, grom.maxHp * 0.015, 1e-6, '1.5% of max HP per second at one stack, no MAGIC');
+  // Lunge: a second stack, the dot doubled
+  T.place(sable, grom.x - 150, grom.y);
+  assert.ok(sable.castSkill(1, grom));
+  T.frames(G, 20);
+  assert.equal(markStacks(grom, 'venom'), 2);
+  dot = grom.dots.find(x => x.tag === 'venom');
+  near(dot.perSec, grom.maxHp * 0.03, 1e-6, 'two stacks: 3% per second');
+  // a third, then the cap
+  sable.dashS = null; T.place(sable, grom.x - 300, grom.y);
+  sable.skillCd[0] = 0; assert.ok(sable.castSkill(0, grom)); T.frames(G, 25);
+  assert.equal(markStacks(grom, 'venom'), 3);
+  sable.skillCd[0] = 0; assert.ok(sable.castSkill(0, grom)); T.frames(G, 25);
+  assert.equal(markStacks(grom, 'venom'), 3, 'capped at three');
+  dot = grom.dots.find(x => x.tag === 'venom');
+  near(dot.perSec, grom.maxHp * 0.045, 1e-6, 'three stacks: 4.5% per second');
+  // the passive: a basic refreshes the timer once per stack lifetime
+  T.seconds(G, 2);
+  const tBefore = grom.marks.venomT;
+  T.place(sable, grom.x - 100, grom.y);
+  basic(sable, grom);
+  assert.ok(grom.marks.venomT > tBefore + 1.5, 'the basic refreshed the Venom timer');
+  assert.ok(grom.dots.find(x => x.tag === 'venom').t > 3.0, `and its dot: ${grom.dots.find(x => x.tag === 'venom').t}`);
+  const tAfter = grom.marks.venomT;
+  basic(sable, grom);
+  assert.equal(grom.marks.venomT, tAfter, 'a second basic in the same stack lifetime does not');
+  sable.skillCd[0] = 0; assert.ok(sable.castSkill(0, grom)); T.frames(G, 20);   // a new stack: a new lifetime
+  T.seconds(G, 1);
+  const t2 = grom.marks.venomT;
+  basic(sable, grom);
+  assert.ok(grom.marks.venomT > t2 + 0.5, 'a fresh application allows the next refresh');
+  // the cap against a creep: 40/s per stack
+  reset();
+  T.place(sable, open.x, open.y);
+  const big = creep(0, open.x + 150, open.y);
+  big.maxHp = 9000; big.hp = 9000;
+  assert.ok(sable.castSkill(1, big)); T.frames(G, 20);
+  const cdot = big.dots.find(x => x.tag === 'venom');
+  assert.ok(cdot, 'Lunge Venoms a creep too');
+  near(cdot.perSec, 40, 1e-6, 'capped at 40 per second per stack against a non-hero');
+});
+
+T.test('Sable: Kiss blinks in for base + 8/10/12% of max HP (cap 500 vs non-heroes), slows 50% for 1.5 s and refreshes every Venom stack to full without consuming them', () => {
+  reset();
+  const s3 = sable.skills[2];
+  T.place(sable, open.x, open.y);
+  T.place(grom, open.x + 300, open.y);
+  near(sable.skillDmg(s3, 3, grom), 300 + sable.magicPower() * 0.7 + 0.12 * grom.maxHp, 1e-6, 'rank 3: 12% of max HP');
+  near(sable.skillDmg(s3, 1, grom), 220 + sable.magicPower() * 0.7 + 0.08 * grom.maxHp, 1e-6, 'rank 1: 8%');
+  const big = creep(0, open.x + 600, open.y);
+  big.maxHp = 9000; big.hp = 9000;
+  near(sable.skillDmg(s3, 3, big), 300 + sable.magicPower() * 0.7 + 500, 1e-6, 'capped at 500 vs a non-hero');
+  // three Venom, aged 3 s, then the Kiss
+  for (let k = 0; k < 3; k++) { sable.skillCd[0] = 0; assert.ok(sable.castSkill(0, grom)); T.frames(G, 25); }
+  assert.equal(markStacks(grom, 'venom'), 3);
+  T.seconds(G, 3);
+  assert.ok(grom.marks.venomT - G.time < 1.2, 'nearly lapsed');
+  const hp0 = grom.hp;
+  assert.ok(sable.castSkill(2, grom));
+  assert.ok(sable.distTo(grom) < 120 && grom.hp < hp0, 'blinked in and bit');
+  assert.equal(markStacks(grom, 'venom'), 3, 'stacks kept');
+  near(grom.marks.venomT - G.time, 4, 1e-6, 'refreshed to full');
+  assert.ok(grom.dots.find(x => x.tag === 'venom').t > 3.9, 'the dot too');
+  assert.ok(grom.cc.has('slow') && Math.abs(grom.cc.slowPct - 0.5) < 1e-9, 'slowed 50%');
+});
+
+T.test('Sable bot: Needle never at creeps; Lunge for the third Venom (760 at two) and kept for the exit at three; Kiss at 900 on the hero carrying three, aimed at that hero; she prefers the biggest hero of two equally reachable', () => {
+  reset();
+  T.place(sable, open.x, open.y);
+  T.place(grom, open.x + 300, open.y);
+  const m = creep(0, open.x + 250, open.y + 100);
+  assert.equal(sable.botSkillUrgency(0, m, 270, false, true), 0, 'Needle is held against a creep even when farming');
+  assert.equal(sable.botSkillUrgency(0, grom, 300, true, false), 500, 'Needle at a hero');
+  assert.equal(sable.botSkillUrgency(1, grom, 300, true, false), 360, 'no Venom: a routine Lunge');
+  grom.marks = { venom: 2, venomT: G.time + 4, venomAt: G.time };
+  assert.equal(sable.botSkillUrgency(1, grom, 300, true, false), 760, 'two Venom: Lunge for the third');
+  assert.equal(sable.botSkillUrgency(2, grom, 300, true, false), 0, 'two Venom on a healthy lone hero: Kiss held');
+  grom.marks.venom = 3;
+  assert.equal(sable.botSkillUrgency(1, grom, 300, true, false), 0, 'three Venom: Lunge kept for the exit');
+  assert.equal(sable.botSkillUrgency(2, grom, 300, true, false), 900, 'three Venom: Kiss at once');
+  // aimed at the Venomed hero, not the nearest
+  T.place(nyx, open.x + 150, open.y);
+  sable.botFireSkill(2, nyx, 150, true, false);
+  assert.ok(sable.distTo(grom) < 120, 'Kiss landed on the hero carrying three Venom');
+  assert.equal(nyx.stats.dmgTaken, 0);
+  // target choice: the biggest hero of two at the same distance
+  reset();
+  T.place(sable, open.x, open.y);
+  T.place(grom, open.x + 300, open.y);
+  T.place(nyx, open.x - 300, open.y);
+  nyx.level = 6; nyx.recalcStats(true);   // no longer a one-rotation kill: a fair comparison
+  G.update(1 / 60);
+  sable.aiTarget = null;
+  assert.equal(sable.botCanKill(nyx), false);
+  sable.def0.botTargetMaxHp = false;
+  assert.equal(sable.heuristicSelectTarget(), nyx, 'a plain assassin takes the squishy one');
+  sable.def0.botTargetMaxHp = true;
+  assert.equal(sable.heuristicSelectTarget(), grom, 'Sable takes the tank');
+  nyx.level = 1; nyx.recalcStats(true);
+});
+
 T.done();

@@ -2408,7 +2408,9 @@ class Hero extends Unit {
           if (role === 'Assassin' || role === 'Marksman' || role === 'Mage') {
             const squish = u.def0 && (u.def0.role === 'Marksman' || u.def0.role === 'Mage' ||
               u.def0.role === 'Support' || u.def0.role === 'Assassin');
-            if (squish) score -= (p.squishBias || 45);
+            // F29 (Sable's hint): a %-max-HP kit wants the biggest hero it can reach, not the squishiest
+            if (this.def0.botTargetMaxHp) score -= u.maxHp * 0.04;
+            else if (squish) score -= (p.squishBias || 45);
             if (role === 'Assassin' && u.hpPct < 0.38) score -= 55;
           }
           if (this.unitLockedDown(u)) score -= 40;

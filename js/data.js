@@ -126,6 +126,11 @@ const CC_PRIORITY = ['suppress', 'airborne', 'taunt', 'stun', 'silence', 'immobi
      bonusVsMark {tag, within, mult}, selfMissingBonus {perPct, per, max},
      canCrit (one roll per cast, novas), dmgMult (overheat, F5).
 */
+/* Sable's Venom (docs/design/heroes.md, Assassins: Sable): the one mark
+   whose dot reads the target's max HP, per second per stack (F12 applyMark
+   with a perSec dot, F20). Needle and Lunge both apply it; Kiss refreshes it. */
+const SABLE_VENOM = { tag: 'venom', max: 3, dur: 4, stacks: 1, dot: { pctMaxHp: 0.015, pctPerMp: 0.0001, perSec: true, dur: 4, capNonHero: 40 } };
+
 const HEROES = [
   {
     id: 'zephyr', name: 'Zephyr', role: 'Marksman', icon: '🏹', color: '#7dd3fc', projColor: '#bde9ff',
@@ -564,19 +569,39 @@ const HEROES = [
   },
   {
     id: 'sable', name: 'Sable', role: 'Assassin', icon: '🦂', color: '#16a34a', projColor: '#86efac',
-    desc: 'A venomant who wins fights after they have already left.',
-    difficulty: 2, damageStyle: 'magic',
+    desc: 'The %-HP poison assassin: darts that ignore minions and find the hero behind them, venom that eats a share of the target\'s health every second, and a Kiss that bites a tenth of it at once. Tanks fear her; she has no hard CC.',
+    difficulty: 3, damageStyle: 'magic',
+    /* docs/design/heroes.md, Assassins: Sable. The only kit that reads the
+       target's max HP (F20 pctMaxHp, and the dot inside her Venom mark) and
+       the roster's only hero-only projectile: Needle flies through minions,
+       monsters and structures to the first HERO. Venom is a skill-owned
+       mark (F12): three stacks, 4 s, each ticking 1.5% (+0.01% per MAGIC)
+       of max HP per second (cap 40/s per stack vs non-heroes); Kiss
+       refreshes every stack to full (refreshMark) instead of consuming them,
+       and her basics refresh the timer once per stack lifetime (the
+       passive). No hard CC. Bot fields: Lunge rates 760 at a hero carrying
+       two Venom (botMark) and is kept for the exit at three (botHoldMark);
+       Kiss goes the moment a hero in reach carries three (botMark, aimed by
+       botFireSkill); botTargetMaxHp makes her prefer the biggest hero when
+       two are equally reachable instead of the squishiest. */
+    botTargetMaxHp: true,
     hp: 508, hpLv: 67, mp: 240, mpLv: 26, atk: 60, atkLv: 6.4,
     armor: 12, armorLv: 2.0, mr: 12, mrLv: 1.8,
     range: 92, atkSpd: 1.12, speed: 272,
     passive: {
       name: 'Venom Bank', icon: '🧪', id: 'venom',
-      desc: 'Hero kills grant 18% spell vamp for 5s. Assists grant 8% for 3s.',
+      desc: 'Hero kills grant 18% spell vamp for 5s, assists 8% for 3s. Basic attacks on a Venomed hero refresh the Venom timer (once per stack lifetime).',
     },
     skills: [
-      { name: 'Needle', icon: '┊', type: 'skillshot', cd: 6, mana: 40, dmgType: 'magic', dmg: 130, dmgLv: 16, scaleAp: 0.5, range: 520, speed: 980, radius: 20, desc: 'A venom dart that starts the rot.' },
-      { name: 'Lunge', icon: '→', type: 'dash', cd: 9, mana: 45, dmgType: 'magic', dist: 300, speed: 1100, dmg: 125, dmgLv: 15, scaleAp: 0.45, desc: 'Lunge through, coating enemies in toxin.' },
-      { name: 'Kiss', icon: '💋', type: 'blinkstrike', cd: 38, mana: 100, dmgType: 'magic', range: 460, dmg: 280, dmgLv: 32, scaleAp: 0.9, slowPct: 0.5, slowDur: 1.6, desc: 'Blink in and deliver a slowing venom kiss.' },
+      { name: 'Needle', icon: '┊', type: 'skillshot', cd: 5, cdLv: -0.2, mana: 40, heroOnly: true, dmgType: 'magic', dmg: 90, dmgLv: 12, scaleAp: 0.5, range: 560, speed: 1000, radius: 20, pierce: false,
+        applyMark: SABLE_VENOM,
+        desc: 'A venom dart (560 range, radius 20) that passes through minions and monsters and hits the first hero for 90+12/rank (+50% MAGIC), applying Venom: 1.5% (+0.01% per MAGIC) of max HP per second per stack for 4s, up to 3 stacks.' },
+      { name: 'Lunge', icon: '→', type: 'dash', cd: 9, cdLv: -0.3, mana: 45, dmgType: 'magic', dist: 300, speed: 1100, dmg: 110, dmgLv: 14, scaleAp: 0.5,
+        applyMark: SABLE_VENOM, botMark: { tag: 'venom', stacks: 2 }, botHoldMark: { tag: 'venom', stacks: 3 },
+        desc: 'Lunge 300 units through enemies for 110+14/rank (+50% MAGIC), coating each in one Venom stack (the same 1.5% of max HP per second per stack).' },
+      { name: 'Kiss', icon: '💋', type: 'blinkstrike', cd: [38, 34, 30], mana: 100, dmgType: 'magic', range: 460, dmg: 220, dmgLv: 40, scaleAp: 0.7, pctMaxHp: [0.08, 0.10, 0.12], pctMaxHpCap: 500, slowPct: 0.5, slowDur: 1.5,
+        refreshMark: { tag: 'venom' }, botMark: { tag: 'venom', stacks: 3 },
+        desc: 'Blink in and bite the nearest hero within 460 for 220/260/300 (+70% MAGIC) plus 8/10/12% of its max HP (cap 500 vs non-heroes), slow 50% for 1.5s, and refresh every Venom stack to full duration.' },
     ],
   },
   {
