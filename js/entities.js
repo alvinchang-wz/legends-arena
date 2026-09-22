@@ -623,13 +623,18 @@ class TeamBrain {
       this.assign(h, 'lane', 'mid', null, 'hold', false, null);
       return;
     }
+    /* The position's polyline, except on a map that does not have it
+       (10v10 runs four lanes of its own): there the hero keeps the lane it
+       was drafted into. */
+    const laneFor = name => (this.waves[name] ? name : h.lane);
     if (role === 'mid') {
-      const mw = this.waves.mid;
+      const mid = laneFor('mid');
+      const mw = this.waves[mid];
       if (mw && mw.state === 'crashed' && G.time > 55 && o.tToSpawn > 30) {
         const gank = this.gankLane(h, true);
         if (gank) { this.assign(h, 'gank', gank.lane, gank.target, 'hold', false, gank.point); return; }
       }
-      this.assign(h, 'lane', 'mid', null, 'fast', false, null);
+      this.assign(h, 'lane', mid, null, 'fast', false, null);
       return;
     }
     if (role === 'gold') {
@@ -639,18 +644,19 @@ class TeamBrain {
       let intent = 'fast';
       if (G.time < 60) intent = 'freeze';
       else if (G.time > BALANCE.laneBonusEnd) intent = 'slow';
-      this.assign(h, 'lane', 'top', null, intent, false, null);
+      this.assign(h, 'lane', laneFor('top'), null, intent, false, null);
       return;
     }
     // exp
+    const expLane = laneFor('bot');
     let intent = 'hold';
     if (h.level < 4) intent = 'freeze';
     else {
-      const foe = this.laneOpponent('bot');
+      const foe = this.laneOpponent(expLane);
       if (!foe) intent = 'fast';
       else if (o.phase === 'prep') intent = 'slow';
     }
-    this.assign(h, 'lane', 'bot', null, intent, false, null);
+    this.assign(h, 'lane', expLane, null, intent, false, null);
   }
 
   /* The enemy laner assigned to a lane, if we can see them or remember them
