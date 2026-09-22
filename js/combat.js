@@ -319,7 +319,7 @@ function applySkillCC(src, target, s, rank, over) {
   const slowDur = (over && over.slowDur !== undefined) ? over.slowDur : rankVal(s, 'slowDur', r);
   if (slowPct) target.cc.applySlow(slowPct, slowDur || 1.5, ten);
   if (s.taunt) applyTaunt(src, target, rankVal(s, 'taunt', r), ten);
-  if (s.knockback) applyKnockback(src, target, rankVal(s, 'knockback', r), s, r, over && over.from);
+  if (s.knockback) applyKnockback(src, target, rankVal(s, 'knockback', r), s, r, over && over.from, over && over.dir);
   if (s.pullTo) applyPullTo(src, target, s, r, over);
 }
 
@@ -497,14 +497,17 @@ function applyDisplacement(src, target, spec) {
 
 /* A `knockback` field: slide away from the origin (the caster, or a zone's
    centre) — or toward it when the distance is negative (a pull, which stops
-   at the bodies rather than dragging the victim through the caster).
+   at the bodies rather than dragging the victim through the caster). A
+   skillshot passes its flight direction as `dir` (Tide's wave carries its
+   victims along the line, not away from the caster).
    0.25 s for a shove, 0.3 s for a pull; `knockbackT` on the skill overrides. */
-function applyKnockback(src, target, distance, s, rank, from) {
+function applyKnockback(src, target, distance, s, rank, from, dir) {
   if (!src || !distance || target.isStructure || !target.alive) return false;
   const o = from || src;
   let rx = target.x - o.x, ry = target.y - o.y;
   let d = Math.sqrt(rx * rx + ry * ry);
-  if (d < 1) { rx = Math.cos(target.facing); ry = Math.sin(target.facing); d = 1; }
+  if (dir && distance > 0) { rx = dir.x; ry = dir.y; d = Math.hypot(rx, ry) || 1; }
+  else if (d < 1) { rx = Math.cos(target.facing); ry = Math.sin(target.facing); d = 1; }
   rx /= d; ry /= d;
   let dist = distance;
   if (dist < 0) {

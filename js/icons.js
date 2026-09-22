@@ -779,7 +779,12 @@ const Icons = (() => {
   GLYPHS['skill:omen:1'] = g => { arrow(g, 16, 62, 84, 38, 6, '#94a3b8', 2); };
   GLYPHS['skill:omen:2'] = g => { arrow(g, 14, 70, 86, 30, 8, '#e2e8f0', 2.2); tri(g, 50, 50, 8, -0.5, '#64748b'); };
   GLYPHS['skill:tide:0'] = g => { g.beginPath(); g.moveTo(12, 60); g.quadraticCurveTo(40, 20, 88, 50); g.lineWidth = 8; g.strokeStyle = '#0ea5e9'; g.stroke(); };
-  GLYPHS['skill:tide:1'] = g => { ring(g, 50, 50, 28, 6, '#38bdf8'); };
+  GLYPHS['skill:tide:1'] = g => {                                 // Surge: a crest riding forward
+    g.beginPath(); g.moveTo(12, 66); g.quadraticCurveTo(36, 30, 58, 58); g.quadraticCurveTo(70, 72, 84, 60);
+    g.lineWidth = 7; g.strokeStyle = 'rgba(14,165,233,0.55)'; g.lineCap = 'round'; g.stroke();
+    arrow(g, 20, 44, 84, 40, 7, '#38bdf8', 2.2);
+    for (const [x, y] of [[30, 76], [46, 80], [62, 78]]) dot(g, x, y, 3, 'rgba(125,211,252,0.8)');
+  };
   GLYPHS['skill:tide:2'] = g => { for (const [y, a] of [[40, 1], [58, 0.6], [74, 0.35]]) { g.beginPath(); g.ellipse(50, y, 30, 8, 0, 0, T2); g.strokeStyle = `rgba(14,165,233,${a})`; g.lineWidth = 4; g.stroke(); } };
   GLYPHS['skill:cinder:0'] = g => { path(g, [[30, 70], [42, 36], [50, 20], [58, 36], [70, 70]]); g.fillStyle = '#ea580c'; g.fill(); };
   GLYPHS['skill:cinder:1'] = g => { g.beginPath(); g.moveTo(18, 30); g.quadraticCurveTo(50, 10, 70, 60); g.setLineDash([8, 6]); g.lineWidth = 4; g.strokeStyle = '#ea580c'; g.stroke(); g.setLineDash([]); g.beginPath(); g.ellipse(70, 72, 16, 6, 0, 0, T2); g.stroke(); };

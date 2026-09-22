@@ -529,4 +529,119 @@ T.test('Karn bot: the hook waits for an unblocked, isolated hero (carries first)
   zephyr.vx = 0;
 });
 
+/* ---------------- Tide ---------------- */
+
+T.test('Tide: base stats and skill numbers match the spec; Undertow slows 12% on basics and adds 8% to slowed heroes', () => {
+  reset();
+  const d = tide.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [670, 92, 240, 26, 56, 6.0, 17, 2.8, 17, 2.6, 112, 0.98, 256]);
+  const [s1, s2, s3] = tide.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce, s1.knockback, s1.wallDmg, s1.wallScaleAp, s1.wallStun],
+    ['skillshot', 8, -0.4, 55, 4, 130, 16, 0.5, 560, 750, 32, true, 120, 80, 0.3, 0.6]);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAp, s2.slowPct, s2.slowDur],
+    ['dash', 10, -0.4, 55, 320, 950, 90, 11, 0.4, 0.3, 1.2]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.knockback, s3.wallDmg, s3.wallScaleAp, s3.wallStun, s3.noWallCC],
+    ['zone', [42, 38, 34], 120, 480, 250, 0.5, 1, [250, 320, 390], 0.8, 130, 120, 0.4, 0.7, { airborne: 0.5 }]);
+  assert.ok(Math.abs(tide.cooldownFor(s1, 6) - 6) < 1e-9); assert.equal(rankVal(s1, 'mana', 6), 75);
+  T.place(tide, open.x, open.y); T.place(torren, open.x + 120, open.y);
+  tide.onBasicLanded(torren, 10);
+  assert.ok(Math.abs(torren.cc.slowPct - 0.12) < 1e-9 && torren.cc.t.slow <= 1, 'basics slow 12% for 1 s');
+  assert.ok(Math.abs(tide.onDealDamage(torren, 100, { type: 'magic' }) - 108) < 1e-9, '+8% on a slowed hero');
+  torren.cc.clear();
+  assert.ok(Math.abs(tide.onDealDamage(torren, 100, { type: 'magic' }) - 100) < 1e-9);
+});
+
+T.test('Tide: Breaker carries everyone on its line 120 along the wave; a victim that meets rock stops, takes +80 (+30% MAGIC) and is stunned 0.6 s', () => {
+  reset();
+  // in the open: two heroes on the line both slide 120 along the wave direction, not away from Tide
+  T.place(tide, open.x, open.y); T.place(torren, open.x + 150, open.y + 20); T.place(brass, open.x + 260, open.y - 20);
+  assert.ok(tide.castSkill(0, { x: open.x + 500, y: open.y }));
+  assert.equal(tide.mana, tide.maxMana - 75);
+  T.seconds(G, 0.9);
+  assert.ok(torren.hp < torren.maxHp && brass.hp < brass.maxHp, 'the wave pierces both');
+  assert.ok(Math.abs(torren.x - (open.x + 270)) < 3 && Math.abs(torren.y - (open.y + 20)) < 3, `Torren slid 120 along the wave: ${torren.x - open.x}, ${torren.y - open.y}`);
+  assert.ok(Math.abs(brass.x - (open.x + 380)) < 3 && Math.abs(brass.y - (open.y - 20)) < 3, `Brass too: ${brass.x - open.x}, ${brass.y - open.y}`);
+  assert.ok(!torren.cc.has('stun') && !brass.cc.has('stun'), 'no wall, no stun');
+  // against a wall: the slide stops at the rock, the bonus lands and the victim is stunned
+  reset();
+  const near = T.openSpot(G, 60, { nearWallDx: 140 });
+  T.place(torren, near.x, near.y); T.place(tide, near.x - 300, near.y);
+  torren.stats.dmgTaken = 0;
+  assert.ok(tide.castSkill(0, { x: near.x + 200, y: near.y }));
+  T.seconds(G, 1.0);
+  assert.ok(torren.x - near.x < 120 && torren.x > near.x, `stopped short of the rock: ${torren.x - near.x}`);
+  assert.ok(!G.wallAt(torren.x, torren.y, torren.radius), 'never inside the wall');
+  assert.ok(torren.cc.t.stun > 0 && torren.cc.t.stun <= 0.6, `wall stun 0.6: ${torren.cc.t.stun}`);
+  const wave = Math.round(tide.skillDmg(tide.skills[0], 6) * G.rules.COMBAT.SKILL_DMG * G.rules.COMBAT.DEF_K / (G.rules.COMBAT.DEF_K + torren.mrValue()));
+  const wall = Math.round((80 + tide.magicPower() * 0.3) * G.rules.COMBAT.SKILL_DMG * G.rules.COMBAT.DEF_K / (G.rules.COMBAT.DEF_K + torren.mrValue()));
+  assert.ok(Math.abs(torren.stats.dmgTaken - (wave + wall)) <= 2, `wave ${wave} + wall ${wall} = ${torren.stats.dmgTaken}`);
+});
+
+T.test('Tide: Surge slows 30% for 1.2 s along its path; High Water throws everyone 130 outward after 0.5 s, wall hits are stunned 0.7 s, the rest are airborne 0.5 s', () => {
+  reset();
+  T.place(tide, open.x, open.y); T.place(torren, open.x + 200, open.y);
+  assert.ok(tide.castSkill(1, torren));
+  T.seconds(G, 0.4);
+  assert.ok(torren.hp < torren.maxHp && Math.abs(torren.cc.slowPct - 0.3) < 1e-9, 'slowed 30%');
+  // High Water in the open: launched, not stunned
+  reset();
+  T.place(tide, open.x, open.y); T.place(torren, open.x + 300, open.y + 60); T.place(brass, open.x + 300, open.y - 60);
+  assert.ok(tide.castSkill(2, { x: open.x + 300, y: open.y }));
+  assert.equal(tide.skillCd[2], 34); assert.equal(tide.mana, tide.maxMana - 120);
+  assert.equal(G.zones.length, 1);
+  T.seconds(G, 0.45);
+  assert.equal(torren.hp, torren.maxHp, 'nothing before the 0.5 s telegraph');
+  T.seconds(G, 0.5);
+  assert.ok(torren.hp < torren.maxHp && brass.hp < brass.maxHp, 'both inside 250 struck');
+  assert.ok(torren.y - (open.y + 60) > 100, `Torren thrown outward from the centre: ${torren.y - (open.y + 60)}`);
+  assert.ok(brass.y - (open.y - 60) < -100, `Brass the other way: ${brass.y - (open.y - 60)}`);
+  assert.ok(torren.cc.has('airborne') && torren.cc.t.airborne <= 0.5 && !torren.cc.has('stun'), 'airborne 0.5 in the open');
+  // against a wall: the throw stops at the rock, +120 (+40% MAGIC) and a 0.7 s stun, no launch
+  reset();
+  const near = T.openSpot(G, 60, { nearWallDx: 140 });
+  T.place(torren, near.x, near.y); T.place(tide, near.x - 400, near.y);
+  torren.stats.dmgTaken = 0;
+  assert.ok(tide.castSkill(2, { x: near.x - 100, y: near.y }));
+  T.seconds(G, 1.0);
+  assert.ok(torren.x - near.x < 130 && !G.wallAt(torren.x, torren.y, torren.radius), `stopped at the rock: ${torren.x - near.x}`);
+  assert.ok(torren.cc.t.stun > 0 && torren.cc.t.stun <= 0.7, `wall stun 0.7: ${torren.cc.t.stun}`);
+  assert.ok(!torren.cc.has('airborne'), 'a wall hit is not launched');
+  const zone = Math.round(tide.skillDmg(tide.skills[2], 3) * G.rules.COMBAT.SKILL_DMG * G.rules.COMBAT.DEF_K / (G.rules.COMBAT.DEF_K + torren.mrValue()));
+  const wall = Math.round((120 + tide.magicPower() * 0.4) * G.rules.COMBAT.SKILL_DMG * G.rules.COMBAT.DEF_K / (G.rules.COMBAT.DEF_K + torren.mrValue()));
+  assert.ok(Math.abs(torren.stats.dmgTaken - (zone + wall)) <= 2, `zone ${zone} + wall ${wall} = ${torren.stats.dmgTaken}`);
+});
+
+T.test('Tide bot: Breaker and High Water prefer a target with a wall behind the push; High Water is centred to throw at the rock; Surge lands on the open side', () => {
+  reset();
+  const near = T.openSpot(G, 60, { nearWallDx: 140 });
+  T.place(torren, near.x, near.y); T.place(tide, near.x - 300, near.y);
+  G.update(1 / 60);
+  const [s1, s2, s3] = tide.skills;
+  assert.ok(tide.wallBehind(torren, 1, 0, 130), 'rock within 130 to the right of Torren');
+  assert.ok(!tide.wallBehind(torren, -1, 0, 130), 'open to the left');
+  assert.equal(tide.botSkillUrgency(0, torren, tide.distTo(torren), true, false), 850, 'the wave pushes him into it');
+  assert.equal(tide.botSkillUrgency(2, torren, tide.distTo(torren), true, false), 850, 'so does High Water');
+  const w = tide.wallShoveDir(torren, 140);
+  assert.ok(w && w.x > 0.9, `the shove direction points at the rock: ${w && w.x}, ${w && w.y}`);
+  // the zone is centred 100 on the far side of the target so the outward throw goes at the wall
+  let aimed = null;
+  const orig = tide.castSkill.bind(tide);
+  tide.castSkill = (i, p) => { aimed = p; return orig(i, p); };
+  tide.botFireSkill(2, torren, tide.distTo(torren), true, false);
+  tide.castSkill = orig;
+  assert.ok(aimed && Math.abs(aimed.x - (near.x - 100)) < 1 && Math.abs(aimed.y - near.y) < 1, `centred behind the target: ${aimed && (aimed.x - near.x)}`);
+  // Surge lands on the open side: the target ends up between Tide and the rock
+  const pt = tide.dashPick(s2, torren);
+  assert.ok(pt !== torren && Math.abs(pt.x - (near.x - 140)) < 1, `open-side landing 140 short of the wall side: ${pt.x - near.x}`);
+  // in the open (no rock within 170 + a body of the target) the wave is an ordinary skillshot and Surge goes straight at him
+  reset();
+  T.place(tide, open.x, open.y); T.place(torren, open.x + 200, open.y);
+  G.update(1 / 60);
+  assert.equal(tide.botSkillUrgency(0, torren, tide.distTo(torren), true, false), 500);
+  assert.equal(tide.wallShoveDir(torren, 140), null);
+  assert.equal(tide.dashPick(s2, torren), torren);
+  void s1; void s3;
+});
+
 T.done();

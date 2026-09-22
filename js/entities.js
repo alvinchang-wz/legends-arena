@@ -2542,6 +2542,7 @@ class Hero extends Unit {
       if (t.hpPct > (s.botExecuteHp || p.ultExecuteHp) && crowd < 2 && !ownLow &&
           !(s.botAllyEngaged && this.allyEngagedNear(t)) &&   // F29 (Omen's hint): an ally has engaged
           !(s.tether && s.tether.multi && this.gaolCrowd(s).leaving) &&   // F29 (Karn's hint): someone is leaving
+          !(s.type === 'zone' && s.wallStun && s.knockback && this.wallShoveDir(t, s.knockback + 10)) &&   // F29 (Tide's hint): a wall to throw at
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2556,6 +2557,8 @@ class Hero extends Unit {
           if (!pick) return 0;
           return this.unitLockedDown(pick) ? 500 : 840;
         }
+        // F29 (Tide's hint): a wave that stuns on rock is best when the push through the target meets a wall
+        if (s.wallStun && s.knockback && isHero && this.wallBehind(t, t.x - this.x, t.y - this.y, s.knockback + 10)) return 850;
         if (s.tether) {   // F16 / F29 (Anchor's hint): heroes only, inside botRange, no creep on the line, one at a time
           if (!isHero || d >= (s.botRange || s.range * 0.95) || this.liveTether()) return 0;
           const pick = this.tetherPick(s, t);
@@ -2606,6 +2609,8 @@ class Hero extends Unit {
         return cc && isHero && !locked ? 780 : 360;
       case 'zone':
         if (d >= s.range || !(isHero || farmOk)) return 0;
+        // F29 (Tide's hint): High Water when the target can be thrown into a wall
+        if (s.wallStun && s.knockback && isHero && this.wallShoveDir(t, s.knockback + 10)) return 850;
         if (s.bank) {   // F29 (Marrow's hint): Catacomb on 2+ heroes in its radius, best within 6 s of two other casts
           let near = 0;
           for (const h of Game.heroes) if (h.team !== this.team && h.alive && h.distTo(t) < s.radius + h.radius) near++;
@@ -2767,6 +2772,21 @@ class Hero extends Unit {
     if (!s.stopOnHero) {
       // F29 (Omen's hint): after a kill or assist the step goes through the next-lowest hero
       if (s.resetOnKill) { const c = this.chainTarget(s.dist); if (c) return c; }
+      /* F29 (Tide's hint): Surge to the open side of a target standing next to
+         a wall, so the target ends up between Tide and the rock for the wave */
+      if (s.botOpenSide) {
+        const w = this.wallShoveDir(t, 170);
+        if (w) {
+          const lx = t.x - w.x * 140, ly = t.y - w.y * 140;
+          if (Math.hypot(lx - this.x, ly - this.y) <= s.dist + 40 && !Game.wallAt(lx, ly, this.radius)) return { x: lx, y: ly };
+        }
+      }
+      // never aim a dash whose landing is inside rock: turn to the nearest open angle
+      const a0 = Math.atan2(t.y - this.y, t.x - this.x);
+      for (const off of [0, 0.35, -0.35, 0.7, -0.7]) {
+        const a = a0 + off, lx = this.x + Math.cos(a) * s.dist, ly = this.y + Math.sin(a) * s.dist;
+        if (!Game.wallAt(lx, ly, this.radius)) return off === 0 ? t : { x: lx, y: ly };
+      }
       return t;
     }
     // F29 (Brass's hint): the guard's shoulder goes at whoever is on an ally
@@ -2829,6 +2849,26 @@ class Hero extends Unit {
     }
     return best;
   }
+  /* F29 (Tide's hint): does a push of `reach` through `t` along (dx, dy) meet
+     rock or a turret? The same test the displacement tween runs (Game.wallAt
+     with the victim's radius), sampled along the vector. */
+  wallBehind(t, dx, dy, reach) {
+    const d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d, uy = dy / d;
+    return !!Game.wallOnSegment(t.x, t.y, t.x + ux * reach, t.y + uy * reach, t.radius, reach + 1);
+  }
+  /* F29 (Tide's hint): a unit vector from `t` toward a wall within `reach`
+     of it (12 directions sampled, the one closest to straight away from this
+     hero first), or null in the open. */
+  wallShoveDir(t, reach) {
+    const away = Math.atan2(t.y - this.y, t.x - this.x);
+    for (let k = 0; k < 12; k++) {
+      const a = away + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * (Math.PI / 6);
+      const ux = Math.cos(a), uy = Math.sin(a);
+      if (this.wallBehind(t, ux, uy, reach)) return { x: ux, y: uy };
+    }
+    return null;
+  }
   /* F29 (Karn's hint): the enemy heroes inside a multi tether's botRadius
      (else its radius) and how many of them are leaving: moving away faster
      than 40 u/s, or a bot that has decided to retreat or flee. */
@@ -2887,9 +2927,12 @@ class Hero extends Unit {
       case 'dash':
         this.castSkill(i, this.dashPick(s, t));
         break;
-      case 'zone':
-        this.castSkill(i, Game.aimLeadPoint(this, t, 550));
+      case 'zone': {
+        // F29 (Tide's hint): centre a wall-slamming zone so its outward throw sends the target at the rock
+        const w = s.wallStun && s.knockback && t.type === 'hero' ? this.wallShoveDir(t, s.knockback + 10) : null;
+        this.castSkill(i, w ? { x: t.x - w.x * 100, y: t.y - w.y * 100 } : Game.aimLeadPoint(this, t, 550));
         break;
+      }
       case 'heal':
         this.castSkill(i, null);
         break;
@@ -3980,6 +4023,8 @@ class Projectile {
       o = o || {};
       o.slowPct = this.s.returnSlowPct; o.slowDur = this.s.returnSlowDur || 1.2;
     }
+    // F15: a wave's shove carries the victim along the line of flight (Tide's Breaker)
+    if (this.s.knockback) { o = o || {}; o.dir = { x: this.dx, y: this.dy }; }
     if (this.src.skillHit) this.src.skillHit(u, this.s, this.rank, o);
     else {
       const dealt = resolveDamage(this.src, u, { amount: this.dmg * (o && o.mult || 1), type: this.dmgType, skill: this.s });

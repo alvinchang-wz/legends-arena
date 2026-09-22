@@ -515,19 +515,26 @@ const HEROES = [
   },
   {
     id: 'tide', name: 'Tide', role: 'Fighter', icon: '🌊', color: '#0ea5e9', projColor: '#7dd3fc',
-    desc: 'A breaker who shoves people off the objective they wanted.',
+    desc: 'A breaker who fights with the map: everything he does shoves, and a wall turns a shove into a stun.',
     difficulty: 2, damageStyle: 'magic',
-    hp: 660, hpLv: 90, mp: 230, mpLv: 26, atk: 55, atkLv: 6.0,
-    armor: 17, armorLv: 2.7, mr: 16, mrLv: 2.5,
-    range: 112, atkSpd: 0.98, speed: 254,
+    /* docs/design/heroes.md, Fighters: Tide. The only kit built on the
+       displacement tween's wall collision (F15 wallDmg / wallScaleAp /
+       wallStun): Breaker carries everyone on its line 120 along the wave,
+       High Water throws everyone 130 out from its centre, and a victim that
+       meets rock stops, takes the bonus and is stunned; High Water's victims
+       that hit nothing are launched instead (noWallCC). No stun at all in
+       open ground. Bots read Game.wallAt along the push vector. */
+    hp: 670, hpLv: 92, mp: 240, mpLv: 26, atk: 56, atkLv: 6.0,
+    armor: 17, armorLv: 2.8, mr: 17, mrLv: 2.6,
+    range: 112, atkSpd: 0.98, speed: 256,
     passive: {
       name: 'Undertow', icon: '〰', id: 'undertow',
-      desc: 'Basic attacks slow by 12% for 1s. Heroes already slowed take 8% bonus magic damage from you.',
+      desc: 'Basic attacks slow by 12% for 1s. Slowed heroes take 8% bonus magic damage from Tide.',
     },
     skills: [
-      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 8, mana: 50, dmgType: 'magic', dmg: 140, dmgLv: 16, scaleAp: 0.45, range: 560, speed: 700, radius: 32, pierce: true, knockback: 90, desc: 'A wave that knocks everyone in a line back.' },
-      { name: 'Riptide', icon: '↻', type: 'nova', cd: 9, mana: 50, dmgType: 'magic', radius: 240, dmg: 135, dmgLv: 16, scaleAp: 0.5, knockback: 70, desc: 'A circular surge that shoves enemies out.' },
-      { name: 'High Water', icon: '🌊', type: 'zone', cd: 42, mana: 110, dmgType: 'magic', range: 500, radius: 250, delay: 0.5, dmg: 260, dmgLv: 28, scaleAp: 0.7, airborne: 0.7, desc: 'A crashing wall of water that launches the area.' },
+      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 8, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 130, dmgLv: 16, scaleAp: 0.5, range: 560, speed: 750, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
+      { name: 'Surge', icon: '⤳', type: 'dash', cd: 10, cdLv: -0.4, mana: 55, dmgType: 'magic', dist: 320, speed: 950, dmg: 90, dmgLv: 11, scaleAp: 0.4, slowPct: 0.3, slowDur: 1.2, botOpenSide: true, desc: 'Ride a surge 320 forward, slowing everything along the path 30% for 1.2s.' },
+      { name: 'High Water', icon: '🌊', type: 'zone', cd: [42, 38, 34], mana: 120, dmgType: 'magic', range: 480, radius: 250, delay: 0.5, ticks: 1, dmg: [250, 320, 390], scaleAp: 0.8, knockback: 130, wallDmg: 120, wallScaleAp: 0.4, wallStun: 0.7, noWallCC: { airborne: 0.5 }, desc: 'After 0.5s a wall of water throws everyone within 250 of the point 130 units outward; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, the rest are airborne 0.5s.' },
     ],
   },
   {
