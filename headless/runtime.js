@@ -231,6 +231,7 @@ class HeadlessSimulator {
       blueLineup: options.blueLineup || null,
       redLineup: options.redLineup || null,
       neuralModelPath: options.neuralModelPath || path.join(PROJECT_ROOT, 'models/neural-bot-v1/model.json'),
+      stats: options.stats !== false,
     };
     if (!['standard', 'duel'].includes(this.options.mode)) {
       throw new Error('mode must be "standard" or "duel"');
@@ -253,6 +254,13 @@ class HeadlessSimulator {
     this._dynamicIds = new WeakMap();
     this._nextDynamicId = 1;
     this._start();
+    this._stats = this.options.stats ? require('./stats').attachStats(this) : null;
+  }
+
+  /* Match statistics collected since the start (see headless/stats.js).
+     Returns null when the simulator was created with { stats: false }. */
+  stats() {
+    return this._stats ? this._stats.report() : null;
   }
 
   _resolveLineup(value, label) {

@@ -23,6 +23,7 @@ Options:
   --detail summary|full Include grouped or per-minion state (default: summary)
   --format jsonl|pretty Output format (default: jsonl)
   --output PATH         Write output to a file instead of stdout
+  --stats PATH          Write match statistics JSON (see headless/stats.js) at the end
   --list-heroes         Print valid hero ids and exit
   --help                Show this help
 
@@ -101,6 +102,7 @@ function main() {
     redBot: args['red-bot'],
     blueLineup: args['blue-lineup'],
     redLineup: args['red-lineup'],
+    stats: !!args.stats,
   };
   Object.keys(options).forEach(key => options[key] === undefined && delete options[key]);
   const simulator = createSimulator(options);
@@ -136,6 +138,8 @@ function main() {
     stream.write(jsonLine(complete));
   }
   if (args.output) stream.end();
+  if (args.stats) fs.writeFileSync(args.stats, JSON.stringify(simulator.stats(), null, 2) + '
+');
 }
 
 process.stdout.on('error', error => {
