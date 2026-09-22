@@ -2279,6 +2279,11 @@ class Hero extends Unit {
       if (score > urgentScore) { urgentScore = score; urgent = ally; }
     }
     if (urgent) return urgent;
+    // F29 (Bell's hint): a botShadow roamer shadows the allied hero of that role when nobody is under threat
+    if (this.def0.botShadow) {
+      const c = allies.find(h => h.def0 && h.def0.role === this.def0.botShadow);
+      if (c) return c;
+    }
     const lane = (Game.pushLanes())[Math.floor(Game.time / 40) % Game.pushLanes().length];
     return allies.find(h => h.lane === lane) || allies.reduce((a, h) => dist(this, h) < dist(this, a) ? h : a);
   }
@@ -2661,6 +2666,13 @@ class Hero extends Unit {
      with neither field, one who is held (Killbox on a slowed hero). */
   crowdZoneSingleOk(s, t) {
     if (!t || t.type !== 'hero') return false;
+    // F29 (Bell's hint): Knell on a lone enemy Mage or Support
+    if (s.botRoles) return s.botRoles.indexOf(t.def0 && t.def0.role) >= 0;
+    // F29 (Pact's hint): Covenant on the single enemy about to kill an ally (its target under botGuardLow)
+    if (s.botGuardLow) {
+      const ct = t.curTarget || t.aiTarget;
+      return !!(ct && ct.type === 'hero' && ct.team === this.team && ct.alive && ct.hpPct < s.botGuardLow);
+    }
     if (s.botMark) return this.botMarkOk(s.botMark, t);
     if (s.botExecuteHp) return t.hpPct < s.botExecuteHp;
     // F29 (Hexa's hint): Black Mass on the completion burst: her thread ran its course on this hero within botAfterTether seconds
@@ -3145,14 +3157,17 @@ class Hero extends Unit {
       case 'basicRange': // F25: thrown blades for a target just past melee reach
         if (!isHero || d < 150 || d >= (s.rangeSet || 300)) return 0;
         return 560;
-      case 'allybuff': { // F26: when someone it would reach (self included) is on an enemy hero
+      case 'allybuff': { // F26 / F29 (Bell's hint): an ally it would reach (self included) basic-attacking an enemy hero (700), or on one within 520
         if (!isHero) return 0;
         const rad = s.radius || 380;
+        let on = 0;
         for (const h of Game.heroes) {
           if (h.team !== this.team || !h.alive || this.distTo(h) > rad) continue;
-          if (h.distTo(t) < 520) return 520;
+          const ct = h === this ? t : h.curTarget;
+          if (ct && ct.type === 'hero' && ct.team !== this.team && ct.alive && h.inAttackRange(ct)) return 700;
+          if (h.distTo(t) < 520) on = 520;
         }
-        return 0;
+        return on;
       }
     }
     return 0;

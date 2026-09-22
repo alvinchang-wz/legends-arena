@@ -802,19 +802,30 @@ const HEROES = [
   },
   {
     id: 'bell', name: 'Bell', role: 'Support', icon: '🔔', color: '#f5d0fe', projColor: '#f0abfc',
-    desc: 'A campanologist who peals haste into her team and dread into the rest.',
+    desc: 'The tempo caller: makes the team hit harder and move faster the moment a fight starts, then silences the enemy casters. Heals nothing.',
     difficulty: 2, damageStyle: 'magic',
-    hp: 555, hpLv: 72, mp: 300, mpLv: 34, atk: 44, atkLv: 4.0,
-    armor: 11, armorLv: 2.2, mr: 13, mrLv: 2.2,
-    range: 290, atkSpd: 0.94, speed: 249,
+    /* docs/design/heroes.md, Supports: Bell. Carillon is the roster's only
+       allybuff (F26) and the only skill that raises allies' attack speed:
+       +0.20 -> +0.30 taken as the max against a dash asMult or Storm
+       Volley rather than on top of it, +35 move speed, 3.5 s, everyone
+       within 380 including herself. Chime lost its slow and pierces; Knell
+       is a 0.5 s telegraph that silences and slows. No heal, no shield, no
+       escape. Bot fields: botShadow makes her roam with the allied
+       marksman; Carillon fires when an ally it would reach is basic-
+       attacking an enemy hero (the allybuff rule); Knell is a botCrowd zone
+       whose lone-target case is an enemy Mage or Support (botRoles). */
+    botShadow: 'Marksman',
+    hp: 560, hpLv: 74, mp: 300, mpLv: 34, atk: 46, atkLv: 4.2,
+    armor: 13, armorLv: 2.4, mr: 15, mrLv: 2.3,
+    range: 300, atkSpd: 0.95, speed: 250,
     passive: {
       name: 'Peal', icon: '♪', id: 'peal',
-      desc: 'Every 6s, nearby allied heroes gain +50 move speed for 2s.',
+      desc: 'Every 6s allied heroes within 420 gain +50 move speed for 2s.',
     },
     skills: [
-      { name: 'Chime', icon: '♩', type: 'skillshot', cd: 7, mana: 45, dmgType: 'magic', dmg: 120, dmgLv: 14, scaleAp: 0.5, range: 620, speed: 800, radius: 26, slowPct: 0.28, slowDur: 1.4, desc: 'A ringing note that slows the first enemy.' },
-      { name: 'Evensong', icon: '♫', type: 'heal', cd: 10, mana: 60, heal: 110, healLv: 16, scaleAp: 0.45, radius: 340, desc: 'A chord that heals nearby allies.' },
-      { name: 'Knell', icon: '🔔', type: 'zone', cd: 40, mana: 105, dmgType: 'magic', range: 540, radius: 220, delay: 0.45, dmg: 200, dmgLv: 22, scaleAp: 0.55, silence: 1.6, desc: 'A knell that damages and silences an area.' },
+      { name: 'Chime', icon: '♩', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 40, manaLv: 4, dmgType: 'magic', dmg: 115, dmgLv: 14, scaleAp: 0.5, range: 620, speed: 800, radius: 28, pierce: true, desc: 'A ringing note (620 range at 800, radius 28) that passes through every enemy in a line for 115+14/rank (+50% MAGIC). No CC.' },
+      { name: 'Carillon', icon: '♫', type: 'allybuff', cd: 14, cdLv: -0.6, mana: 65, manaLv: 5, radius: 380, asAdd: 0.2, asAddLv: 0.02, spdAdd: 35, dur: 3.5, desc: 'Every allied hero within 380 (Bell included) gains +0.20 (+0.02/rank) attack speed and +35 move speed for 3.5s; the attack speed is taken as the larger of this and any other steroid, never both.' },
+      { name: 'Knell', icon: '🔔', type: 'zone', cd: [46, 40, 34], mana: [100, 125, 150], dmgType: 'magic', range: 540, radius: 220, delay: 0.5, ticks: 1, dmg: [200, 260, 320], scaleAp: 0.6, silence: 1.2, slowPct: 0.4, slowDur: 1.5, botCrowd: true, botRoles: ['Mage', 'Support'], desc: 'After 0.5s everyone within 220 of the point (up to 540 away) takes 200/260/320 (+60% MAGIC), is silenced 1.2s and slowed 40% for 1.5s.' },
     ],
   },
   {

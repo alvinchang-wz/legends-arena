@@ -648,4 +648,98 @@ T.test('Wick bot: the Lantern goes under the allied frontliner when 2+ enemy her
   assert.equal(wick.botSkillUrgency(2, creep(1, open.x + 500, open.y), 500, false, true), 900, 'a heal ultimate needs no hero target');
 });
 
+/* ---------------- Bell ---------------- */
+
+T.test('Bell: base stats and skill numbers match the spec (the only allybuff; Chime pierces with no slow; Knell silences and slows)', () => {
+  reset();
+  const d = bell.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [560, 74, 300, 34, 46, 4.2, 13, 2.4, 15, 2.3, 300, 0.95, 250, 2]);
+  assert.equal(d.passive.id, 'peal');
+  const [s1, s2, s3] = bell.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce, s1.slowPct],
+    ['skillshot', 6, -0.3, 40, 4, 115, 14, 0.5, 620, 800, 28, true, undefined]);
+  assert.equal(rankVal(s1, 'dmg', 6), 185);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.radius, s2.asAdd, s2.asAddLv, s2.spdAdd, s2.dur], ['allybuff', 14, -0.6, 65, 5, 380, 0.2, 0.02, 35, 3.5]);
+  near(rankVal(s2, 'asAdd', 6), 0.3, 1e-9, 'Carillon +0.30 at rank 6'); near(rankVal(s2, 'cd', 6), 11, 1e-9, 'Carillon cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 90);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.silence, s3.slowPct, s3.slowDur],
+    ['zone', [46, 40, 34], [100, 125, 150], 540, 220, 0.5, 1, [200, 260, 320], 0.6, 1.2, 0.4, 1.5]);
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'allybuff')).length, 1, 'the only allybuff');
+  assert.ok(!bell.skills.some(s => s.type === 'heal' || s.heal), 'heals nothing');
+  for (const s of bell.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Bell: Carillon gives every ally within 380 (herself included) +0.30 attack speed and +35 move speed for 3.5 s, the attack speed taken as the max against a dash steroid; Peal hastens allies within 420 every 6 s', () => {
+  reset();
+  T.place(bell, open.x, open.y);
+  T.place(rook, open.x + 200, open.y);
+  T.place(grom, open.x + 500, open.y);
+  const as0 = rook.curAtkSpd(), sp0 = rook.attrs.get('speed'), bas0 = bell.curAtkSpd();
+  assert.ok(bell.castSkill(1, null));
+  near(rook.curAtkSpd(), as0 + 0.3, 1e-9, '+0.30 attack speed');
+  near(rook.attrs.get('speed'), sp0 + 35, 1e-9, '+35 move speed');
+  near(rook.buffs.atkSpd.t, 3.5, 1e-9, 'for 3.5 s');
+  near(bell.curAtkSpd(), bas0 + 0.3, 1e-9, 'Bell too');
+  assert.ok(!grom.buffs.atkSpd, 'past 380: nothing');
+  rook.buffAsMult = 1.5; rook.buffAsT = 3;   // a dash steroid on top: the larger wins, not the sum
+  near(rook.curAtkSpd(), Math.max(as0 * 1.5, as0 + 0.3), 1e-9, 'the max against a steroid');
+  rook.buffAsT = 0;
+  T.seconds(G, 3.6);
+  assert.ok(!(rook.buffs.atkSpd && rook.buffs.atkSpd.t > 0), 'over');
+  // Peal
+  bell.pv.t = 0.05; rook.buffs = {}; rook.recalcStats(false);
+  const sp1 = rook.attrs.get('speed');
+  T.frames(G, 6);
+  near(rook.attrs.get('speed'), sp1 + 50, 1e-9, 'Peal: +50 move speed');
+});
+
+T.test('Bell: Chime pierces every enemy on its line and slows nobody; Knell lands after 0.5 s with a 1.2 s silence and a 40% slow', () => {
+  reset();
+  T.place(bell, open.x, open.y);
+  T.place(bastion, open.x + 200, open.y);
+  T.place(wraith, open.x + 540, open.y + 10);   // 340 behind him: on the line, outside the Knell
+  assert.ok(bell.castSkill(0, { x: open.x + 600, y: open.y }));
+  T.frames(G, 50);
+  assert.ok(bastion.stats.dmgTaken > 0 && wraith.stats.dmgTaken > 0, 'both on the line were rung');
+  assert.ok(!bastion.cc.has('slow') && !wraith.cc.has('slow'), 'no slow');
+  assert.ok(bell.castSkill(2, bastion));
+  assert.equal(G.zones.length, 1);
+  T.seconds(G, 0.6);
+  assert.ok(bastion.cc.has('silence') && bastion.cc.t.silence > 0.85, `silenced 1.2 s (landed ~0.55 s in): ${bastion.cc.t.silence}`);
+  assert.ok(bastion.cc.has('slow') && Math.abs(bastion.cc.slowPct - 0.4) < 1e-9, 'slowed 40%');
+  assert.ok(!wraith.cc.has('silence'), 'outside 220: not silenced');
+});
+
+T.test('Bell bot: she shadows the allied marksman; Carillon when an ally in reach is basic-attacking an enemy hero; Knell on 2+ heroes or a lone enemy Mage or Support', () => {
+  reset();
+  T.place(bell, open.x, open.y);
+  T.place(rook, open.x + 300, open.y);      // inside Carillon's 380
+  T.place(bastion, open.x + 900, open.y);   // 600 from the ally: nobody is on him
+  bell.aiTarget = bastion;
+  assert.equal(bell.botSkillUrgency(1, bastion, 900, true, false), 0, 'nobody on him: Carillon held');
+  T.place(bastion, open.x + 700, open.y);
+  assert.equal(bell.botSkillUrgency(1, bastion, 700, true, false), 520, 'an ally within 520 of him: a routine ring');
+  T.place(bastion, open.x + 400, open.y); rook.curTarget = bastion;
+  assert.equal(bell.botSkillUrgency(1, bastion, 400, true, false), 700, 'an ally in reach basic-attacking him: Carillon');
+  rook.curTarget = null;
+  // Knell
+  T.place(bastion, open.x + 400, open.y);
+  assert.equal(bell.botSkillUrgency(2, bastion, 400, true, false), 0, 'a lone healthy tank: held');
+  T.place(bastion, FAR.x, FAR.y);
+  T.place(sylva, open.x + 400, open.y + 120);
+  assert.equal(bell.botSkillUrgency(2, sylva, 420, true, false), 820, 'a Support alone: Knell');
+  T.place(sylva, FAR.x, FAR.y);
+  T.place(bastion, open.x + 400, open.y);
+  T.place(wraith, open.x + 480, open.y + 100);
+  assert.equal(bell.botSkillUrgency(2, bastion, 400, true, false), 880, 'two heroes inside 220 of the target: Knell');
+  // the shadow: with nobody under threat the roam anchor is the allied marksman
+  reset();
+  T.place(bell, open.x, open.y); T.place(rook, open.x + 300, open.y); T.place(nyx, open.x + 100, open.y); T.place(grom, open.x + 150, open.y);
+  T.place(wick, open.x + 120, open.y + 80);   // nobody left parked next to the enemy team (that would read as an ally under threat)
+  const lane0 = bell.lane; bell.lane = 'roam';
+  const def0 = rook.def0; rook.def0 = Object.assign({}, def0, { role: 'Marksman' });   // this lineup has no blue marksman
+  assert.equal(bell.roamAnchor(), rook, 'shadows the marksman');
+  rook.def0 = def0; bell.lane = lane0;
+});
+
 T.done();
