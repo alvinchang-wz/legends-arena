@@ -170,9 +170,10 @@ class Unit {
       Game.projectiles.push(Projectile.homing(this, target, this.attackPacket(target)));
       if (this.isPlayer) SFX.shoot();
     } else {
-      const dealt = resolveDamage(this, target, this.attackPacket(target));
+      const pkt = this.attackPacket(target);
+      const dealt = resolveDamage(this, target, pkt);
       Game.fx.slash(target.x, target.y, this.facing, this.team);
-      if (dealt && this.onBasicLanded) this.onBasicLanded(target, dealt);
+      if (dealt && this.onBasicLanded) this.onBasicLanded(target, dealt, pkt);
       if (this.isPlayer || target.isPlayer) SFX.hit();
     }
   }
@@ -615,9 +616,9 @@ class Hero extends Unit {
     }
     return d;
   }
-  onBasicLanded(target, dmg) {
+  onBasicLanded(target, dmg, pkt) {
     if (this.concealT > 0) this.revealT = Math.max(this.revealT, 1.6);
-    this.fire('onBasicHit', target, dmg);
+    this.fire('onBasicHit', target, dmg, pkt);
     if (this.resource === 'energy') this.gainEnergy((this.def0.energy && this.def0.energy.perBasic) || 0);
     else if (this.resource === 'heat') this.gainHeat(target, 'Basic');
     if (this.emblem && this.emblem.id === 'marksman' && target.cc) {
@@ -2499,27 +2500,68 @@ class Hero extends Unit {
       if (s.type === 'buff') { if (threat && bd < 560) this.castSkill(i, null); continue; }
       // F22: a dashBack flies away from the aim, so it is aimed AT the chaser
       if (s.type === 'dash' && s.dashBack) { if (threat && bd < 620) this.castSkill(i, { x: threat.x, y: threat.y }); continue; }
-      if (s.type === 'dash' && threat && bd < 620) {
-        /* Dashes ignore terrain — that is the whole reason a wall is an escape
-           tool rather than a second health bar. A bot that only ever dashes
-           directly away throws that away: the same 340 units spent crossing a
-           rock forces the chaser to walk all the way round it, which is worth
-           far more than the 340 units themselves. So the candidate directions
-           are scored, and putting a wall between us and the chaser outweighs
-           raw distance gained. Landing inside a wall is rejected outright. */
-        const away = Math.atan2(this.y - threat.y, this.x - threat.x);
-        let bestA = away, bestScore = -Infinity;
-        for (const off of [0, 0.45, -0.45, 0.9, -0.9]) {
-          const a = away + off;
-          const lx = this.x + Math.cos(a) * s.dist, ly = this.y + Math.sin(a) * s.dist;
-          if (Game.wallAt(lx, ly, this.radius)) continue;
-          let score = Math.hypot(lx - threat.x, ly - threat.y);
-          if (Game.wallOnSegment(lx, ly, threat.x, threat.y, threat.radius, 900)) score += 600;
-          if (score > bestScore) { bestScore = score; bestA = a; }
-        }
-        this.castSkill(i, { x: this.x + Math.cos(bestA) * s.dist, y: this.y + Math.sin(bestA) * s.dist });
+      if (s.type === 'dash' && threat && bd < 620) this.castSkill(i, this.escapeDashPoint(s, threat));
+    }
+  }
+  /* Where a dash away from `threat` should land. Dashes ignore terrain —
+     that is the whole reason a wall is an escape tool rather than a second
+     health bar. A bot that only ever dashes directly away throws that away:
+     the same 340 units spent crossing a rock forces the chaser to walk all
+     the way round it, which is worth far more than the 340 units themselves.
+     So the candidate directions are scored, and putting a wall between us
+     and the chaser outweighs raw distance gained. Landing inside a wall is
+     rejected outright. */
+  escapeDashPoint(s, threat) {
+    const away = Math.atan2(this.y - threat.y, this.x - threat.x);
+    let bestA = away, bestScore = -Infinity;
+    for (const off of [0, 0.45, -0.45, 0.9, -0.9]) {
+      const a = away + off;
+      const lx = this.x + Math.cos(a) * s.dist, ly = this.y + Math.sin(a) * s.dist;
+      if (Game.wallAt(lx, ly, this.radius)) continue;
+      let score = Math.hypot(lx - threat.x, ly - threat.y);
+      if (Game.wallOnSegment(lx, ly, threat.x, threat.y, threat.radius, 900)) score += 600;
+      if (score > bestScore) { bestScore = score; bestA = a; }
+    }
+    return { x: this.x + Math.cos(bestA) * s.dist, y: this.y + Math.sin(bestA) * s.dist };
+  }
+  /* The nearest visible melee enemy hero within `r`, or null. */
+  meleeThreat(r) {
+    let best = null, bd = r;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.ranged || e.untargetable) continue;
+      const d = this.distTo(e);
+      if (d < bd && Game.canSee(this.team, e)) { bd = d; best = e; }
+    }
+    return best;
+  }
+  /* F29 (Zephyr's / Vesper's hint): the melee hero a botKite dash should
+     carry this marksman away from — one inside s.botKite; with
+     botKiteNoCharges (Sidestep) only once the first skill has no charge
+     left to shoot him with. */
+  kiteThreat(s) {
+    if (s.botKiteNoCharges && this.skillCharges[0] > 0) return null;
+    return this.meleeThreat(s.botKite);
+  }
+  /* F29 (Zephyr's hint): the enemy heroes within `lr` of this hero and
+     whether two of them stand roughly on one line from here (the second
+     within 90 units of the ray through the first), which is what a
+     piercing volley wants. */
+  volleyLine(lr) {
+    const near = [];
+    for (const h of Game.heroes) if (h.team !== this.team && h.alive && !h.untargetable && this.distTo(h) < lr) near.push(h);
+    let aligned = false;
+    for (let i = 0; i < near.length && !aligned; i++) {
+      const ax = near[i].x - this.x, ay = near[i].y - this.y, ad = Math.hypot(ax, ay) || 1;
+      for (let j = 0; j < near.length; j++) {
+        if (j === i) continue;
+        const bx = near[j].x - this.x, by = near[j].y - this.y;
+        const along = (bx * ax + by * ay) / ad;
+        if (along <= 0) continue;
+        const perp = Math.abs(bx * ay - by * ax) / ad;
+        if (perp <= 90) { aligned = true; break; }
       }
     }
+    return { near: near.length, aligned };
   }
 
   botSkillUrgency(i, t, d, isHero, farmOk) {
@@ -2610,7 +2652,9 @@ class Hero extends Unit {
         return isHero ? 480 : 200;
       }
       case 'dash':
-        if (s.dashBack) return isHero && d < 260 ? 600 : 0;   // F22: a hop away from whoever got close
+        if (s.dashBack) return isHero && d < (s.botKite || 260) ? 600 : 0;   // F22 / F29 (Lumen's hint): a hop away from whoever got close
+        // F29 (Zephyr's / Vesper's hint): a marksman's dash goes away from a melee hero inside botKite
+        if (s.botKite && this.kiteThreat(s)) return 800;
         // F29 (Brass's hint): Shoulder any enemy hero attacking an allied hero within its reach
         if (s.botGuardAlly && isHero && this.guardTarget(s.dist)) return 800;
         // F29 (Omen's hint): fresh from a takedown, Pass onto the next-lowest hero in reach
@@ -2620,6 +2664,8 @@ class Hero extends Unit {
         if (d <= 150 || d >= s.dist + 100) return 0;
         if (!(isHero || (farmOk && (s.dmg || s.endNova)))) return 0;
         if (isHero && this.advancedAI && !this.gapCloseLegal(t)) return 0;
+        // F29 (Zephyr's hint): a carry's engage dash (botWithAlly) waits for an ally to be on the target
+        if (s.botWithAlly && isHero && !this.allyEngagedNear(t)) return 0;
         return cc && isHero && !locked ? 780 : 360;
       case 'zone':
         if (d >= s.range || !(isHero || farmOk)) return 0;
@@ -2696,12 +2742,12 @@ class Hero extends Unit {
         }
         return d < 300 ? 420 : 0;
       }
-      case 'basicMod': { // F7: the volley wants heroes inside its line
+      case 'basicMod': { // F7 / F29 (Zephyr's hint): the volley wants 2+ heroes inside its line, best roughly lined up
         const lr = s.lineRange || 420;
         if (!isHero || d >= lr) return 0;
-        let near = 0;
-        for (const h of Game.heroes) if (h.team !== this.team && h.alive && this.distTo(h) < lr) near++;
-        return near >= 2 ? 900 : 600;
+        const v = this.volleyLine(lr);
+        if (v.near >= 2) return v.aligned ? 900 : 640;
+        return t.hpPct < p.ultExecuteHp ? 560 : 0;   // a lone hero only when the volley can finish them
       }
       case 'basicRange': // F25: thrown blades for a target just past melee reach
         if (!isHero || d < 150 || d >= (s.rangeSet || 300)) return 0;
@@ -2769,6 +2815,8 @@ class Hero extends Unit {
   /* F29 (Grom's bot hint): a stopOnHero dash is a pick, so it goes at the
      lowest-HP ranged hero it can reach (the backline), else at the target. */
   dashPick(s, t) {
+    // F29 (Zephyr's / Vesper's hint): a botKite dash flies away from the melee hero who got close
+    if (s.botKite) { const m = this.kiteThreat(s); if (m) return this.escapeDashPoint(s, m); }
     if (!t || t.type !== 'hero') return t;
     /* F29 (Torren's hint): a leap-to-point (F22) lands short of the
        lowest-HP-percent hero it can reach, so the slam covers the body. */
@@ -3410,12 +3458,22 @@ class Hero extends Unit {
            still be cleared efficiently. */
         if (t.type === 'hero' && p.kiteBuffer > 10 &&
             this.atkCd > (this.ranged ? 0.18 : 0.4) / this.curAtkSpd()) {
-          if (!this.combatPoint || this.combatPointT <= 0 || dist(this.combatPoint, t) > this.range * 1.15) {
-            this.combatPoint = this.chooseCombatPoint(t);
-            this.combatPointT = 0.28 + rand(0, 0.14);
+          /* A marksman with a melee hero inside 250 steps straight away from
+             him during attack recovery (the orbit below is chosen around the
+             target, which is not where the diver is). Rock behind: orbit. */
+          const melee = this.ranged && this.botRole() === 'Marksman' ? this.meleeThreat(250) : null;
+          const kx = melee ? this.x + (this.x - melee.x) / Math.max(1, this.distTo(melee)) * 120 : 0;
+          const ky = melee ? this.y + (this.y - melee.y) / Math.max(1, this.distTo(melee)) * 120 : 0;
+          if (melee && !Game.wallAt(kx, ky, this.radius + 4)) {
+            this.botMoveTo(kx, ky, dt, { avoidTowers: true });
+          } else {
+            if (!this.combatPoint || this.combatPointT <= 0 || dist(this.combatPoint, t) > this.range * 1.15) {
+              this.combatPoint = this.chooseCombatPoint(t);
+              this.combatPointT = 0.28 + rand(0, 0.14);
+            }
+            if (this.combatPoint && dist(this, this.combatPoint) > 36)
+              this.botMoveTo(this.combatPoint.x, this.combatPoint.y, dt, { avoidTowers: true });
           }
-          if (this.combatPoint && dist(this, this.combatPoint) > 36)
-            this.botMoveTo(this.combatPoint.x, this.combatPoint.y, dt, { avoidTowers: true });
         }
       } else if (t.type === 'hero') {
         const cut = this.interceptPoint(t);
@@ -4041,7 +4099,7 @@ class Projectile {
       const dealt = resolveDamage(this.src, u, pkt);
       if (primary) {
         this.primaryDone = true;
-        if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(u, dealt);
+        if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(u, dealt, pkt);
         if (u.isPlayer) SFX.hit();
       }
     }
@@ -4126,7 +4184,7 @@ class Projectile {
       if (Game.objects.length && Game.barrierBlocks(this.team, px, py, t.x, t.y, Math.min(d, step + t.radius))) { this.dead = true; return; }
       if (d <= step + t.radius) {
         const dealt = resolveDamage(this.src, t, this.packet);
-        if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(t, dealt);
+        if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(t, dealt, this.packet);
         if (t.isPlayer) SFX.hit();
         this.dead = true;
         return;

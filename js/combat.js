@@ -174,6 +174,7 @@ function resolveDamage(src, target, packet) {
   } else if (packet.critRolled) {
     crit = true;   // a nova with canCrit rolled once for the whole cast (F28); amount already scaled
   }
+  packet.crit = crit;   // readable by the on-hit hooks (Vesper's Last Light refunds on a critical basic)
 
   /* --- attacker-side damage modifiers (passives, buffs) --- */
   if (src && src.onDealDamage && !packet.noPassive) {
@@ -544,7 +545,7 @@ function applyPullTo(src, target, s, rank, over) {
      tick(h, dt)                    — per frame while alive
      statMod(h)                     — return a bonus-stat table, applied
                                       every recalc (dynamic passives)
-     onBasicHit(h, target, dmg)     — after a basic attack lands
+     onBasicHit(h, target, dmg, pkt)— after a basic attack lands (pkt.crit says whether it crit)
      onSkillHit(h, target, dmg, s)  — after any skill damage lands
      onDealDamage(h, t, amt, pkt)   — modify outgoing damage, return a number
      onIncoming(h, src, dmg, pkt)   — modify incoming damage, return a number
@@ -552,18 +553,28 @@ function applyPullTo(src, target, s, rank, over) {
      onHealAlly(h, ally, amount)    — after healing someone
 */
 const PASSIVES = {
-  /* Zephyr — every 3rd basic attack hits harder and grants speed. */
-  tailwind: {
-    init(h) { h.pv = { hits: 0 }; },
-    onBasicHit(h, target) {
-      h.pv.hits++;
-      if (h.pv.hits < 3) return;
-      h.pv.hits = 0;
-      resolveDamage(h, target, {
-        amount: 40 + h.curAtk() * 0.6, type: 'physical', noPassive: true,
-      });
-      h.addTimedBuff('speed', 90, 1.5);
-      Game.fx.ring(h.x, h.y, 54, THEME.hp, 0.35);
+  /* Zephyr — each basic that lands (a volley's primary hit only, F7) is a
+     Slipstream stack: +6% move speed per stack for 2 s, five at most, all
+     dropped together when the timer lapses; at five stacks basics carry
+     +18 (+12% ATK). A Gale Shot that hits a hero is one stack per cast. */
+  slipstream: {
+    init(h) { h.pv = { stacks: 0, t: 0, galeT: -1 }; },
+    _stack(h) {
+      h.pv.stacks = Math.min(5, (h.pv.t > 0 ? h.pv.stacks : 0) + 1);
+      h.pv.t = 2;
+      h.addTimedBuff('speedPct', 0.06 * h.pv.stacks, 2);
+    },
+    onBasicHit(h) { PASSIVES.slipstream._stack(h); },
+    onSkillHit(h, target, dmg, s) {
+      if (!target || target.type !== 'hero' || !s || (s._base || s) !== h.skills[0]) return;
+      if (Game.time < h.pv.galeT) return;   // one cast, one stack, however many heroes it pierces over its flight
+      h.pv.galeT = Game.time + 1;           // the shot flies 0.7 s; the cooldown is never under 5.5 s
+      PASSIVES.slipstream._stack(h);
+    },
+    tick(h, dt) { if (h.pv && h.pv.t > 0) { h.pv.t -= dt; if (h.pv.t <= 0) h.pv.stacks = 0; } },
+    onDealDamage(h, target, amount, pkt) {
+      if (!pkt || !pkt.isBasic || !h.pv || h.pv.stacks < 5 || h.pv.t <= 0) return amount;
+      return amount + 18 + h.curAtk() * 0.12;
     },
   },
 

@@ -72,12 +72,12 @@ T.test('F7: under basicMod every basic is a piercing volley: the aimed target is
   assert.ok(zephyr.basicMod && Math.abs(zephyr.basicMod.t - 6) < 1e-9, 'state set for dur');
   assert.equal(zephyr.basicMod.asMult, 1.5, 'rank-3 asMult');
   assert.ok(Math.abs(zephyr.curAtkSpd() - as0 * 1.5) < 1e-9, 'attack speed x1.5');
-  zephyr.pv.hits = 0;
+  zephyr.pv.stacks = 0; zephyr.pv.t = 0;
   const r = volley();
   assert.ok(r.mira > 0, 'primary hit');
   assert.ok(r.tide > 0, 'the hero behind her in the line was pierced');
   assert.equal(r.sylva, 0, 'off the line: untouched');
-  assert.equal(zephyr.pv.hits, 1, 'onBasicHit fired once, for the primary only');
+  assert.equal(zephyr.pv.stacks, 1, 'onBasicHit fired once, for the primary only');
   assert.equal(r.p.primaryDone, true);
   // the bonus is in every hit: the secondary is AD + bonus, not a bare AD
   const bonus = 90 + zephyr.curAtk() * 0.25;
@@ -103,15 +103,15 @@ T.test('F7: crit is rolled once per volley and shared by every hit; secondaries 
   reset();
   ownSkill(zephyr, 2, STORM);
   assert.ok(zephyr.castSkill(2, { x: open.x + 300, y: open.y }));
-  zephyr.pv.hits = 0;   // keep Tailwind's third-hit bonus out of the ratios
+  zephyr.pv.stacks = 0; zephyr.pv.t = 0;   // keep Slipstream's five-stack bonus out of the ratios
   const plain = volley();
   assert.equal(plain.p.crit, false);
   // guaranteed crit: every hit doubles
   zephyr.items.push({ id: 'test-crit', stats: { critChance: 1, lifesteal: 0.3 } });
   zephyr.recalcStats(false);
-  zephyr.hp = zephyr.maxHp - 600;
+  zephyr.hp = Math.round(zephyr.maxHp * 0.25);   // room for the drain (her level-1 pool is 575 since the Marksmen pass)
   const hp0 = zephyr.hp;
-  zephyr.pv.hits = 0;
+  zephyr.pv.stacks = 0; zephyr.pv.t = 0;
   const crit = volley();
   assert.equal(crit.p.crit, true);
   assert.ok(Math.abs(crit.mira / plain.mira - 2.0) < 0.03, `primary crit x2: ${crit.mira / plain.mira}`);

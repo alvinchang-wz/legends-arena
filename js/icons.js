@@ -255,7 +255,7 @@ const Icons = (() => {
   };
 
   /* ---------------- passives ---------------- */
-  GLYPHS['passive:zephyr'] = g => {                               // tailwind
+  GLYPHS['passive:zephyr'] = g => {                               // slipstream
     for (const [y, l, a] of [[32, 46, 0.9], [50, 56, 1], [68, 40, 0.7]]) {
       g.beginPath(); g.moveTo(22, y); g.quadraticCurveTo(22 + l * 0.7, y - 8, 22 + l, y);
       g.lineWidth = 5; g.strokeStyle = `rgba(189,233,255,${a})`; g.lineCap = 'round'; g.stroke();
@@ -311,7 +311,7 @@ const Icons = (() => {
   };
 
   /* ---------------- Zephyr skills ---------------- */
-  GLYPHS['skill:zephyr:0'] = g => {                               // Piercing Bolt
+  GLYPHS['skill:zephyr:0'] = g => {                               // Gale Shot
     for (const x of [38, 60]) {
       ring(g, x, 50, 15, 4, 'rgba(125,211,252,0.5)', -1.1, 1.1);
       ring(g, x, 50, 15, 4, 'rgba(125,211,252,0.5)', Math.PI - 1.1, Math.PI + 1.1);
@@ -319,7 +319,7 @@ const Icons = (() => {
     arrow(g, 12, 50, 90, 50, 5.5, '#e8f7ff', 2.2);
     seg(g, 16, 44, 24, 50, 4, '#7dd3fc'); seg(g, 16, 56, 24, 50, 4, '#7dd3fc');
   };
-  GLYPHS['skill:zephyr:1'] = g => {                               // Agile Hop
+  GLYPHS['skill:zephyr:1'] = g => {                               // Updraft
     g.beginPath(); g.moveTo(20, 76); g.quadraticCurveTo(48, 12, 82, 42);
     g.lineWidth = 5; g.strokeStyle = 'rgba(125,211,252,0.85)';
     g.setLineDash([10, 8]); g.stroke(); g.setLineDash([]);
@@ -327,7 +327,7 @@ const Icons = (() => {
     chevron(g, 26, 70, 12, 10, 5, 'rgba(189,233,255,0.7)', -Math.PI / 2);
     chevron(g, 26, 82, 12, 10, 5, 'rgba(189,233,255,0.4)', -Math.PI / 2);
   };
-  GLYPHS['skill:zephyr:2'] = g => {                               // Arrow Storm
+  GLYPHS['skill:zephyr:2'] = g => {                               // Storm Volley
     g.beginPath(); g.ellipse(50, 78, 30, 9, 0, 0, T2);
     g.lineWidth = 3.4; g.strokeStyle = 'rgba(125,211,252,0.6)'; g.stroke();
     for (const [x, y] of [[34, 18], [52, 12], [70, 20]]) {

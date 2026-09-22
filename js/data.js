@@ -129,19 +129,25 @@ const CC_PRIORITY = ['suppress', 'airborne', 'taunt', 'stun', 'silence', 'immobi
 const HEROES = [
   {
     id: 'zephyr', name: 'Zephyr', role: 'Marksman', icon: '🏹', color: '#7dd3fc', projColor: '#bde9ff',
-    desc: 'A wind archer who shreds from long range.',
+    desc: 'An attack-speed hypercarry: weak for three seconds, unmatched once Slipstream is stacked and every basic is a piercing gale.',
     difficulty: 2, damageStyle: 'physical',
-    hp: 540, hpLv: 72, mp: 200, mpLv: 22, atk: 64, atkLv: 7.5,
+    /* docs/design/heroes.md, Marksmen: Zephyr. The only hero whose basic
+       attack changes: Storm Volley (F7 basicMod) makes every basic a piercing
+       420 line for 6 s, primary target with full basic rules, everyone else
+       in the line a secondary hit. No hard CC, one dash. Bot fields: botKite
+       is the melee-within distance that turns Updraft into a hop away;
+       toward the target it only goes when an ally has engaged. */
+    hp: 520, hpLv: 68, mp: 200, mpLv: 22, atk: 60, atkLv: 7.0,
     armor: 12, armorLv: 2.2, mr: 10, mrLv: 1.6,
-    range: 340, atkSpd: 1.1, speed: 262,
+    range: 345, atkSpd: 1.12, speed: 248,
     passive: {
-      name: 'Tailwind', icon: '🍃', id: 'tailwind',
-      desc: 'Every 3rd basic attack deals 40 (+60% ATK) bonus physical damage and grants +90 move speed for 1.5s.',
+      name: 'Slipstream', icon: '🍃', id: 'slipstream',
+      desc: 'Each basic attack that hits grants +6% move speed for 2s, stacking to 5. At 5 stacks basics deal +18 (+12% ATK) bonus physical damage. A Storm Volley volley or a Gale Shot that hits a hero counts as one basic.',
     },
     skills: [
-      { name: 'Piercing Bolt', icon: '➹', type: 'skillshot', cd: 6, mana: 40, dmgType: 'physical', dmg: 120, dmgLv: 15, scaleAd: 0.8, range: 720, speed: 950, radius: 26, pierce: true, desc: 'Fire a bolt that pierces every enemy in a line.' },
-      { name: 'Agile Hop', icon: '💨', type: 'dash', cd: 9, mana: 45, dist: 280, speed: 1000, buff: { asMult: 1.7, dur: 3 }, desc: 'Leap in a direction and gain rapid attack speed.' },
-      { name: 'Arrow Storm', icon: '🌧️', type: 'zone', cd: 36, mana: 100, dmgType: 'physical', range: 620, radius: 250, delay: 0.5, ticks: 4, interval: 0.5, dmg: 70, dmgLv: 9, scaleAd: 0.35, slowPct: 0.3, slowDur: 0.8, desc: 'Rain arrows on a wide area, striking 4 times and slowing. The teamfight answer to Vesper.' },
+      { name: 'Gale Shot', icon: '➹', type: 'skillshot', cd: 7, cdLv: -0.3, mana: 40, manaLv: 4, dmgType: 'physical', dmg: 110, dmgLv: 16, scaleAd: 0.75, range: 700, speed: 1000, radius: 26, pierce: true, desc: 'A razor gust that pierces every enemy in a line; hitting a hero counts as one Slipstream stack.' },
+      { name: 'Updraft', icon: '💨', type: 'dash', cd: 11, cdLv: -0.4, mana: 50, dist: 260, speed: 1100, buff: { asMult: 1.5, dur: 3 }, botKite: 200, botWithAlly: true, desc: 'Ride a gust 260 units and gain +50% attack speed for 3s (the larger of this and Storm Volley, never both).' },
+      { name: 'Storm Volley', icon: '🌧️', type: 'basicMod', cd: [48, 42, 36], mana: [100, 120, 140], dur: 6, lineRange: 420, radius: 30, pierce: true, dmgType: 'physical', bonusDmg: 40, bonusDmgLv: 25, bonusScaleAd: 0.25, asMult: [1.3, 1.4, 1.5], desc: 'For 6s every basic attack is a piercing wind arrow hitting everyone in a 420 line for +40/65/90 (+25% ATK) per enemy; +30/40/50% attack speed. Casting other skills does not end it.' },
     ],
   },
   {
