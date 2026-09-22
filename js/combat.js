@@ -310,7 +310,8 @@ function applySkillCC(src, target, s, rank, over) {
   const slowPct = (over && over.slowPct !== undefined) ? over.slowPct : rankVal(s, 'slowPct', r);
   if (slowPct) target.cc.applySlow(slowPct, rankVal(s, 'slowDur', r) || 1.5, ten);
   if (s.taunt) applyTaunt(src, target, rankVal(s, 'taunt', r), ten);
-  if (s.knockback) applyKnockback(src, target, rankVal(s, 'knockback', r), s, r);
+  if (s.knockback) applyKnockback(src, target, rankVal(s, 'knockback', r), s, r, over && over.from);
+  if (s.pullTo) applyPullTo(src, target, s, r, over);
 }
 
 /* F28 chill lock. Every Chill stack (Mira's passive today, a lingering Frost
@@ -335,16 +336,80 @@ function applyChill(src, target, opts) {
   return true;
 }
 
-/* Instant displacement away from `src`. Not a timer — it resolves now and the
-   unit is free the moment it lands, which is what separates a shove from an
-   airborne. Structures and suppressed-immune units ignore it. */
-function applyKnockback(src, target, distance) {
-  if (!src || target.isStructure || !target.alive) return;
-  const d = norm(target.x - src.x, target.y - src.y);
-  target.x += d.x * distance;
-  target.y += d.y * distance;
-  Game.clampPoint(target, 40);
+/* ============================================================
+   Displacement (docs/design/heroes.md F15)
+   ============================================================
+   A shove, pull or launch is a tween, not a teleport: the unit is carried
+   over a few frames by `u.forced` (Unit.updateForced) and stops at the
+   first rock or turret it meets, where the skill's wallDmg / wallStun land.
+   It is not a CC timer: the unit is free the moment it stops, which is
+   what separates a shove from an airborne. Tenacity does not shorten it;
+   Purify immunity and a `displacement` self-immunity (F19) refuse it; a
+   dash in progress finishes first; a hook keeps its victim; a taunt is
+   put aside and restored afterwards.
+
+   spec: {mode: 'slide', dx, dy, dist, speed?, t?} or {mode: 'point', x, y, speed, t?},
+         plus s / rank for the wall payload and noWallCC. */
+function applyDisplacement(src, target, spec) {
+  if (!target || target.isStructure || !target.alive) return false;
+  const cc = target.cc;
+  if (cc && (cc.immuneT > 0 || cc.immuneTo('displacement'))) return false;
+  const cur = target.forced;
+  if (cur && cur.mode === 'hook') return false;
+  const f = {
+    mode: spec.mode || 'slide', src: src || null, s: spec.s || null, rank: spec.rank || 1,
+    dx: spec.dx || 0, dy: spec.dy || 0, dist: spec.dist || 0,
+    x: spec.x, y: spec.y, speed: spec.speed || 0, t: spec.t || 0, prev: null,
+  };
+  if (f.mode === 'slide') {
+    if (!f.t) f.t = 0.25;
+    if (!f.speed) f.speed = f.dist / f.t;
+  } else {
+    if (!f.speed) f.speed = 900;
+    if (!f.t) f.t = Math.hypot(f.x - target.x, f.y - target.y) / f.speed + 0.05;
+  }
+  if (cur && cur.mode === 'taunt') f.prev = cur;
+  else if (cur && cur.prev) f.prev = cur.prev;
+  target.forced = f;
+  if (target.marks) target.marks.heavyUntil = Game.time + 3;   // Nadir's Accretion reads this
   Game.fx.spark(target.x, target.y, THEME.ccKnockback, 5);
+  return true;
+}
+
+/* A `knockback` field: slide away from the origin (the caster, or a zone's
+   centre) — or toward it when the distance is negative (a pull, which stops
+   at the bodies rather than dragging the victim through the caster).
+   0.25 s for a shove, 0.3 s for a pull; `knockbackT` on the skill overrides. */
+function applyKnockback(src, target, distance, s, rank, from) {
+  if (!src || !distance || target.isStructure || !target.alive) return false;
+  const o = from || src;
+  let rx = target.x - o.x, ry = target.y - o.y;
+  let d = Math.sqrt(rx * rx + ry * ry);
+  if (d < 1) { rx = Math.cos(target.facing); ry = Math.sin(target.facing); d = 1; }
+  rx /= d; ry /= d;
+  let dist = distance;
+  if (dist < 0) {
+    rx = -rx; ry = -ry; dist = -dist;
+    if (o === src) dist = Math.min(dist, Math.max(0, d - (src.radius + target.radius)));
+    if (dist <= 0) return false;
+  }
+  const t = (s && s.knockbackT) || (distance < 0 ? 0.3 : 0.25);
+  return applyDisplacement(src, target, { mode: 'slide', dx: rx, dy: ry, dist, t, s, rank });
+}
+
+/* pullTo: {target: 'caster'|'point', dist, speed} — a tweened drag toward
+   the caster (stopping at the bodies) or toward the cast point (`over.point`). */
+function applyPullTo(src, target, s, rank, over) {
+  const p = s.pullTo;
+  if (!p || !src || target.isStructure || !target.alive) return false;
+  const to = (p.target === 'point' && over && over.point) ? over.point : src;
+  const rx = to.x - target.x, ry = to.y - target.y, d = Math.sqrt(rx * rx + ry * ry);
+  if (d < 1) return false;
+  const stop = to === src ? src.radius + target.radius : 0;
+  const dist = Math.min(p.dist || d, Math.max(0, d - stop));
+  if (dist <= 0) return false;
+  const speed = p.speed || 900;
+  return applyDisplacement(src, target, { mode: 'slide', dx: rx / d, dy: ry / d, dist, speed, t: dist / speed + 1e-3, s, rank });
 }
 
 /* ============================================================
@@ -703,5 +768,5 @@ const PASSIVES = {
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, rankVal, applyChill, PASSIVES };
+  module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, applyDisplacement, applyPullTo, rankVal, applyChill, PASSIVES };
 }

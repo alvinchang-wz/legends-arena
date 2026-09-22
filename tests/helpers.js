@@ -63,9 +63,12 @@ function seconds(G, s) { frames(G, Math.round(s * 60)); }
    the answer does not depend on hand-picked coordinates. */
 function openSpot(G, clear = 260, opts = {}) {
   const W = G.worldSize();
+  const structures = G.structures();
+  const farFrom = opts.farFromStructures || 700;
   for (let y = 600; y < W - 600; y += 80) {
     for (let x = 600; x < W - 600; x += 80) {
       if (G.wallAt(x, y, clear)) continue;
+      if (structures.some(s => Math.hypot(s.x - x, s.y - y) < farFrom)) continue;
       if (opts.nearWallDx) {
         const w = G.wallAt(x + opts.nearWallDx, y, 38);
         if (!w || w.circle) continue;          // want rock, not a turret

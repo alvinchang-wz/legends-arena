@@ -167,6 +167,79 @@ class Unit {
 
   onDamaged(src, dmg) { this.hitFlash = 0.12; }
   die(src) { this.alive = false; }
+
+  /* ---------- movement the unit does not choose (F15 hook / slide / point, F23 taunt) ----------
+     Returns true while the forced state owns the unit's movement this frame,
+     so the caller skips its own steering. A slide or point tween waits for a
+     dash in progress to finish (its clock keeps running) and marches in
+     short sub-steps so a thin wall is never skipped. */
+  updateForced(dt) {
+    const f = this.forced;
+    if (!f) return false;
+    if (f.mode === 'hook') {
+      f.t -= dt;
+      const d = dist(this, f.src);
+      if (d > 80 && f.t > 0 && f.src.alive) {
+        const dir = norm(f.src.x - this.x, f.src.y - this.y);
+        this.x += dir.x * 1100 * dt; this.y += dir.y * 1100 * dt;
+        this.clampWorld();
+      } else this.forced = f.prev && f.prev.mode === 'taunt' && this.cc.has('taunt') ? f.prev : null;
+      return true;
+    }
+    if (f.mode === 'taunt') return this.updateTaunt(dt, f);
+    f.t -= dt;
+    if (this.dashS) { if (f.t <= 0) this.endForced(f, false); return false; }
+    let stepLen = f.speed * dt, dx, dy;
+    if (f.mode === 'slide') {
+      stepLen = Math.min(stepLen, f.dist);
+      dx = f.dx; dy = f.dy;
+      f.dist -= stepLen;
+    } else {
+      const rx = f.x - this.x, ry = f.y - this.y, d = Math.sqrt(rx * rx + ry * ry);
+      if (d < 1) { this.endForced(f, false); return true; }
+      stepLen = Math.min(stepLen, d);
+      dx = rx / d; dy = ry / d;
+    }
+    const sub = stepLen > 20 ? Math.ceil(stepLen / 20) : 1;
+    const ds = stepLen / sub;
+    let hitWall = false;
+    for (let i = 0; i < sub; i++) {
+      const nx = this.x + dx * ds, ny = this.y + dy * ds;
+      if (Game.wallAt(nx, ny, this.radius)) { hitWall = true; break; }
+      this.x = nx; this.y = ny;
+    }
+    this.clampWorld();
+    if (hitWall) { this.onForcedWall(f); this.endForced(f, true); return true; }
+    if (f.t <= 0 || (f.mode === 'slide' && f.dist <= 0.01)) this.endForced(f, false);
+    return true;
+  }
+  endForced(f, hitWall) {
+    if (this.forced !== f) return;
+    this.forced = (f.prev && f.prev.mode === 'taunt' && this.cc.has('taunt')) ? f.prev : null;
+    // noWallCC: the CC a launch applies when nothing stopped it (Tide's High Water)
+    if (!hitWall && f.s && f.s.noWallCC && this.alive) applySkillCC(f.src, this, f.s.noWallCC, f.rank);
+  }
+  /* The victim met rock or a turret: wallDmg (+wallScaleAp of the caster's
+     magic power) and wallStun from the skill that threw it. */
+  onForcedWall(f) {
+    const s = f.s, src = f.src;
+    if (!s) return;
+    if (s.wallDmg || s.wallScaleAp) {
+      const amount = (rankVal(s, 'wallDmg', f.rank) || 0) + (src && src.magicPower ? src.magicPower() : 0) * (s.wallScaleAp || 0);
+      const dealt = resolveDamage(src, this, { amount, type: s.dmgType || 'magic', skill: s });
+      if (dealt && src && src.onSkillLanded) src.onSkillLanded(this, dealt, s);
+    }
+    if (s.wallStun && this.cc) this.cc.apply('stun', rankVal(s, 'wallStun', f.rank), this.attrs ? this.attrs.get('tenacity') : 0);
+    Game.fx.spark(this.x, this.y, THEME.ccKnockback, 8);
+  }
+  /* Taunt (F23) walks the unit at its source and swings when in reach;
+     heroes override this with their own steering. */
+  updateTaunt(dt, f) {
+    if (!this.cc.has('taunt') || !f.src || !f.src.alive) { this.forced = null; return false; }
+    if (this.inAttackRange(f.src)) this.tryAttack(f.src);
+    else this.moveToward(f.src.x, f.src.y, dt);
+    return true;
+  }
 }
 
 /* ================= Hero ================= */
@@ -738,6 +811,7 @@ class Hero extends Unit {
     this.alive = false;
     this.deaths++; this.deathStreak++; this.streak = 0;
     this.dashS = null; this.forced = null; this.recallT = 0; this.hot = null;
+    this.state = null; this.channelS = null; this.basicRangeState = null;
     this.cc.clear(); this.shields = []; this.dots = []; this.marks = {};
     this.runes = {};
     this.curTarget = null; this.aiTarget = null;
@@ -1066,18 +1140,8 @@ class Hero extends Unit {
     this._sx = this.x; this._sy = this.y;
     this.gainXp(BALANCE.passiveXpPerSec * dt);
 
-    // hook drag overrides everything
-    if (this.forced) {
-      const f = this.forced; f.t -= dt;
-      const d = dist(this, f.src);
-      if (d > 80 && f.t > 0 && f.src.alive) {
-        const dir = norm(f.src.x - this.x, f.src.y - this.y);
-        this.x += dir.x * 1100 * dt; this.y += dir.y * 1100 * dt;
-        this.clampWorld();
-      } else this.forced = null;
-      this.trackVelocity(dt);
-      return;
-    }
+    // movement the hero does not choose: a hook drag, a shove or pull (F15), a taunt (F23)
+    if (this.forced && this.updateForced(dt)) { this.trackVelocity(dt); return; }
     // active dash
     if (this.dashS) {
       const d = this.dashS;
@@ -2626,6 +2690,7 @@ class Minion extends Unit {
   update(dt) {
     if (!this.alive) return;
     this.baseUpdate(dt);
+    if (this.forced && this.updateForced(dt)) { this.trackVelocity(dt); return; }
     if (!this.cc.canAct) { this.trackVelocity(dt); return; }
     this.retargetT -= dt;
     let t = this.target;
@@ -2887,6 +2952,7 @@ class Monster extends Unit {
   update(dt) {
     if (!this.alive) return;
     this.baseUpdate(dt);
+    if (this.forced && this.updateForced(dt)) return;
     if (!this.cc.canAct) return;
     if (this.leashed) {
       this.heal(this.maxHp * 0.4 * dt);
@@ -2998,7 +3064,10 @@ class Projectile {
           applySkillCC(this.src, u, this.s, this.rank);
           if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
         }
-        if (this.hook && u.type === 'hero') u.forced = { src: this.src, t: 0.6 };
+        if (this.hook && u.type === 'hero') {
+          u.forced = { mode: 'hook', src: this.src, t: 0.6, prev: u.forced && u.forced.mode === 'taunt' ? u.forced : null };
+          u.marks.hookedAt = Game.time;
+        }
         if (this.explodeR) this.explode(this.x, this.y);
         if (!this.pierce) { this.dead = true; Game.fx.spark(this.x, this.y, this.color, 6); return; }
       }
@@ -3028,8 +3097,10 @@ class Zone {
   tick() {
     const s = this.s, ti = this.ticks0 - this.ticks;   // 0 for the first tick
     this.ticks--;
-    /* slowPctLv (F28): a multi-tick zone's slow ramps per tick, not per rank */
-    const o = s.slowPctLv ? { slowPct: Math.min(0.95, (s.slowPct || 0) + s.slowPctLv * ti), zone: this } : { zone: this };
+    /* slowPctLv (F28): a multi-tick zone's slow ramps per tick, not per rank;
+       a knockback is radial from the centre and a pullTo point is the centre (F15) */
+    const o = { zone: this, from: this, point: this };
+    if (s.slowPctLv) o.slowPct = Math.min(0.95, (s.slowPct || 0) + s.slowPctLv * ti);
     for (const u of Game.enemyUnits(this.team, { neutral: true })) {
       if (Math.hypot(u.x - this.x, u.y - this.y) <= this.radius + u.radius) {
         if (this.owner.skillHit) this.owner.skillHit(u, s, this.rank, o);
@@ -3044,11 +3115,29 @@ class Zone {
     else Game.fx.ring(this.x, this.y, this.radius, this.color, 0.35);
     SFX.zone();
   }
+  /* pullSpeed (F15): while the zone arms, enemy heroes inside are dragged
+     toward its centre. Ignores tenacity, refused by Purify immunity and a
+     displacement self-immunity, waits for a dash or a hook, stops at rock. */
+  pull(dt) {
+    const step = this.s.pullSpeed * dt;
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive || h.dashS || h.forced) continue;
+      if (h.cc.immuneT > 0 || h.cc.immuneTo('displacement')) continue;
+      const rx = this.x - h.x, ry = this.y - h.y, d = Math.sqrt(rx * rx + ry * ry);
+      if (d > this.radius + h.radius || d < 4) continue;
+      const k = Math.min(step, d) / d;
+      const nx = h.x + rx * k, ny = h.y + ry * k;
+      if (Game.wallAt(nx, ny, h.radius)) continue;
+      h.x = nx; h.y = ny;
+      h.marks.heavyUntil = Game.time + 3;
+    }
+  }
   update(dt) {
     if (this.dead) return;
     this.age += dt;
     if (this.delay > 0) {
       this.delay -= dt;
+      if (this.s.pullSpeed) this.pull(dt);
       if (this.delay <= 0) {
         this.tick();
         if (this.ticks <= 0) this.dead = true; else this.next = this.interval;
