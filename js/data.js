@@ -574,12 +574,20 @@ const HEROES = [
     range: 102, atkSpd: 0.84, speed: 241,
     passive: {
       name: 'Deadweight', icon: '⚓', id: 'deadweight',
-      desc: 'Skill hits against slowed, rooted, or stunned enemies deal 15% bonus damage.',
+      desc: 'Skill hits against slowed, rooted, stunned or airborne enemies deal 15% bonus damage.',
     },
+    /* docs/design/heroes.md, Tanks: Anchor. He never moves anyone. Hawser
+       is a minion-blockable line whose hero hit ties the victim to him
+       (F16): stay inside 560 for 2 s and you are rooted and struck again,
+       leave and it snaps; a hard CC on Anchor or a Purify cuts it. Weigh
+       Anchor is the roster's only control-immune self state (F19).
+       botRange: bots throw the line only inside 500 with no creep on it. */
     skills: [
-      { name: 'Hawser', icon: '⌇', type: 'skillshot', cd: 11, mana: 55, dmgType: 'physical', dmg: 110, dmgLv: 13, scaleAd: 0.4, range: 580, speed: 760, radius: 26, immobilize: 1.3, desc: 'A heavy line that roots the first enemy. It does not drag them.' },
-      { name: 'Heave', icon: '⇧', type: 'dash', cd: 12, mana: 50, dmgType: 'physical', dist: 280, speed: 800, dmg: 100, dmgLv: 12, scaleAd: 0.45, stopOnHero: true, stun: 0.6, desc: 'Heave into the first hero and daze them.' },
-      { name: 'Harbour', icon: '◉', type: 'nova', cd: 42, mana: 110, dmgType: 'physical', radius: 300, dmg: 240, dmgLv: 26, scaleAd: 0.55, slowPct: 0.5, slowDur: 2.2, desc: 'Drop the harbour: a massive slow around you.' },
+      { name: 'Hawser', icon: '⌇', type: 'skillshot', cd: 12, mana: 60, dmgType: 'physical', dmg: 90, dmgLv: 12, scaleAd: 0.4, range: 580, speed: 760, radius: 26, pierce: false, botRange: 500,
+        tether: { dur: 2.0, breakRange: 560, slowStart: 0.25, slowEnd: 0.5, payload: { dmg: 130, dmgLv: 16, scaleAd: 0.5, immobilize: 1.3 } },
+        desc: 'Throw a heavy line; a hero it hits is tied to Anchor 2s with a slow ramping 25% to 50%. Past 560 it snaps; if it holds, the target is rooted 1.3s and struck again. Minions block it; breaks if Anchor is hard-CC\'d.' },
+      { name: 'Weigh Anchor', icon: '⇧', type: 'selfState', cd: 11, mana: 50, dur: 1.5, selfRoot: true, ccImmune: ['slow', 'displacement'], armorAdd: 20, mrAdd: 20, tetherSlowMult: 2.0, tetherSlowCap: 0.8, recastCancel: true, desc: 'Root himself 1.5s: immune to slows, pulls and pushes, +20 armor/MR, and a tethered target\'s slow is doubled (cap 80%). Recast to end it early.' },
+      { name: 'Harbour', icon: '◉', type: 'nova', cd: [40, 36, 32], mana: 105, dmgType: 'physical', radius: 320, dmg: 230, dmgLv: 32, scaleAd: 0.55, slowPct: 0.55, slowDur: 2.0, desc: 'Every enemy within 320 is slowed 55% for 2s.' },
     ],
   },
   {

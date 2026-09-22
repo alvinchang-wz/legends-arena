@@ -849,10 +849,12 @@ const PASSIVES = {
     },
   },
 
+  /* Anchor — skill hits on a slowed, rooted, stunned or airborne enemy deal +15%. */
   deadweight: {
     onDealDamage(h, target, amount, pkt) {
       if (!pkt || !pkt.skill || !target.cc) return amount;
-      if (target.cc.has('slow') || target.cc.has('immobilize') || target.cc.has('stun')) return amount * 1.15;
+      const c = target.cc;
+      if (c.has('slow') || c.has('immobilize') || c.has('stun') || c.has('airborne')) return amount * 1.15;
       return amount;
     },
   },

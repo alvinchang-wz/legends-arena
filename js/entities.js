@@ -961,7 +961,9 @@ class Hero extends Unit {
       onFrame(tr, dt) {
         if (tt.slowStart === undefined && tt.slowEnd === undefined) return;
         let pct = lerp(tt.slowStart || 0, tt.slowEnd !== undefined ? tt.slowEnd : (tt.slowStart || 0), Math.min(1, tr.elapsed / tr.dur));
-        if (h.state && h.state.t > 0 && h.state.s.tetherSlowMult) pct *= h.state.s.tetherSlowMult;
+        // F19 tetherSlowMult / tetherSlowCap (Weigh Anchor): the live tether's slow is multiplied, to a cap
+        const st = h.state && h.state.t > 0 ? h.state.s : null;
+        if (st && st.tetherSlowMult) pct = Math.min(st.tetherSlowCap || 0.95, pct * st.tetherSlowMult);
         if (pct > 0) target.cc.applySlow(Math.min(0.95, pct), 0.2, target.attrs ? target.attrs.get('tenacity') : 0);
       },
       onTick() {
@@ -2045,7 +2047,53 @@ class Hero extends Unit {
   botRole() { return (this.def0 && this.def0.role) || ''; }
 
   skillHasHardCC(s) {
-    return !!(s && (s.stun || s.immobilize || s.airborne || s.silence || s.hook || s.suppress));
+    if (!s) return false;
+    const c = s.payload || s;   // a channel's nova (F18)
+    if (c.stun || c.immobilize || c.airborne || c.silence || c.hook || c.suppress || c.taunt) return true;
+    const p = s.tether && s.tether.payload;   // a tether that roots on completion (F16)
+    return !!(p && (p.stun || p.immobilize || p.airborne || p.silence || p.suppress));
+  }
+  /* F29 (Anchor's bot hint). The live hostile tether from this hero, if any. */
+  liveTether() {
+    for (const t of Game.tethers) if (!t.dead && t.hostile && t.src === this && t.target && t.target.alive) return t;
+    return null;
+  }
+  /* Is a non-hero enemy body (a creep) on the line from here to `t` within
+     the shot's width? A non-pierce line is blocked by it. */
+  lineBlocked(t, s) {
+    const x0 = this.x, y0 = this.y, dx = t.x - x0, dy = t.y - y0, len2 = dx * dx + dy * dy;
+    if (len2 < 1) return false;
+    const w = (s.radius || 24);
+    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+      if (u.type === 'hero' || u === t) continue;
+      const k = clamp(((u.x - x0) * dx + (u.y - y0) * dy) / len2, 0, 1);
+      const px = x0 + dx * k - u.x, py = y0 + dy * k - u.y, r = w + u.radius;
+      if (px * px + py * py <= r * r) return true;
+    }
+    return false;
+  }
+  /* The hero a tether line should go at: the most mobile visible enemy hero
+     (most dash / blink skills) inside botRange on a clear line; else the
+     target itself. */
+  tetherPick(s, t) {
+    const reach = s.botRange || s.range || 500;
+    let best = null, bm = -1, bd = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+      const d = this.distTo(e);
+      if (d >= reach || this.lineBlocked(e, s)) continue;
+      const m = e.skills.filter(k => k && (k.type === 'dash' || k.type === 'blinkstrike' || k.dashToPoint)).length;
+      if (m > bm || (m === bm && d < bd)) { bm = m; bd = d; best = e; }
+    }
+    return best || t;
+  }
+  /* A tethered target inside `radius` of this hero who is about to slip the
+     line: past half its break range and moving away. */
+  tetherEscaping(radius) {
+    const tt = this.liveTether();
+    if (!tt) return false;
+    const e = tt.target, dx = e.x - this.x, dy = e.y - this.y, d = Math.sqrt(dx * dx + dy * dy);
+    return d < radius + e.radius && d > tt.breakRange * 0.5 && (e.vx || 0) * dx + (e.vy || 0) * dy > 0;
   }
 
   unitLockedDown(u) {
@@ -2479,7 +2527,8 @@ class Hero extends Unit {
     if (i === 2 && s.type !== 'basicMod') {
       if (!isHero) return 0;
       const crowd = Game.heroes.filter(h => h.team !== this.team && h.alive && this.distTo(h) < 420).length;
-      if (t.hpPct > p.ultExecuteHp && crowd < 2) return 0;
+      // F29 (Anchor's hint): Harbour also answers a tethered target slipping the line
+      if (t.hpPct > p.ultExecuteHp && crowd < 2 && !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
     const cc = this.skillHasHardCC(s);
@@ -2487,6 +2536,12 @@ class Hero extends Unit {
       case 'skillshot':
         if (d >= s.range * 0.95 || !(isHero || farmOk)) return 0;
         if (s.heroOnly && !isHero) return 0;   // F20: it flies straight through creeps
+        if (s.tether) {   // F16 / F29 (Anchor's hint): heroes only, inside botRange, no creep on the line, one at a time
+          if (!isHero || d >= (s.botRange || s.range * 0.95) || this.liveTether()) return 0;
+          const pick = this.tetherPick(s, t);
+          if (this.lineBlocked(pick, s)) return 0;
+          return this.unitLockedDown(pick) ? 500 : 820;
+        }
         if (locked && !cc) return 860;
         if (cc && isHero && !locked) return 820;
         return isHero ? 500 : 220;
@@ -2498,6 +2553,7 @@ class Hero extends Unit {
       case 'nova': {
         if (d >= s.radius + t.radius) return 0;
         if (!isHero && !farmOk) return 0;
+        if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
         let near = 0;
         for (const h of Game.heroes) {
           if (h.team !== this.team && h.alive && this.distTo(h) < s.radius + h.radius) near++;
@@ -2567,10 +2623,15 @@ class Hero extends Unit {
         if (this.enemyInterruptReady(pr + 260)) return 0;
         return 860;
       }
-      case 'selfState':  // F19: vanish when in danger; dig in when the enemy is on top of you
+      case 'selfState': { // F19: vanish when in danger; dig in when the enemy is on top of you
         if (!isHero) return 0;
         if (s.untargetable) return this.hpPct < 0.5 && d < 450 ? 760 : 0;
+        if (s.tetherSlowMult) {   // F29 (Anchor's hint): Weigh Anchor when the tethered target is slowed inside 400
+          const tt = this.liveTether();
+          return tt && tt.target.cc.has('slow') && this.distTo(tt.target) < 400 ? 760 : 0;
+        }
         return d < 300 ? 420 : 0;
+      }
       case 'basicMod': { // F7: the volley wants heroes inside its line
         const lr = s.lineRange || 420;
         if (!isHero || d >= lr) return 0;
@@ -2658,9 +2719,11 @@ class Hero extends Unit {
   botFireSkill(i, t, d, isHero, farmOk) {
     const s = this.skills[i];
     switch (s.type) {
-      case 'skillshot':
-        this.castSkill(i, Game.aimLeadPoint(this, t, s.speed));
+      case 'skillshot': {
+        const at = s.tether ? this.tetherPick(s, t) : t;
+        this.castSkill(i, Game.aimLeadPoint(this, at, s.speed));
         break;
+      }
       case 'nova':
         this.castSkill(i, t);
         break;
@@ -3760,7 +3823,10 @@ class Projectile {
       applySkillCC(this.src, u, this.s, this.rank, o);
       if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
     }
-    if (this.hook && u.type === 'hero' && !(u.dashS && u.dashS.unhookable)) {
+    // F16: a skillshot carrying `tether` ties the hero it hits to the caster (creeps just take the hit)
+    if (this.s.tether && u.type === 'hero' && u.alive && this.src.tetherTo) this.src.tetherTo(u, this.s, this.rank);
+    // F19: a displacement-immune hero (Weigh Anchor) is not dragged by a hook either
+    if (this.hook && u.type === 'hero' && !(u.dashS && u.dashS.unhookable) && !(u.cc && u.cc.immuneTo('displacement'))) {
       u.forced = { mode: 'hook', src: this.src, t: 0.6, prev: u.forced && u.forced.mode === 'taunt' ? u.forced : null };
       u.marks.hookedAt = Game.time;
     }

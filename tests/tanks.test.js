@@ -427,4 +427,197 @@ T.test('Marrow bot: never Ribcage below 20% HP; Splint when an ally within 300 i
   assert.equal(marrow.botSkillUrgency(2, bastion, d, true, false), 880, 'unless it is an execute');
 });
 
+/* ---------------- Anchor ---------------- */
+
+T.test('Anchor: base stats and skill numbers match the spec', () => {
+  const d = anchor.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [730, 98, 220, 24, 54, 5.8, 23, 3.3, 16, 2.5, 102, 0.84, 241, 2]);
+  const [s1, s2, s3] = d.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.mana, s1.dmg, s1.dmgLv, s1.scaleAd, s1.range, s1.speed, s1.radius, s1.pierce], ['skillshot', 12, 60, 90, 12, 0.4, 580, 760, 26, false]);
+  assert.deepEqual(s1.tether, { dur: 2.0, breakRange: 560, slowStart: 0.25, slowEnd: 0.5, payload: { dmg: 130, dmgLv: 16, scaleAd: 0.5, immobilize: 1.3 } });
+  assert.deepEqual([s2.type, s2.cd, s2.mana, s2.dur, s2.selfRoot, s2.ccImmune, s2.armorAdd, s2.mrAdd, s2.tetherSlowMult, s2.recastCancel],
+    ['selfState', 11, 50, 1.5, true, ['slow', 'displacement'], 20, 20, 2.0, true]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.radius, s3.dmg, s3.dmgLv, s3.scaleAd, s3.slowPct, s3.slowDur], ['nova', [40, 36, 32], 105, 320, 230, 32, 0.55, 0.55, 2.0]);
+  assert.equal(rankVal(s1.tether.payload, 'dmg', 6), 210);
+  assert.equal(rankVal(s3, 'dmg', 3), 294);
+});
+
+T.test('Anchor: Hawser hits, ties the hero to him for 2 s with a 25% -> 50% slow, then roots 1.3 s and strikes again', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(zephyr, open.x + 300, open.y);
+  assert.ok(anchor.castSkill(0, zephyr));
+  assert.ok(anchor.mana < anchor.maxMana - 60 + 1);
+  T.frames(G, 30);   // 0.5 s: the line (760 u/s) has reached her
+  assert.ok(zephyr.hp < zephyr.maxHp, 'hit damage');
+  const tt = anchor.liveTether();
+  assert.ok(tt && tt.target === zephyr, 'tethered');
+  assert.equal(tt.breakRange, 560);
+  assert.ok(tt.dur === 2.0);
+  assert.ok(zephyr.cc.slowPct >= 0.25 && zephyr.cc.slowPct < 0.35, `slow starts at 25%: ${zephyr.cc.slowPct}`);
+  const hpMid = zephyr.hp;
+  T.frames(G, 60);   // 1 s in
+  assert.ok(zephyr.cc.slowPct > 0.35 && zephyr.cc.slowPct < 0.5, `ramps toward 50%: ${zephyr.cc.slowPct}`);
+  assert.ok(zephyr.hp >= hpMid - 1, 'no tick damage on the line (regen aside)');
+  T.frames(G, 70);   // past 2 s
+  assert.equal(anchor.liveTether(), null, 'completed');
+  assert.ok(zephyr.hp < hpMid - 100, 'completion strike');
+  assert.ok(zephyr.cc.t.immobilize > 0.8, `rooted 1.3 s (tenacity and the frames since completion aside): ${zephyr.cc.t.immobilize}`);
+  assert.ok(anchor.skillCd[0] > 9 && anchor.skillCd[0] <= 12);
+});
+
+T.test('Anchor: the line snaps past 560, when Anchor is stunned, and a creep on the line blocks it (hit, no tether)', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(zephyr, open.x + 300, open.y);
+  anchor.castSkill(0, zephyr);
+  T.frames(G, 30);
+  assert.ok(anchor.liveTether());
+  T.place(zephyr, open.x + 600, open.y);
+  G.update(1 / 60);
+  assert.equal(anchor.liveTether(), null, 'snapped past 560');
+  assert.ok(!zephyr.cc.has('immobilize'), 'no root on a snap');
+  // a stun on Anchor cuts it
+  reset();
+  T.place(anchor, open.x, open.y); T.place(zephyr, open.x + 300, open.y);
+  anchor.castSkill(0, zephyr);
+  T.frames(G, 30);
+  anchor.cc.apply('stun', 0.5, 0);
+  G.update(1 / 60);
+  assert.equal(anchor.liveTether(), null, 'a hard CC on Anchor cuts the line');
+  anchor.cc.clear();
+  // a creep on the line takes the hit; no tether
+  reset();
+  T.place(anchor, open.x, open.y); T.place(zephyr, open.x + 300, open.y);
+  const m = new sim.context.Minion(0, 'mid', 'melee');
+  T.place(m, open.x + 150, open.y);
+  G.minions.push(m);
+  const mhp = m.hp;
+  assert.ok(anchor.lineBlocked(zephyr, anchor.skills[0]), 'the bot sees the creep on the line');
+  anchor.castSkill(0, zephyr);
+  T.frames(G, 30);
+  assert.ok(m.hp < mhp, 'the creep took the line');
+  assert.equal(zephyr.hp, zephyr.maxHp, 'Zephyr did not');
+  assert.equal(anchor.liveTether(), null, 'no tether on a creep');
+  m.alive = false; G.minions.splice(G.minions.indexOf(m), 1);
+});
+
+T.test('Anchor: Deadweight adds 15% to skill hits on slowed, rooted, stunned or airborne enemies', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(zephyr, open.x + 200, open.y);
+  const pkt = { skill: anchor.skills[2] };
+  assert.equal(anchor.onDealDamage(zephyr, 100, pkt), 100);
+  zephyr.cc.apply('airborne', 0.5, 0);
+  assert.ok(Math.abs(anchor.onDealDamage(zephyr, 100, pkt) - 115) < 1e-9, 'airborne');
+  zephyr.cc.clear(); zephyr.cc.applySlow(0.3, 1, 0);
+  assert.ok(Math.abs(anchor.onDealDamage(zephyr, 100, pkt) - 115) < 1e-9, 'slowed');
+  zephyr.cc.clear();
+  assert.equal(anchor.onDealDamage(zephyr, 100, { isBasic: true }), 100, 'basics never');
+});
+
+T.test('Anchor: Weigh Anchor roots him 1.5 s, refuses slows, shoves, pulls and hooks, adds 20 armor / 20 MR, doubles a live tether slow to 80%, and a recast ends it', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(zephyr, open.x + 300, open.y);
+  T.place(grom, open.x - 200, open.y);
+  const armor0 = anchor.armorValue(), mr0 = anchor.mrValue();
+  anchor.castSkill(0, zephyr);
+  T.frames(G, 30);
+  assert.ok(anchor.liveTether());
+  assert.ok(anchor.castSkill(1, null));
+  assert.ok(anchor.state && Math.abs(anchor.state.t - 1.5) < 1e-9);
+  assert.equal(anchor.armorValue(), armor0 + 20); assert.equal(anchor.mrValue(), mr0 + 20);
+  anchor.moveToward(anchor.x - 200, anchor.y, 1 / 60);
+  assert.equal(anchor.x, open.x, 'self-rooted');
+  assert.equal(anchor.cc.applySlow(0.5, 2, 0), 0, 'slow refused');
+  assert.equal(grom.castSkill(1, anchor), true);   // Bull Charge: stun + shove
+  T.seconds(G, 0.4);
+  assert.ok(anchor.cc.has('stun') || anchor.cc.t.stun === 0, 'stuns still apply (or already ran out)');
+  assert.equal(anchor.x, open.x, 'the shove was refused');
+  assert.equal(anchor.y, open.y);
+  // a hook (Karn's) does not drag him either
+  const hook = sim.context.Projectile.skillshot(grom, { type: 'skillshot', range: 600, speed: 800, radius: 28, hook: true, dmg: 1, dmgType: 'physical' }, { x: 1, y: 0 });
+  hook.x = anchor.x - 30; hook.y = anchor.y; hook.rank = 1;
+  G.projectiles.push(hook);
+  anchor.cc.clear();
+  G.update(1 / 60);
+  assert.ok(!anchor.forced || anchor.forced.mode !== 'hook', 'not hooked');
+  assert.equal(anchor.liveTether(), null, 'the stun on Anchor had cut his own line');
+  T.seconds(G, 1.2);
+  assert.equal(anchor.state, null, 'expired after 1.5 s');
+  assert.equal(anchor.armorValue(), armor0, 'the resists went with it');
+});
+
+T.test('Anchor: Weigh Anchor doubles the live Hawser slow (cap 80%) and a recast cancels it early', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(zephyr, open.x + 300, open.y);
+  anchor.castSkill(0, zephyr);
+  T.frames(G, 30);
+  const tt = anchor.liveTether();
+  assert.ok(tt);
+  T.frames(G, 60);   // ~1.5 s in: base slow ~0.44
+  const base = zephyr.cc.slowPct;
+  assert.ok(base > 0.4 && base < 0.5, `base ${base}`);
+  assert.ok(anchor.castSkill(1, null));
+  G.update(1 / 60);
+  assert.ok(Math.abs(zephyr.cc.slowPct - Math.min(0.8, base * 2)) < 0.03, `doubled: ${zephyr.cc.slowPct}`);
+  T.frames(G, 25);   // the line completes at 2 s with the slow at 50% x 2 = 100% -> capped 80%
+  assert.ok(anchor.state, 'state still up');
+  assert.ok(anchor.castSkill(1, null), 'recast to cancel');
+  assert.equal(anchor.state, null);
+  assert.ok(anchor.skillCd[1] > 0, 'the cooldown from the first cast stands');
+});
+
+T.test('Anchor: Harbour slows everyone within 320 by 55% for 2 s', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(zephyr, open.x + 300, open.y);
+  T.place(nyx, open.x - 250, open.y + 100);
+  T.place(ignis, open.x + 420, open.y);
+  assert.ok(anchor.castSkill(2, zephyr));
+  assert.ok(zephyr.hp < zephyr.maxHp && nyx.hp < nyx.maxHp);
+  assert.equal(ignis.hp, ignis.maxHp, 'outside 320');
+  assert.ok(Math.abs(zephyr.cc.slowPct - 0.55) < 1e-9 && zephyr.cc.t.slow > 1.9, `55% for 2 s: ${zephyr.cc.slowPct} / ${zephyr.cc.t.slow}`);
+  assert.equal(anchor.skillCd[2], 32);
+});
+
+T.test('Anchor bot: Hawser only at a hero inside 500 on a clear line, one at a time, at the most mobile hero; Weigh Anchor when the tethered target is slowed inside 400; Harbour when it slips', () => {
+  reset();
+  T.place(anchor, open.x, open.y);
+  T.place(ignis, open.x + 300, open.y);       // no dash
+  T.place(nyx, open.x + 350, open.y + 200);   // dash + blinkstrike
+  const s1 = anchor.skills[0];
+  assert.equal(anchor.tetherPick(s1, ignis), nyx, 'the hero with the most dashes');
+  assert.equal(anchor.botSkillUrgency(0, ignis, anchor.distTo(ignis), true, false), 820);
+  T.place(nyx, FAR.x, FAR.y);
+  assert.equal(anchor.tetherPick(s1, ignis), ignis);
+  T.place(ignis, open.x + 540, open.y);
+  assert.equal(anchor.botSkillUrgency(0, ignis, anchor.distTo(ignis), true, false), 0, 'beyond 500');
+  T.place(ignis, open.x + 300, open.y);
+  const m = new sim.context.Minion(0, 'mid', 'melee');
+  T.place(m, open.x + 150, open.y); G.minions.push(m);
+  assert.equal(anchor.botSkillUrgency(0, ignis, anchor.distTo(ignis), true, false), 0, 'a creep on the line');
+  G.minions.splice(G.minions.indexOf(m), 1);
+  assert.equal(anchor.botSkillUrgency(1, ignis, anchor.distTo(ignis), true, false), 0, 'no tether: no Weigh Anchor');
+  anchor.castSkill(0, ignis);
+  T.frames(G, 30);
+  assert.ok(anchor.liveTether());
+  anchor.skillCd[0] = 0;
+  assert.equal(anchor.botSkillUrgency(0, ignis, anchor.distTo(ignis), true, false), 0, 'one line at a time');
+  assert.equal(anchor.botSkillUrgency(1, ignis, anchor.distTo(ignis), true, false), 760, 'tethered, slowed, inside 400');
+  T.place(ignis, open.x + 450, open.y);
+  assert.equal(anchor.botSkillUrgency(1, ignis, anchor.distTo(ignis), true, false), 0, 'outside 400');
+  // Harbour on a tethered target slipping away: inside 320, past half the break range and moving out
+  T.place(ignis, open.x + 330, open.y);
+  ignis.vx = 200; ignis.vy = 0;
+  assert.ok(anchor.liveTether(), 'still tied');
+  assert.ok(anchor.tetherEscaping(320));
+  assert.equal(anchor.botSkillUrgency(2, ignis, anchor.distTo(ignis), true, false), 880, 'Harbour to keep him');
+  ignis.vx = -200;
+  assert.ok(!anchor.tetherEscaping(320), 'walking back in is not escaping');
+});
+
 T.done();

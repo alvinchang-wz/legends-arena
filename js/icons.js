@@ -778,7 +778,12 @@ const Icons = (() => {
   GLYPHS['skill:marrow:1'] = g => { g.fillStyle = '#e7e5e4'; g.fillRect(46, 22, 8, 40); g.fillRect(30, 48, 40, 8); spark4(g, 50, 22, 7, '#fafaf9'); };
   GLYPHS['skill:marrow:2'] = g => { g.beginPath(); g.moveTo(14, 74); g.lineTo(36, 74); g.lineTo(50, 40); g.lineTo(64, 74); g.lineTo(86, 74); g.lineWidth = 5; g.strokeStyle = '#d6d3d1'; g.stroke(); };
   GLYPHS['skill:anchor:0'] = g => { seg(g, 16, 62, 70, 40, 5, '#1d4e89'); ring(g, 74, 36, 10, 5, '#60a5fa'); };
-  GLYPHS['skill:anchor:1'] = g => { arrow(g, 20, 70, 78, 28, 7, '#1d4e89', 2); };
+  GLYPHS['skill:anchor:1'] = g => {                                  // Weigh Anchor: planted, flukes in the ground
+    ring(g, 50, 22, 8, 5, '#1d4e89');
+    g.fillStyle = '#1d4e89'; g.fillRect(47, 30, 6, 40); g.fillRect(34, 40, 32, 5);
+    path(g, [[26, 56], [50, 76], [74, 56]], false); g.lineWidth = 6; g.strokeStyle = '#1d4e89'; g.lineCap = 'round'; g.stroke();
+    seg(g, 12, 84, 88, 84, 5, '#60a5fa');
+  };
   GLYPHS['skill:anchor:2'] = g => { ring(g, 50, 50, 30, 6, '#1d4e89'); ring(g, 50, 50, 16, 4, '#60a5fa'); };
   GLYPHS['skill:bell:0'] = g => { g.beginPath(); g.moveTo(16, 60); g.quadraticCurveTo(50, 20, 84, 50); g.lineWidth = 5; g.strokeStyle = '#e879f9'; g.stroke(); };
   GLYPHS['skill:bell:1'] = g => { path(g, [[50, 20], [72, 40], [66, 70], [50, 82], [34, 70], [28, 40]]); g.fillStyle = '#f5d0fe'; g.fill(); spark4(g, 50, 48, 8, '#ffffff'); };
