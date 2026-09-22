@@ -24,7 +24,7 @@ const Screens = {
     standard: {
       name: 'CLASSIC 5V5', short: 'CLASSIC', color: '#ffc94a', em: '⚔', icon: 'misc:attack',
       desc: 'Three lanes, a jungle, Turtle and Lord. Destroy the enemy base.',
-      meta: ['5 V 5', 'DAWN BOARD', '10-15 MIN'],
+      meta: ['5 V 5', 'DAWN BOARD', '12-18 MIN'],
     },
     ten: {
       name: 'CALDERA 10V10', short: 'CALDERA', color: '#ff9d5c', em: '🌋', icon: null,

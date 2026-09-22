@@ -502,6 +502,21 @@ What this spec does **not** do: teach bots to group and push. `docs/design/bot-a
 
 Tuning knobs, in the order to turn them if the median is still above 18:00 after both land: (1) crystal HP 4,800 -> 4,000; (2) Lord charge 30% -> 40%; (3) respawn multiplier 1.25 from 18:00 -> from 15:00; (4) minion speed-up from 10:00 -> 8:00. If the median is below 12:00: (1) crystal regen 25 HP/s while no enemy is within 600 (the reference's 165 per 5 s at 0.7x); (2) Orange Alert 60 s -> 90 s; (3) energy shield 1,800 -> 2,400.
 
+**Where the levers stand (measured 2026-09-22, `node headless/batch.js --matches 40 --lineups draft`, the game's own draft, heuristic bots, seeds 1-40).** All four shortening knobs had been turned and the game had overshot the band: median 12.08 min, 20 of 40 matches under 12:00, p10 9.79. The endgame was not a phase — the crystal died a median 14 s after the last inhibitor fell, and a median match took only 4 of the 9 turrets. Knobs 1, 2 and 4 are therefore back at their spec defaults (crystal 4,800, Lord charge 30%, minion speed-up from 10:00); knob 3 stays at 15:00 because it only engages in matches that are already long, and the tail does not need lengthening.
+
+| | Before (all four turned) | After (1, 2, 4 reverted) |
+|---|---|---|
+| Match length median / mean | 12.08 / 12.52 min | **13.20 / 13.13 min** |
+| p10 / p90 | 9.79 / 16.37 | 9.85 / 17.10 |
+| Under 12:00 / in 12-18 / over 18:00 | 20 / 20 / 0 | 15 / 22 / 3 |
+| First turret (median) | 8.85 min | 8.88 min |
+| First inhibitor (median) | 10.50 min | 10.59 min |
+| Last inhibitor -> crystal (median / mean) | 0.23 / 0.61 min | 0.29 / 1.22 min |
+| Turrets destroyed (median) | 4 | 5 |
+| Matches reaching the 30:00 cap | 0 | 0 |
+
+The laning phase was never the problem: first turret and first inhibitor barely moved. What the reverts bought is a longer close, which is the part the player is meant to be able to defend.
+
 ---
 
 ## 16 Verification plan (headless simulator)
