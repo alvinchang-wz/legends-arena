@@ -261,4 +261,122 @@ T.test('Brass bot: Shoulder goes at the enemy hero attacking an allied hero with
   assert.equal(brass.botSkillUrgency(2, karn, brass.distTo(karn), true, false), 880, 'two inside 260');
 });
 
+/* ---------------- Omen ---------------- */
+
+T.test('Omen: base stats and skill numbers match the spec; Cadence stacks +5% AS per basic (8 max), a Crosscut on a hero is worth 2', () => {
+  reset();
+  const d = omen.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [640, 88, 200, 22, 66, 7.6, 16, 2.6, 13, 2.0, 108, 1.06, 266]);
+  const [s1, s2, s3] = omen.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAd, s1.canCrit],
+    ['nova', 6, -0.3, 40, 3, 190, 120, 14, 0.8, true]);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAd, s2.resetOnKill, s2.resetOnAssist, s2.stun],
+    ['dash', 10, -0.4, 45, 300, 1050, 90, 11, 0.6, 1, 0.5, undefined]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.dist, s3.speed, s3.stopOnHero, s3.dmg, s3.scaleAd, s3.stun, s3.resetOnKill],
+    ['dash', [38, 34, 30], 120, 420, 1200, true, [240, 300, 360], 1.1, 0.8, 0.5]);
+  assert.ok(Math.abs(omen.cooldownFor(s1, 6) - 4.5) < 1e-9); assert.ok(Math.abs(omen.cooldownFor(s2, 6) - 8) < 1e-9);
+  // Cadence
+  T.place(omen, open.x, open.y); T.place(tide, open.x + 120, open.y);
+  const as0 = omen.curAtkSpd();
+  omen.onBasicLanded(tide, 10);
+  omen.recalcStats(false);
+  assert.ok(Math.abs(omen.curAtkSpd() - as0 * 1.05) < 1e-9, `one stack: ${omen.curAtkSpd() / as0}`);
+  assert.ok(omen.castSkill(0, tide));
+  omen.recalcStats(false);
+  assert.equal(omen.pv.n, 3, 'a Crosscut on a hero adds 2');
+  assert.ok(Math.abs(omen.curAtkSpd() - as0 * 1.15) < 1e-9);
+  for (let i = 0; i < 9; i++) omen.onBasicLanded(tide, 10);
+  assert.equal(omen.pv.n, 8, 'capped at 8');
+  T.seconds(G, 3.1);
+  assert.equal(omen.pv.n, 0, 'gone after 3 s');
+  // a Crosscut on creeps only grants nothing
+  omen.skillCd[0] = 0; T.place(tide, open.x + 900, open.y);
+  omen.castSkill(0, null);
+  assert.equal(omen.pv.n, 0);
+});
+
+T.test('Omen: Crosscut crits with his crit chance, one roll for every victim of the cast', () => {
+  reset();
+  T.place(omen, open.x, open.y); T.place(tide, open.x + 150, open.y); T.place(karn, open.x - 150, open.y);
+  omen.castSkill(0, tide);
+  const plainT = tide.maxHp - tide.hp, plainK = karn.maxHp - karn.hp;
+  assert.ok(plainT > 0 && plainK > 0);
+  reset();
+  T.place(omen, open.x, open.y); T.place(tide, open.x + 150, open.y); T.place(karn, open.x - 150, open.y);
+  omen.attrs.bonus.critChance = 1;
+  omen.castSkill(0, tide);
+  omen.attrs.bonus.critChance = 0;
+  const critT = tide.maxHp - tide.hp, critK = karn.maxHp - karn.hp;
+  assert.ok(Math.abs(critT / plainT - 2) < 0.03, `a 200% crit on Tide: ${critT / plainT}`);
+  assert.ok(Math.abs(critK / plainK - 2) < 0.03, `and the same roll on Karn: ${critK / plainK}`);
+});
+
+T.test('Omen: a hero kill resets Pass fully and refunds half of Duelist\'s End; an assist refunds half of Pass', () => {
+  reset();
+  const [, s2, s3] = omen.skills;
+  omen.skillCd = [3, 8, 30];
+  omen.fire('onAssist', tide);
+  assert.ok(Math.abs(omen.skillCd[1] - 4) < 1e-9, `assist: 8 - 0.5 x 8 = 4: ${omen.skillCd[1]}`);
+  assert.equal(omen.skillCd[2], 30, 'the ult has no assist refund');
+  assert.equal(omen.skillCd[0], 3, 'Crosscut carries no reset');
+  omen.skillCd = [3, 8, 30];
+  omen.fire('onKill', tide);
+  assert.equal(omen.skillCd[1], 0, 'a kill resets Pass');
+  assert.ok(Math.abs(omen.skillCd[2] - 15) < 1e-9, `and refunds half of the ult (30 - 0.5 x 30): ${omen.skillCd[2]}`);
+  assert.equal(omen.lastTakedownT, G.time, 'the takedown clock is set for the bot');
+  // a real kill through the dash itself
+  reset();
+  T.place(omen, open.x, open.y); T.place(tide, open.x + 160, open.y);
+  tide.hp = 1;
+  assert.ok(omen.castSkill(1, tide));
+  assert.ok(Math.abs(omen.skillCd[1] - 8) < 1e-9);
+  T.seconds(G, 0.3);
+  assert.ok(!tide.alive, 'Pass killed Tide');
+  assert.equal(omen.skillCd[1], 0, 'and came straight back');
+  tide.alive = true; tide.hp = tide.maxHp; tide.respawnT = 0;
+});
+
+T.test("Omen: Duelist's End stops on the first hero, 360 (+110% ATK) physical at rank 3, stun 0.8 s", () => {
+  reset();
+  T.place(omen, open.x, open.y); T.place(karn, open.x + 250, open.y); T.place(tide, open.x + 400, open.y);
+  assert.ok(omen.castSkill(2, tide));
+  assert.equal(omen.skillCd[2], 30); assert.equal(omen.mana, omen.maxMana - 120);
+  assert.ok(Math.abs(omen.dashS.dmg - (360 + omen.curAtk() * 1.1)) < 1e-6, 'rank-3 damage');
+  T.seconds(G, 0.2);
+  assert.ok(karn.hp < karn.maxHp && karn.cc.t.stun > 0.6 && karn.cc.t.stun <= 0.8, `first hero struck and stunned 0.8: ${karn.cc.t.stun}`);
+  assert.equal(tide.hp, tide.maxHp, 'stopped on Karn');
+});
+
+T.test("Omen bot: Duelist's End on a hero under 60% or when an ally has engaged; after a takedown Pass onto the lowest hero within 300; retreat under 40% with Pass down", () => {
+  reset();
+  T.place(omen, open.x, open.y); T.place(tide, open.x + 300, open.y); T.place(zephyr, open.x - 1200, open.y);
+  tide.hp = tide.maxHp * 0.65;
+  assert.equal(omen.botSkillUrgency(2, tide, omen.distTo(tide), true, false), 0, '65%, alone: hold');
+  tide.hp = tide.maxHp * 0.55;
+  assert.equal(omen.botSkillUrgency(2, tide, omen.distTo(tide), true, false), 780, 'under 60%: go');
+  tide.hp = tide.maxHp * 0.9;
+  T.place(zephyr, open.x + 500, open.y); zephyr.lastDmgT = G.time;
+  assert.equal(omen.botSkillUrgency(2, tide, omen.distTo(tide), true, false), 780, 'an ally fighting next to the target: go');
+  zephyr.lastDmgT = -99;
+  assert.equal(omen.botSkillUrgency(2, tide, omen.distTo(tide), true, false), 0);
+  // the chain: within 3 s of a takedown Pass goes through the lowest hero in 300
+  T.place(karn, open.x, open.y + 250); karn.hp = karn.maxHp * 0.3;
+  assert.equal(omen.dashPick(omen.skills[1], tide), tide, 'no takedown yet: the ordinary target');
+  omen.lastTakedownT = G.time;
+  assert.equal(omen.dashPick(omen.skills[1], tide), karn, 'fresh from a takedown: the lowest hero in reach');
+  assert.equal(omen.botSkillUrgency(1, tide, omen.distTo(tide), true, false), 800);
+  omen.lastTakedownT = -99;
+  // the retreat threshold rises to 40% while Pass is on cooldown
+  reset();
+  T.place(omen, open.x, open.y);
+  omen.hp = omen.maxHp * 0.35; omen.aiState = 'push';
+  omen.heuristicStateStep();
+  assert.equal(omen.aiState, 'push', 'Pass ready: 35% is still a fight');
+  omen.skillCd[1] = 5;
+  omen.heuristicStateStep();
+  assert.equal(omen.aiState, 'retreat', 'Pass down and under 40%: fall back');
+  omen.aiState = 'push'; omen.recallT = 0; omen.hp = omen.maxHp;
+});
+
 T.done();

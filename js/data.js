@@ -488,19 +488,26 @@ const HEROES = [
   },
   {
     id: 'omen', name: 'Omen', role: 'Fighter', icon: '⚔️', color: '#94a3b8', projColor: '#e2e8f0',
-    desc: 'A twin-blade duelist who speeds up the longer the fight lasts.',
+    desc: 'A twin-blade duelist who chains kills: every takedown resets his step.',
     difficulty: 2, damageStyle: 'physical',
-    hp: 640, hpLv: 88, mp: 205, mpLv: 22, atk: 65, atkLv: 7.4,
+    /* docs/design/heroes.md, Fighters: Omen. The roster's only conditional
+       cooldown reset (F24): a hero kill refunds all of Pass and half of
+       Duelist's End, an assist half of Pass. Crosscut is the one nova that
+       can crit (F28 canCrit, one roll per cast). Bot fields: botExecuteHp
+       opens the ult on a hero under 60%, botAllyEngaged when an ally is
+       already fighting near the target; botRetreatWhenDown makes him fall
+       back under 40% HP while Pass is on cooldown. */
+    hp: 640, hpLv: 88, mp: 200, mpLv: 22, atk: 66, atkLv: 7.6,
     armor: 16, armorLv: 2.6, mr: 13, mrLv: 2.0,
-    range: 108, atkSpd: 1.04, speed: 266,
+    range: 108, atkSpd: 1.06, speed: 266,
     passive: {
       name: 'Cadence', icon: '♪', id: 'cadence',
-      desc: 'Basic attacks grant 4% attack speed for 3s, stacking to 8.',
+      desc: 'Basic attacks grant +5% attack speed for 3s, stacking to 8. A Crosscut that hits an enemy hero grants 2 stacks.',
     },
     skills: [
-      { name: 'Crosscut', icon: '✕', type: 'nova', cd: 6, mana: 40, dmgType: 'physical', radius: 190, dmg: 125, dmgLv: 14, scaleAd: 0.75, desc: 'A tight X of steel around you.' },
-      { name: 'Pass', icon: '↦', type: 'dash', cd: 9, mana: 45, dmgType: 'physical', dist: 300, speed: 1050, dmg: 90, dmgLv: 11, scaleAd: 0.5, desc: 'Step through, cutting the lane.' },
-      { name: 'Duelist\'s End', icon: '†', type: 'dash', cd: 40, mana: 100, dmgType: 'physical', dist: 400, speed: 1200, dmg: 260, dmgLv: 28, scaleAd: 0.85, stopOnHero: true, stun: 0.9, desc: 'A committed lunge that stuns the first hero.' },
+      { name: 'Crosscut', icon: '✕', type: 'nova', cd: 6, cdLv: -0.3, mana: 40, manaLv: 3, dmgType: 'physical', radius: 190, dmg: 120, dmgLv: 14, scaleAd: 0.8, canCrit: true, desc: 'A tight X of steel around Omen that can critically strike.' },
+      { name: 'Pass', icon: '↦', type: 'dash', cd: 10, cdLv: -0.4, mana: 45, dmgType: 'physical', dist: 300, speed: 1050, dmg: 90, dmgLv: 11, scaleAd: 0.6, resetOnKill: 1, resetOnAssist: 0.5, botRetreatWhenDown: 0.4, desc: 'Step through the target; a hero kill resets it fully, an assist refunds half.' },
+      { name: 'Duelist\'s End', icon: '†', type: 'dash', cd: [38, 34, 30], mana: 120, dmgType: 'physical', dist: 420, speed: 1200, dmg: [240, 300, 360], scaleAd: 1.1, stopOnHero: true, stun: 0.8, resetOnKill: 0.5, botExecuteHp: 0.6, botAllyEngaged: true, desc: 'A committed lunge that stops on the first hero and stuns 0.8s; a kill refunds half the cooldown.' },
     ],
   },
   {

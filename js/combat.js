@@ -792,14 +792,23 @@ const PASSIVES = {
     },
   },
 
+  /* Omen — basics stack +5% attack speed 3 s (eight at most); a Crosscut
+     that hits an enemy hero is worth two stacks, once per cast. */
   cadence: {
-    init(h) { h.pv = { n: 0, t: 0 }; },
-    onBasicHit(h) {
-      h.pv.n = Math.min(8, (h.pv.t > 0 ? h.pv.n : 0) + 1);
+    init(h) { h.pv = { n: 0, t: 0, crossT: -1 }; },
+    _stack(h, k) {
+      h.pv.n = Math.min(8, (h.pv.t > 0 ? h.pv.n : 0) + k);
       h.pv.t = 3;
     },
+    onBasicHit(h) { PASSIVES.cadence._stack(h, 1); },
+    onSkillHit(h, target, dmg, s) {
+      if (!target || target.type !== 'hero' || !s || (s._base || s) !== h.skills[0]) return;
+      if (h.pv.crossT === Game.time) return;   // one cast, two stacks, however many heroes it cut
+      h.pv.crossT = Game.time;
+      PASSIVES.cadence._stack(h, 2);
+    },
     tick(h, dt) { if (h.pv && h.pv.t > 0) { h.pv.t -= dt; if (h.pv.t <= 0) h.pv.n = 0; } },
-    statMod(h) { return { atkSpd: h.def0.atkSpd * 0.04 * ((h.pv && h.pv.t > 0) ? h.pv.n : 0) }; },
+    statMod(h) { return { atkSpd: h.def0.atkSpd * 0.05 * ((h.pv && h.pv.t > 0) ? h.pv.n : 0) }; },
   },
 
   undertow: {

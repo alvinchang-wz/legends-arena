@@ -339,6 +339,7 @@ class Hero extends Unit {
     this.path = lane && lanes[lane] ? lanes[lane] : null;
     this.curTarget = null;
     this.lastKillT = -99; this.comboKills = 0;
+    this.lastTakedownT = -99;          // last hero kill or assist (F24 bots: Omen chains onto the next target)
     this.statT = 0;                    // dynamic-stat refresh timer
 
     this.passive = def.passive || null;
@@ -360,8 +361,8 @@ class Hero extends Unit {
   /* Invoke a passive hook if the hero has one. Hooks take (hero, ...args). */
   fire(hook, ...args) {
     // F24: a takedown refunds part of every skill that carries resetOnKill / resetOnAssist
-    if (hook === 'onKill') this.resetCooldowns('resetOnKill');
-    else if (hook === 'onAssist') this.resetCooldowns('resetOnAssist');
+    if (hook === 'onKill') { this.resetCooldowns('resetOnKill'); this.lastTakedownT = Game.time; }
+    else if (hook === 'onAssist') { this.resetCooldowns('resetOnAssist'); this.lastTakedownT = Game.time; }
     const P = this.passiveDef();
     if (P && P[hook]) return P[hook](this, ...args);
     return undefined;
@@ -2240,7 +2241,12 @@ class Hero extends Unit {
 
   heuristicStateStep() {
     const p = this.p;
-    const retreatAt = clamp(p.retreatHp + this.adapt.caution, 0.08, 0.6);
+    let retreatAt = clamp(p.retreatHp + this.adapt.caution, 0.08, 0.6);
+    // botRetreatWhenDown (F29, Omen's hint): with the escape on cooldown, fall back earlier
+    for (let i = 0; i < 3; i++) {
+      const s = this.skills[i];
+      if (s && s.botRetreatWhenDown && this.skillRank[i] >= 1 && this.skillCd[i] > 0 && s.botRetreatWhenDown > retreatAt) retreatAt = s.botRetreatWhenDown;
+    }
     const nearest = (() => {
       let n = null, bd = Infinity;
       for (const h of Game.heroes) {
@@ -2532,6 +2538,7 @@ class Hero extends Unit {
       // F29 (Anchor's hint): Harbour also answers a tethered target slipping the line;
       // botExecuteHp: the skill's own execute threshold (Omen's End at 60%)
       if (t.hpPct > (s.botExecuteHp || p.ultExecuteHp) && crowd < 2 && !ownLow &&
+          !(s.botAllyEngaged && this.allyEngagedNear(t)) &&   // F29 (Omen's hint): an ally has engaged
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2580,6 +2587,8 @@ class Hero extends Unit {
         if (s.dashBack) return isHero && d < 260 ? 600 : 0;   // F22: a hop away from whoever got close
         // F29 (Brass's hint): Shoulder any enemy hero attacking an allied hero within its reach
         if (s.botGuardAlly && isHero && this.guardTarget(s.dist)) return 800;
+        // F29 (Omen's hint): fresh from a takedown, Pass onto the next-lowest hero in reach
+        if (s.resetOnKill && !s.stopOnHero && this.chainTarget(s.dist)) return 800;
         if (d <= 150 || d >= s.dist + 100) return 0;
         if (!(isHero || (farmOk && (s.dmg || s.endNova)))) return 0;
         if (isHero && this.advancedAI && !this.gapCloseLegal(t)) return 0;
@@ -2736,7 +2745,11 @@ class Hero extends Unit {
       const k = Math.max(0, d - 60) / d;
       return { x: this.x + (pick.x - this.x) * k, y: this.y + (pick.y - this.y) * k };
     }
-    if (!s.stopOnHero) return t;
+    if (!s.stopOnHero) {
+      // F29 (Omen's hint): after a kill or assist the step goes through the next-lowest hero
+      if (s.resetOnKill) { const c = this.chainTarget(s.dist); if (c) return c; }
+      return t;
+    }
     // F29 (Brass's hint): the guard's shoulder goes at whoever is on an ally
     if (s.botGuardAlly) { const g = this.guardTarget(s.dist); if (g) return g; }
     let best = null, bh = Infinity;
@@ -2767,6 +2780,28 @@ class Hero extends Unit {
   allyWithin(r) {
     for (const a of Game.heroes) if (a !== this && a.team === this.team && a.alive && this.distTo(a) <= r) return true;
     return false;
+  }
+  /* F29 (Omen's hint): an allied hero within 450 of `t` who dealt or took
+     damage in the last 2 s — the fight is already on. */
+  allyEngagedNear(t) {
+    for (const a of Game.heroes) {
+      if (a === this || a.team !== this.team || !a.alive || a.distTo(t) > 450) continue;
+      if (Game.time - a.lastDmgT < 2) return true;
+    }
+    return false;
+  }
+  /* F29 (Omen's hint): within 3 s of a hero kill or assist, the lowest-HP
+     visible enemy hero between 60 and `reach` away; null otherwise. */
+  chainTarget(reach) {
+    if (Game.time - this.lastTakedownT > 3) return null;
+    let best = null, bh = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+      const d = this.distTo(e);
+      if (d > reach || d <= 60 || e.hpPct >= bh) continue;
+      bh = e.hpPct; best = e;
+    }
+    return best;
   }
 
   botFireSkill(i, t, d, isHero, farmOk) {
