@@ -491,4 +491,128 @@ T.test('Quill bot: Snares go at the nearest bush while idle and between him and 
   bastion.vx = 0;
 });
 
+/* ---------------- Lumen ---------------- */
+
+T.test('Lumen: base stats and skill numbers match the spec; Focus is a flat 100 battery charged by basics and by standing still, deaf to mana', () => {
+  reset();
+  const d = lumen.def0;
+  assert.deepEqual([d.resource, d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    ['energy', 485, 60, 0, 0, 72, 8.4, 9, 1.7, 8, 1.3, 390, 0.85, 240, 4]);
+  assert.deepEqual([d.energy.max, d.energy.regen, d.energy.perBasic, d.energy.stillRegen, d.energy.stillDelay], [100, 0, 20, 30, 0.5]);
+  assert.equal(d.passive.id, 'aperture');
+  const [s1, s2, s3] = lumen.skills;
+  assert.deepEqual([s1.type, s1.pierce, s1.cd, s1.cdLv, s1.energy, s1.dmg, s1.dmgLv, s1.scaleAd, s1.range, s1.speed, s1.radius],
+    ['skillshot', true, 6, -0.3, 30, 140, 20, 0.7, 900, 1500, 18]);
+  assert.equal(rankVal(s1, 'dmg', 6), 240); assert.ok(Math.abs(lumen.cooldownFor(s1, 6) - 4.5) < 1e-9);
+  assert.deepEqual([s2.type, s2.dashBack, s2.cd, s2.energy, s2.dist, s2.speed, s2.energyRefund, s2.dmg], ['dash', true, 10, 0, 220, 1000, 20, undefined]);
+  assert.deepEqual([s3.type, s3.cd, s3.energy, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAd, s3.stun, s3.slowPct],
+    ['zone', [40, 34, 28], 50, 950, 100, 1.0, 1, [380, 500, 620], 1.2, undefined, undefined]);
+  assert.deepEqual([lumen.costOf(s1, 6), lumen.costOf(s2, 6), lumen.costOf(s3, 3)], [30, 0, 50]);
+  assert.equal(sim.context.HEROES.filter(h => h.resource === 'energy').length, 1, 'the only battery hero');
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.dashBack)).length, 1, 'the only dash-back');
+  assert.ok(sim.context.HEROES.every(h => h.hp >= d.hp), 'lowest HP in the game');
+  for (const s of lumen.skills) assert.ok(s.desc && s.desc.length > 20);
+  // the battery
+  assert.equal(lumen.maxMana, 100);
+  lumen.level = 15; lumen.recalcStats(false);
+  assert.equal(lumen.maxMana, 100, 'flat at any level');
+  lumen.level = 1; lumen.recalcStats(false);
+  lumen.items.push({ id: 'test-mana', stats: { maxMana: 400, manaRegen: 20 } }); lumen.recalcStats(false);
+  assert.equal(lumen.maxMana, 100, 'mana items add nothing');
+  lumen.mana = 0; lumen.gainMana(50);
+  assert.equal(lumen.mana, 0, 'mana refunds add nothing');
+  lumen.items.length = 0; lumen.recalcStats(false);
+  T.place(lumen, open.x, open.y);
+  lumen.mana = 0;
+  for (let k = 0; k < 60; k++) { lumen.x += 2; G.update(1 / 60); }
+  assert.ok(lumen.mana < 0.01, `walking: no charge (${lumen.mana})`);
+  T.seconds(G, 1.5);
+  assert.ok(lumen.mana > 29 && lumen.mana < 31, `1.5 s still: 0.5 s delay then 30/s -> 30 (${lumen.mana})`);
+  lumen.mana = 0;
+  lumen.onBasicLanded(bastion, 10, { isBasic: true });
+  assert.equal(lumen.mana, 20, '+20 per basic that lands');
+});
+
+T.test('Lumen: Aperture adds up to +35% to basics ramping from 280 to her max range (390); nothing inside 280, nothing on skills', () => {
+  reset();
+  T.place(lumen, open.x, open.y);
+  const at = (dd, pkt) => { T.place(bastion, open.x + dd, open.y); return lumen.onDealDamage(bastion, 100, pkt); };
+  assert.equal(at(200, { isBasic: true }), 100, 'inside 280');
+  assert.equal(at(280, { isBasic: true }), 100, 'at 280');
+  assert.ok(Math.abs(at(335, { isBasic: true }) - 117.5) < 1e-6, `halfway to max range: +17.5% (${at(335, { isBasic: true })})`);
+  assert.ok(Math.abs(at(390, { isBasic: true }) - 135) < 1e-6, 'max range: +35%');
+  assert.ok(Math.abs(at(600, { isBasic: true }) - 135) < 1e-6, 'capped at +35%');
+  assert.equal(at(390, { skill: lumen.skills[0] }), 100, 'skills unchanged');
+});
+
+T.test('Lumen: three Railshots empty her; Recoil hops 220 away from the aim, keeps facing and refunds 20 Focus; Overcharge lands 1 s later on a 100 spot for 620 (+120% ATK)', () => {
+  reset();
+  T.place(lumen, open.x, open.y); T.place(grom, open.x + 400, open.y); T.place(ignis, open.x + 800, open.y);
+  lumen.mana = 100;
+  assert.ok(lumen.castSkill(0, ignis)); assert.equal(lumen.mana, 70);
+  T.frames(G, 40);
+  assert.ok(grom.stats.dmgTaken > 0 && ignis.stats.dmgTaken > 0, 'pierced both at 400 and 800');
+  assert.ok(lumen.mana > 70, 'standing still those frames charged her a little');
+  lumen.mana = 70;
+  lumen.skillCd[0] = 0; assert.ok(lumen.castSkill(0, ignis)); lumen.skillCd[0] = 0; assert.ok(lumen.castSkill(0, ignis));
+  assert.equal(lumen.mana, 10); lumen.skillCd[0] = 0;
+  assert.equal(lumen.castSkill(0, ignis), false, 'a fourth rail: 10 Focus is not 30');
+  // Recoil
+  assert.ok(lumen.castSkill(1, grom));
+  assert.ok(lumen.dashS && lumen.dashS.dx < -0.99 && Math.abs(lumen.dashS.remaining - 220) < 1e-9 && lumen.dashS.dmg === 0, 'a 220 hop away from Grom');
+  assert.equal(lumen.skillCd[1], 10); assert.equal(lumen.mana, 10, 'free');
+  T.seconds(G, 0.3);
+  assert.equal(lumen.dashS, null);
+  assert.ok(Math.abs(lumen.x - (open.x - 220)) < 2, `landed 220 away: ${lumen.x - open.x}`);
+  assert.ok(Math.abs(lumen.facing) < 0.01, 'still facing Grom');
+  assert.ok(Math.abs(lumen.mana - 30) < 1e-6, '+20 Focus on landing');
+  // Overcharge
+  reset();
+  T.place(lumen, open.x, open.y); T.place(grom, open.x + 900, open.y); T.place(ignis, open.x + 900, open.y + 160);
+  lumen.mana = 100;
+  assert.ok(lumen.castSkill(2, grom));
+  assert.equal(lumen.skillCd[2], 28); assert.equal(lumen.mana, 50);
+  const z = G.zones[G.zones.length - 1];
+  assert.ok(Math.abs(z.dmg - (620 + lumen.curAtk() * 1.2)) < 1e-6 && z.radius === 100 && z.ticks === 1 && Math.abs(z.delay - 1.0) < 1e-9);
+  T.seconds(G, 0.9);
+  assert.equal(grom.stats.dmgTaken, 0, 'nothing before 1 s');
+  T.seconds(G, 0.2);
+  assert.ok(grom.stats.dmgTaken > 0, 'detonated'); assert.equal(ignis.stats.dmgTaken, 0, '160 off the spot: missed');
+  assert.ok(!grom.cc.has('stun') && !grom.cc.has('slow'), 'no CC');
+});
+
+T.test('Lumen bot: Railshot only from 60 Focus; Overcharge only on a held or sub-40% hero; Recoil from a melee inside 250; she plants to charge under 30 Focus with nobody inside 500 and holds 380 from her target', () => {
+  reset();
+  T.place(lumen, open.x, open.y); T.place(grom, open.x + 600, open.y);
+  lumen.mana = 59;
+  assert.equal(lumen.botSkillUrgency(0, grom, 600, true, false), 0, '59 Focus: held');
+  lumen.mana = 60;
+  assert.ok(lumen.botSkillUrgency(0, grom, 600, true, false) > 0, '60 Focus: rail');
+  lumen.mana = 100;
+  assert.equal(lumen.botSkillUrgency(2, grom, 600, true, false), 0, 'a free healthy hero: no Overcharge');
+  grom.cc.applySlow(0.3, 1, 0);
+  assert.ok(lumen.botSkillUrgency(2, grom, 600, true, false) > 0, 'a slowed hero');
+  grom.cc.clear(); grom.hp = grom.maxHp * 0.39;
+  assert.ok(lumen.botSkillUrgency(2, grom, 600, true, false) > 0, 'a hero under 40%');
+  grom.hp = grom.maxHp;
+  T.place(torren, open.x + 300, open.y);
+  assert.equal(lumen.botSkillUrgency(1, torren, 300, true, false), 0, 'a melee at 300: keep the hop');
+  T.place(torren, open.x + 240, open.y);
+  assert.equal(lumen.botSkillUrgency(1, torren, 240, true, false), 600, 'a melee inside 250: Recoil');
+  // charging: under 30 Focus with nobody inside 500 she does not move
+  reset();
+  T.place(lumen, open.x, open.y); T.place(grom, open.x + 700, open.y);
+  lumen.mana = 20; lumen.aiTarget = grom;
+  for (let k = 0; k < 20; k++) Hero.prototype.botControl.call(lumen, 1 / 60);
+  assert.ok(Math.abs(lumen.x - open.x) < 0.01 && Math.abs(lumen.y - open.y) < 0.01, `planted: ${lumen.x - open.x}, ${lumen.y - open.y}`);
+  T.place(grom, open.x + 450, open.y);
+  for (let k = 0; k < 20; k++) Hero.prototype.botControl.call(lumen, 1 / 60);
+  assert.ok(Math.hypot(lumen.x - open.x, lumen.y - open.y) > 20, 'a hero inside 500: she moves again');
+  lumen.mana = 100;
+  const pt = lumen.chooseCombatPoint(grom);
+  assert.ok(Math.hypot(pt.x - grom.x, pt.y - grom.y) > 370, `holds 380: ${Math.hypot(pt.x - grom.x, pt.y - grom.y)}`);
+  const zp = zephyr.chooseCombatPoint(grom);
+  assert.ok(Math.hypot(zp.x - grom.x, zp.y - grom.y) < 300, 'Zephyr (no botHold) orbits closer');
+});
+
 T.done();

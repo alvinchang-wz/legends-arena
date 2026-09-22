@@ -2553,6 +2553,14 @@ class Hero extends Unit {
     }
     return { x: this.x + Math.cos(bestA) * s.dist, y: this.y + Math.sin(bestA) * s.dist };
   }
+  /* Any visible enemy hero within `r`? */
+  enemyHeroWithin(r) {
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable) continue;
+      if (this.distTo(e) < r && Game.canSee(this.team, e)) return true;
+    }
+    return false;
+  }
   /* The nearest visible melee enemy hero within `r`, or null. */
   meleeThreat(r) {
     let best = null, bd = r;
@@ -2636,6 +2644,7 @@ class Hero extends Unit {
     if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
     if (s.charges && !(this.skillCharges[i] > 0)) return 0;   // F8
     if (s.botMinHp && this.hpPct < s.botMinHp) return 0;      // never below this HP (Grom's channel, Marrow's HP costs)
+    if (s.botMinMana && this.mana < s.botMinMana) return 0;   // F29 (Lumen's hint): Railshot only from 60 Focus
     // botOwnHpBelow: the skill is for when the caster is hurt (Torren's Toll, Cinder's Furnace)
     const ownLow = s.botOwnHpBelow ? this.hpPct < s.botOwnHpBelow : false;
     if (i === 2 && s.type !== 'basicMod') {
@@ -2651,6 +2660,7 @@ class Hero extends Unit {
           !(s.tether && s.tether.multi && this.gaolCrowd(s).leaving) &&   // F29 (Karn's hint): someone is leaving
           !(s.type === 'zone' && s.wallStun && s.knockback && this.wallShoveDir(t, s.knockback + 10)) &&   // F29 (Tide's hint): a wall to throw at
           !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.unitHeld(t))) &&   // F29 (Quill's hint): a crowd in the box, or a held hero
+          !(s.botCcOk && this.unitHeld(t)) &&   // F29 (Lumen's hint): a target that cannot run
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -3412,8 +3422,10 @@ class Hero extends Unit {
           ? Math.max(40, this.range * 0.42)
           : Math.max(70, this.range + this.radius + target.radius + 8);
       }
+      // botHold (F29, Lumen's hint): a sniper keeps at least this much distance while it fits her reach
       if (this.ranged)
-        return Math.max(170, Math.min(this.range * 0.84, this.range + this.radius + target.radius - 28)) + fear;
+        return Math.max(170, Math.min(this.def0.botHold || 0, this.range + this.radius + target.radius - 28),
+          Math.min(this.range * 0.84, this.range + this.radius + target.radius - 28)) + fear;
       return Math.max(45, this.range + this.radius + target.radius - 16);
     })();
     let best = null, bestScore = -Infinity;
@@ -3529,7 +3541,14 @@ class Hero extends Unit {
         (!isEpic && !isJungleRoute && (!Game.canSee(this.team, t) || this.distTo(t) > p.chaseRange)))) {
       t = this.aiTarget = null;
     }
+    /* F29 (Lumen's hint): a battery hero (F4 stillRegen) under botChargeBelow
+       with no visible enemy hero inside botChargeSafe plants and charges;
+       she still shoots whatever is in reach. */
+    const bat = this.def0.energy;
+    const charging = !!(bat && bat.stillRegen && bat.botChargeBelow && this.mana < bat.botChargeBelow &&
+      !this.enemyHeroWithin(bat.botChargeSafe || 500));
     if (t) {
+      if (charging) { if (this.inAttackRange(t)) this.tryAttack(t); return; }
       if (this.inAttackRange(t)) {
         this.tryAttack(t);
         /* Move during attack recovery instead of freezing in a firing line.
@@ -3569,6 +3588,7 @@ class Hero extends Unit {
       } else this.botMoveTo(t.x, t.y, dt, { avoidTowers: true });
       return;
     }
+    if (charging) return;   // F29 (Lumen's hint): nothing to shoot, nobody near: stand and charge
     const punish = this.recallingEnemy();
     if (punish && dist(this, punish) > 80) {
       this.botMoveTo(punish.x, punish.y, dt, { avoidTowers: true });

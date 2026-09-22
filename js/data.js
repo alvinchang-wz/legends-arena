@@ -353,19 +353,33 @@ const HEROES = [
   },
   {
     id: 'lumen', name: 'Lumen', role: 'Marksman', icon: '🔆', color: '#9ab6e8', projColor: '#dbe7ff',
-    desc: 'A glass cannon sniper who is weakest up close and lethal at the horizon.',
-    difficulty: 3, damageStyle: 'physical',
-    hp: 480, hpLv: 60, mp: 180, mpLv: 18, atk: 72, atkLv: 8.4,
-    armor: 8, armorLv: 1.6, mr: 8, mrLv: 1.3,
-    range: 385, atkSpd: 0.82, speed: 240,
+    desc: 'A long-range sniper on a Focus battery: plants, shoots, hops back, and wins by never being reached.',
+    difficulty: 4, damageStyle: 'physical',
+    /* docs/design/heroes.md, Marksmen: Lumen. The only battery resource
+       (F3/F4): Focus is a flat 100 with no regen of its own, +20 per basic
+       that lands and +30/s after 0.5 s without moving; mana items, the blue
+       rune and mana burn do nothing to it. Recoil is the roster's only
+       dash-back (F22). Lowest HP in the game, longest reach. Bot fields:
+       energy.botChargeBelow / botChargeSafe make her plant and charge
+       under 30 Focus with no enemy hero inside 500; botHold is the
+       distance she keeps from her target; botMinMana holds Railshot under
+       60 Focus; botKite is Recoil's melee-within trigger; Overcharge is a
+       pure execute (botExecuteOnly, 40%) unless the target is held
+       (botCcOk). */
+    resource: 'energy',
+    energy: { max: 100, regen: 0, perBasic: 20, stillRegen: 30, stillDelay: 0.5, botChargeBelow: 30, botChargeSafe: 500 },
+    botHold: 380,
+    hp: 485, hpLv: 60, mp: 0, mpLv: 0, atk: 72, atkLv: 8.4,
+    armor: 9, armorLv: 1.7, mr: 8, mrLv: 1.3,
+    range: 390, atkSpd: 0.85, speed: 240,
     passive: {
       name: 'Aperture', icon: '📷', id: 'aperture',
-      desc: 'Basic attacks deal up to 35% more damage the farther the target is (starts past 280 range).',
+      desc: 'Basic attacks deal up to +35% damage the farther the target is, ramping linearly from 280 range to max range.',
     },
     skills: [
-      { name: 'Railshot', icon: '━', type: 'skillshot', cd: 8, mana: 50, dmgType: 'physical', dmg: 160, dmgLv: 20, scaleAd: 0.9, range: 820, speed: 1400, radius: 18, pierce: true, desc: 'Fire a piercing rail that rewards long sightlines.' },
-      { name: 'Displace', icon: '↩', type: 'dash', cd: 12, mana: 40, dist: 200, speed: 900, desc: 'A short hop to reset your footing. No extra damage.' },
-      { name: 'Overcharge', icon: '✦', type: 'zone', cd: 46, mana: 120, dmgType: 'physical', range: 700, radius: 90, delay: 1.15, dmg: 420, dmgLv: 44, scaleAd: 1.0, stun: 0.5, desc: 'Charge a thin beam that detonates on one victim. Single-target damage no AoE ult is allowed to match.' },
+      { name: 'Railshot', icon: '━', type: 'skillshot', cd: 6, cdLv: -0.3, energy: 30, mana: 0, dmgType: 'physical', dmg: 140, dmgLv: 20, scaleAd: 0.7, range: 900, speed: 1500, radius: 18, pierce: true, botMinMana: 60, desc: 'A hair-thin rail that pierces everything in a 900 line for 140+20/rank (+70% ATK). 30 Focus.' },
+      { name: 'Recoil', icon: '↩', type: 'dash', cd: 10, energy: 0, mana: 0, dashBack: true, dist: 220, speed: 1000, energyRefund: 20, botKite: 250, desc: 'Hop 220 units away from the aim direction and regain 20 Focus on landing. No damage, no CC.' },
+      { name: 'Overcharge', icon: '✦', type: 'zone', cd: [40, 34, 28], energy: 50, mana: 0, dmgType: 'physical', range: 950, radius: 100, delay: 1.0, ticks: 1, dmg: [380, 500, 620], scaleAd: 1.2, botExecuteHp: 0.4, botExecuteOnly: true, botCcOk: true, desc: 'Charge 1s, then detonate a 100-radius spot up to 950 away for 380/500/620 (+120% ATK). No CC. 50 Focus.' },
     ],
   },
   {

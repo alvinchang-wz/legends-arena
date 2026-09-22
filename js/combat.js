@@ -719,12 +719,15 @@ const PASSIVES = {
     tick(h, dt) { if (h.pv && h.pv.t > 0) { h.pv.t -= dt; if (h.pv.t <= 0) h.pv.n = 0; } },
   },
 
+  /* Lumen — basics deal up to +35% the farther the target is: nothing
+     inside 280, the full +35% at her max attack range. */
   aperture: {
     onDealDamage(h, target, amount, pkt) {
       if (!pkt || !pkt.isBasic) return amount;
       const d = dist(h, target);
       if (d < 280) return amount;
-      return amount * (1 + Math.min(0.35, (d - 280) / 400 * 0.35));
+      const span = Math.max(1, (h.range || 390) - 280);
+      return amount * (1 + Math.min(0.35, (d - 280) / span * 0.35));
     },
   },
 
