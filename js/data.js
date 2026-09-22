@@ -170,12 +170,20 @@ const HEROES = [
     range: 95, atkSpd: 0.85, speed: 258,
     passive: {
       name: 'Bulwark', icon: '🛡', id: 'bulwark',
-      desc: 'Gain 6 Armor and Magic Resist for each nearby enemy hero. Dropping below 40% HP grants a shield equal to 12% max HP (35s cooldown).',
+      desc: '+5 Armor and +5 Magic Resist per enemy hero within 420 (max +25). Below 40% HP gain a shield of 12% max HP for 4s (35s cooldown).',
     },
+    /* docs/design/heroes.md, Tanks: Grom. The ultimate is the roster's only
+       channel (F18): 0.9 s rooted, broken by any stun/silence/airborne/
+       suppress/taunt (half cooldown back), then the payload nova drags
+       everyone 140 toward him and launches them. botMinHp: bots never start
+       the channel below 25% HP. */
     skills: [
-      { name: 'Shockwave', icon: '🌊', type: 'nova', cd: 8, mana: 50, dmgType: 'physical', radius: 240, dmg: 130, dmgLv: 15, scaleAd: 0.5, slowPct: 0.4, slowDur: 2, desc: 'Slam the ground, damaging and slowing enemies around you.' },
-      { name: 'Bull Charge', icon: '🐂', type: 'dash', cd: 12, mana: 55, dmgType: 'physical', dist: 420, speed: 950, dmg: 110, dmgLv: 13, scaleAd: 0.5, stopOnHero: true, stun: 1, knockback: 70, desc: 'Charge forward, stunning and shoving the first enemy hero hit.' },
-      { name: 'Earthsplitter', icon: '⛰️', type: 'nova', cd: 42, mana: 110, dmgType: 'physical', radius: 300, dmg: 280, dmgLv: 28, scaleAd: 0.7, airborne: 0.9, desc: 'Split the earth, launching all nearby enemies into the air.' },
+      { name: 'Shockwave', icon: '🌊', type: 'nova', cd: 7, mana: 45, dmgType: 'physical', radius: 240, dmg: 120, dmgLv: 16, scaleAd: 0.6, slowPct: 0.4, slowDur: 1.5, desc: 'Slam the ground: damage and slow every enemy around Grom.' },
+      { name: 'Bull Charge', icon: '🐂', type: 'dash', cd: 13, mana: 60, dmgType: 'physical', dist: 420, speed: 950, dmg: 110, dmgLv: 14, scaleAd: 0.6, stopOnHero: true, stun: 0.7, knockback: 90, wallDmg: 0, desc: 'Charge in a line; the first enemy hero hit is stunned 0.7s and shoved 90 units.' },
+      { name: 'Earthsplitter', icon: '⛰️', type: 'channel', cd: [46, 42, 38], mana: 110, channel: 0.9, interruptRefund: 0.5, botMinHp: 0.25,
+        dmgType: 'physical', radius: 320, dmg: 280, dmgLv: 40, scaleAd: 0.9, airborne: 0.9,   // mirrored from the payload for tooltips and burst estimates
+        payload: { type: 'nova', radius: 320, dmgType: 'physical', dmg: 280, dmgLv: 40, scaleAd: 0.9, knockback: -140, airborne: 0.9 },
+        desc: 'Plant for 0.9s, then split the earth: every enemy within 320 is dragged 140 units toward Grom and launched 0.9s. Stun, silence, airborne, suppress or taunt cancel it (half the cooldown refunded).' },
     ],
   },
   {

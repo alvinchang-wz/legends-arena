@@ -2460,6 +2460,7 @@ class Hero extends Unit {
     }
     if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
     if (s.charges && !(this.skillCharges[i] > 0)) return 0;   // F8
+    if (s.botMinHp && this.hpPct < s.botMinHp) return 0;      // never below this HP (Grom's channel, Marrow's HP costs)
     if (i === 2 && s.type !== 'basicMod') {
       if (!isHero) return 0;
       const crowd = Game.heroes.filter(h => h.team !== this.team && h.alive && this.distTo(h) < 420).length;
@@ -2534,12 +2535,14 @@ class Hero extends Unit {
       case 'barrier':    // F9: raise it against a ranged hero
         if (!isHero || !t.ranged || d >= 640 || d < 120) return 0;
         return 380;
-      case 'channel': {  // F18: a channelled nova wants a crowd in its radius
+      case 'channel': {  // F18: a channelled nova wants a crowd in its radius and no interrupt waiting
         const pr = (s.payload && s.payload.radius) || 300;
         if (!isHero || d >= pr + t.radius - 40) return 0;
         let near = 0;
         for (const h of Game.heroes) if (h.team !== this.team && h.alive && this.distTo(h) < pr + h.radius) near++;
-        return near >= 2 ? 860 : locked ? 700 : 520;
+        if (near < 2) return 0;
+        if (this.enemyInterruptReady(pr + 260)) return 0;
+        return 860;
       }
       case 'selfState':  // F19: vanish when in danger; dig in when the enemy is on top of you
         if (!isHero) return 0;
@@ -2568,6 +2571,38 @@ class Hero extends Unit {
     return 0;
   }
 
+  /* F29 (Grom's bot hint): a visible enemy hero within `reach` who could
+     cancel a channel right now — a stun, silence, airborne, suppress or taunt
+     skill that is learned, off cooldown and affordable, and a caster who is
+     not locked down herself. */
+  enemyInterruptReady(reach) {
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || this.distTo(e) > reach || !Game.canSee(this.team, e)) continue;
+      if (!e.cc.canCast) continue;
+      for (let j = 0; j < 3; j++) {
+        const s = e.skills[j];
+        if (!s || e.skillRank[j] < 1 || e.skillCd[j] > 0 || !e.canAfford(s, e.skillRank[j])) continue;
+        const cc = s.payload || s.endNova || s;
+        if (cc.stun || cc.silence || cc.airborne || cc.suppress || cc.taunt || s.hook) return e;
+      }
+    }
+    return null;
+  }
+
+  /* F29 (Grom's bot hint): a stopOnHero dash is a pick, so it goes at the
+     lowest-HP ranged hero it can reach (the backline), else at the target. */
+  dashPick(s, t) {
+    if (!s.stopOnHero || !t || t.type !== 'hero') return t;
+    let best = null, bh = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || !e.ranged || !Game.canSee(this.team, e)) continue;
+      const d = this.distTo(e);
+      if (d > s.dist || d <= 150) continue;
+      if (e.hpPct < bh) { bh = e.hpPct; best = e; }
+    }
+    return best || t;
+  }
+
   botFireSkill(i, t, d, isHero, farmOk) {
     const s = this.skills[i];
     switch (s.type) {
@@ -2581,7 +2616,7 @@ class Hero extends Unit {
         this.castSkill(i, t);
         break;
       case 'dash':
-        this.castSkill(i, t);
+        this.castSkill(i, this.dashPick(s, t));
         break;
       case 'zone':
         this.castSkill(i, Game.aimLeadPoint(this, t, 550));

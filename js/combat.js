@@ -581,13 +581,15 @@ const PASSIVES = {
     },
   },
 
-  /* Grom — resists scale with how many enemies are on him; panic shield low. */
+  /* Grom — resists scale with how many enemies are on him (+5/+5 per enemy
+     hero within 420, five at most); panic shield low. */
   bulwark: {
     init(h) { h.pv = { shieldCd: 0 }; },
     statMod(h) {
       let near = 0;
       for (const e of Game.heroes) if (e.team !== h.team && e.alive && dist(h, e) < 420) near++;
-      return { armor: near * 6, mr: near * 6 };
+      if (near > 5) near = 5;
+      return { armor: near * 5, mr: near * 5 };
     },
     tick(h, dt) {
       if (h.pv.shieldCd > 0) h.pv.shieldCd -= dt;
