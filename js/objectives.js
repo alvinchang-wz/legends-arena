@@ -180,6 +180,8 @@ class EpicMonster extends Unit {
      a minute of enhanced waves. */
   die(src) {
     this.alive = false;
+    Game.lastEpicDeadT = Game.time;      // the brains' `done` window (§4.5)
+    Game.lastEpicTeam = src instanceof Hero ? src.team : null;
     Game.fx.explosion(this.x, this.y, this.radius * 3);
     Game.fx.shake(12);
     const team = src instanceof Hero ? src.team : null;

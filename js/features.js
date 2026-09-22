@@ -405,7 +405,7 @@ const Features = {
      last-hit bonus, see Minion.die). */
   onMinionDeath(m, src, gold) {
     if (!(src instanceof Hero) || src.team === m.team) return;
-    src.cs = (src.cs || 0) + 1;
+    // the count itself is core (Minion.die), so the headless build has it too
     if (src.isPlayer && gold > 0) {
       Game.floaters.push({
         x: m.x, y: m.y - 20, vy: -50, txt: `+${Math.round(gold)}g`, color: THEME.gold,

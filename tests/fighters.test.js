@@ -39,10 +39,13 @@ function reset() {
     h.recalcStats(false);
     h.hp = h.maxHp;
   }
+  /* Lane waves wander past the open spot and shoot whatever they find;
+     these tests are about kits, so the board starts empty of them. */
+  G.minions.length = 0;
   G.projectiles.length = 0; G.tethers.length = 0; G.zones.length = 0; G.objects.length = 0;
 }
 reset();
-G.update(1 / 60);
+G.update(1 / 60); T.reveal(G);
 
 /* ---------------- Torren ---------------- */
 
@@ -412,7 +415,7 @@ T.test('Karn: Chain Hook stops on the first body, reels a hero in under a 0.6 s 
   assert.ok(karn.castSkill(0, zephyr));
   assert.equal(karn.mana, karn.maxMana - 105, 'rank-6 cost');
   let n = 0;
-  while (!(zephyr.forced && zephyr.forced.mode === 'hook') && n++ < 60) G.update(1 / 60);
+  while (!(zephyr.forced && zephyr.forced.mode === 'hook') && n++ < 60) G.update(1 / 60); T.reveal(G);
   assert.ok(zephyr.forced && zephyr.forced.mode === 'hook', 'hooked');
   assert.ok(zephyr.cc.has('suppress') && zephyr.cc.t.suppress <= 0.6, `suppressed 0.6: ${zephyr.cc.t.suppress}`);
   assert.equal(zephyr.marks.hookedAt, G.time, 'the hook mark');
@@ -453,12 +456,12 @@ T.test('Karn: Gaol chains every hero within 320 for 2.5 s; crossing 450 snaps th
   assert.equal(zephyr.hp, zephyr.maxHp, 'the chain itself does no damage');
   // a stun on Karn does not cut the chains (anchored)
   karn.cc.apply('stun', 0.3, 0);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(G.tethers.filter(t => !t.dead && t.src === karn).length, 2);
   // Zephyr walks out past 450: struck and stunned
   const expect = Math.round((420 + karn.curAtk() * 1.0) * G.rules.COMBAT.SKILL_DMG);
   T.place(zephyr, open.x + 470, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(zephyr.hp < zephyr.maxHp, 'snapped');
   assert.ok(Math.abs((zephyr.maxHp - zephyr.hp) - expect * G.rules.COMBAT.DEF_K / (G.rules.COMBAT.DEF_K + zephyr.armorValue())) < 2, `420 (+100% ATK) physical: ${zephyr.maxHp - zephyr.hp}`);
   assert.ok(Math.abs(zephyr.cc.t.stun - 1.0) < 1e-9, `stun 1.0: ${zephyr.cc.t.stun}`);
@@ -474,7 +477,7 @@ T.test('Karn: Gaol chains every hero within 320 for 2.5 s; crossing 450 snaps th
   zephyr.cc.purify(1);
   assert.equal(G.tethers.filter(t => !t.dead && t.src === karn).length, 0, 'released');
   T.place(zephyr, open.x + 600, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(zephyr.hp, zephyr.maxHp, 'no break payload after a Purify');
   zephyr.cc.immuneT = 0;
   // Karn dying ends the chains quietly
@@ -483,7 +486,7 @@ T.test('Karn: Gaol chains every hero within 320 for 2.5 s; crossing 450 snaps th
   karn.castSkill(2, zephyr);
   karn.hp = 0; karn.die(null);
   T.place(zephyr, open.x + 600, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(zephyr.hp, zephyr.maxHp, 'chains die with Karn');
   karn.alive = true; karn.hp = karn.maxHp; karn.respawnT = 0;
 });
@@ -492,12 +495,12 @@ T.test('Karn bot: the hook waits for an unblocked, isolated hero (carries first)
   reset();
   T.place(karn, open.x, open.y); T.place(zephyr, open.x + 450, open.y); T.place(torren, open.x + 300, open.y + 250);
   torren.hp = torren.maxHp * 0.3;
-  G.update(1 / 60);   // vision follows the placements
+  G.update(1 / 60); T.reveal(G);   // vision follows the placements
   const s1 = karn.skills[0];
   assert.equal(karn.hookPick(s1), null, 'Zephyr has Torren within 400: nobody is isolated');
   assert.equal(karn.botSkillUrgency(0, zephyr, karn.distTo(zephyr), true, false), 0, 'the hook is held');
   T.place(torren, open.x - 300, open.y + 250);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(karn.hookPick(s1), zephyr, 'both isolated: the marksman before the lower-HP fighter');
   assert.equal(karn.botSkillUrgency(0, torren, karn.distTo(torren), true, false), 840, 'and the urgency follows the pick, not the target');
   const m = new sim.context.Minion(0, 'mid', 'melee');
@@ -507,7 +510,7 @@ T.test('Karn bot: the hook waits for an unblocked, isolated hero (carries first)
   m.alive = false; G.minions.splice(G.minions.indexOf(m), 1);
   // Iron Slam: 900 while a hooked hero is inside the ring
   T.place(zephyr, open.x + 150, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   zephyr.marks.hookedAt = G.time;
   assert.equal(karn.botSkillUrgency(1, zephyr, karn.distTo(zephyr), true, false), 900);
   zephyr.marks.hookedAt = G.time - 3;
@@ -616,7 +619,7 @@ T.test('Tide bot: Breaker and High Water prefer a target with a wall behind the 
   reset();
   const near = T.openSpot(G, 60, { nearWallDx: 140 });
   T.place(torren, near.x, near.y); T.place(tide, near.x - 300, near.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   const [s1, s2, s3] = tide.skills;
   assert.ok(tide.wallBehind(torren, 1, 0, 130), 'rock within 130 to the right of Torren');
   assert.ok(!tide.wallBehind(torren, -1, 0, 130), 'open to the left');
@@ -637,7 +640,7 @@ T.test('Tide bot: Breaker and High Water prefer a target with a wall behind the 
   // in the open (no rock within 170 + a body of the target) the wave is an ordinary skillshot and Surge goes straight at him
   reset();
   T.place(tide, open.x, open.y); T.place(torren, open.x + 200, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(tide.botSkillUrgency(0, torren, tide.distTo(torren), true, false), 500);
   assert.equal(tide.wallShoveDir(torren, 140), null);
   assert.equal(tide.dashPick(s2, torren), torren);
@@ -759,7 +762,7 @@ T.test('Cinder: Furnace gives +25% basic damage, +50 speed, 18% max HP over 6 s 
 T.test('Cinder bot: at 100 Heat, Haymaker on 2+ heroes inside 260, else Coal Dash onto the nearest marksman or mage within 320; Furnace once under 60% HP', () => {
   reset();
   T.place(cinder, open.x, open.y); T.place(torren, open.x + 150, open.y); T.place(zephyr, open.x, open.y + 310);   // outside the hot ring (260 + a body), inside the dash
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   cinder.mana = 50;
   assert.ok(cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false) > 0 && cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false) < 900, 'cold: the ordinary nova rule');
   cinder.mana = 100;

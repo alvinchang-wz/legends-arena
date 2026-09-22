@@ -159,6 +159,34 @@ class CCState {
 }
 
 /* ============================================================
+   Bush concealment (core rule)
+   ============================================================
+   A unit inside a bush is invisible to the other team unless one of their
+   heroes shares that bush, stands within BUSH_REVEAL_DIST of it, or it has
+   been revealed (taking or dealing damage reveals a hero for
+   BUSH_REVEAL_T seconds).
+
+   This used to live in js/mlbb.js, which the headless runtime does not
+   load, so simulated bots were always visible and every measurement of
+   ganks, bush waits and lane pressure described a different game than the
+   one that ships. Game.canSee calls it directly now. */
+const BUSH_REVEAL_DIST = 72;
+const BUSH_REVEAL_T = 1.6;
+function bushHides(team, u) {
+  if (!u || u.bush === undefined || u.bush < 0 || u.isStructure) return false;
+  if (u.team === team) return false;
+  if (Game.isDuel && Game.isDuel()) return false;
+  if (u.revealT > 0) return false;
+  for (const h of Game.heroes) {
+    if (h.team !== team || !h.alive) continue;
+    if (h.bush === u.bush) return false;
+    const dx = h.x - u.x, dy = h.y - u.y;
+    if (dx * dx + dy * dy < BUSH_REVEAL_DIST * BUSH_REVEAL_DIST) return false;
+  }
+  return true;
+}
+
+/* ============================================================
    Damage pipeline
    ============================================================
    packet: {

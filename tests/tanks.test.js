@@ -34,10 +34,13 @@ function reset() {
     if (h.pv && h.pv.shieldCd !== undefined) h.pv.shieldCd = 99;
     h.recalcStats(false);
   }
+  /* Lane waves wander past the open spot and shoot whatever they find;
+     these tests are about kits, so the board starts empty of them. */
+  G.minions.length = 0;
   G.projectiles.length = 0; G.tethers.length = 0; G.zones.length = 0; G.objects.length = 0;
 }
 reset();
-G.update(1 / 60);
+G.update(1 / 60); T.reveal(G);
 
 /* ---------------- Grom ---------------- */
 
@@ -70,7 +73,7 @@ T.test('Grom: Bulwark shields 12% max HP for 4 s below 40% HP, once per 35 s', (
   T.place(grom, open.x, open.y);
   grom.pv.shieldCd = 0;
   grom.hp = grom.maxHp * 0.35;
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(grom.shields.length === 1, 'shield up');
   assert.ok(Math.abs(grom.shields[0].amount - grom.maxHp * 0.12) < 1, `12% max HP: ${grom.shields[0].amount}`);
   assert.ok(grom.pv.shieldCd > 34.9);
@@ -138,7 +141,7 @@ T.test('Grom: a stun interrupts the channel (mana kept, cooldown halved); a slow
   assert.ok(grom.castSkill(2, mira));
   grom.cc.applySlow(0.4, 1, 0);
   grom.cc.apply('immobilize', 1, 0);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(grom.channelS, 'slow and root do not break it');
   grom.cc.apply('stun', 0.3, 0);
   assert.equal(grom.channelS, null, 'stun breaks it');
@@ -265,7 +268,7 @@ T.test('Bastion: Gatehouse is a fixed 260 gate 90 ahead for 3 s that deletes ene
   assert.equal(G.projectiles.filter(p => !p.dead).length, 0);
   // the gate is fixed: Bastion walking away leaves it where it was
   T.place(bastion, open.x - 400, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(Math.abs(gate.x - (open.x + 90)) < 1e-6);
   // an enemy nova goes through
   T.place(grom, open.x + 150, open.y + 40);
@@ -475,7 +478,7 @@ T.test('Anchor: the line snaps past 560, when Anchor is stunned, and a creep on 
   T.frames(G, 30);
   assert.ok(anchor.liveTether());
   T.place(zephyr, open.x + 600, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(anchor.liveTether(), null, 'snapped past 560');
   assert.ok(!zephyr.cc.has('immobilize'), 'no root on a snap');
   // a stun on Anchor cuts it
@@ -484,7 +487,7 @@ T.test('Anchor: the line snaps past 560, when Anchor is stunned, and a creep on 
   anchor.castSkill(0, zephyr);
   T.frames(G, 30);
   anchor.cc.apply('stun', 0.5, 0);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(anchor.liveTether(), null, 'a hard CC on Anchor cuts the line');
   anchor.cc.clear();
   // a creep on the line takes the hit; no tether
@@ -542,7 +545,7 @@ T.test('Anchor: Weigh Anchor roots him 1.5 s, refuses slows, shoves, pulls and h
   hook.x = anchor.x - 30; hook.y = anchor.y; hook.rank = 1;
   G.projectiles.push(hook);
   anchor.cc.clear();
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(!anchor.forced || anchor.forced.mode !== 'hook', 'not hooked');
   assert.equal(anchor.liveTether(), null, 'the stun on Anchor had cut his own line');
   T.seconds(G, 1.2);
@@ -562,7 +565,7 @@ T.test('Anchor: Weigh Anchor doubles the live Hawser slow (cap 80%) and a recast
   const base = zephyr.cc.slowPct;
   assert.ok(base > 0.4 && base < 0.5, `base ${base}`);
   assert.ok(anchor.castSkill(1, null));
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(Math.abs(zephyr.cc.slowPct - Math.min(0.8, base * 2)) < 0.03, `doubled: ${zephyr.cc.slowPct}`);
   T.frames(G, 25);   // the line completes at 2 s with the slow at 50% x 2 = 100% -> capped 80%
   assert.ok(anchor.state, 'state still up');

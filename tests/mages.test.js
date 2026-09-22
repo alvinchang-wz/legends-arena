@@ -42,11 +42,14 @@ function reset() {
     h.recalcStats(false);
     h.hp = h.maxHp;
   }
+  /* Lane waves wander past the open spot and shoot whatever they find;
+     these tests are about kits, so the board starts empty of them. */
+  G.minions.length = 0;
   G.projectiles.length = 0; G.tethers.length = 0; G.zones.length = 0; G.objects.length = 0;
   for (let k = G.minions.length - 1; k >= 0; k--) if (G.minions[k]._test) { G.minions[k].alive = false; G.minions.splice(k, 1); }
 }
 reset();
-G.update(1 / 60);
+G.update(1 / 60); T.reveal(G);
 
 /* A creep of `team` parked at (x, y) for the rest of the test (reset removes
    it): it still runs CC, shields and dots, but never walks its lane. */
@@ -175,7 +178,7 @@ T.test('Ignis: Kindling adds +25 (+20% MAGIC) magic damage to a basic on an Embe
 T.test('Ignis bot: Flame Fan inside 460; Pyroclasm only on a target carrying an Ember (or the usual crowd / low-HP gates); Flashburn only with a 3-Ember hero inside 240 or under 30% HP; he walks in to 200 while an Embered hero is within 400 and holds 330 otherwise', () => {
   reset();
   T.place(ignis, open.x, open.y); T.place(bastion, open.x + 380, open.y);
-  G.update(1 / 60);   // vision
+  G.update(1 / 60); T.reveal(G);   // vision
   assert.ok(ignis.botSkillUrgency(0, bastion, 380, true, false) > 0, 'Fan at 380');
   assert.equal(ignis.botSkillUrgency(0, bastion, 470, true, false), 0, 'Fan held past 460');
   assert.equal(ignis.botSkillUrgency(2, bastion, 380, true, false), 0, 'a healthy free hero with no Ember: Pyroclasm held');
@@ -207,7 +210,7 @@ T.test('Ignis bot: Flame Fan inside 460; Pyroclasm only on a target carrying an 
   // a melee inside 250 during attack recovery: he steps away, like a marksman
   T.place(bastion, open.x + 200, open.y); ignis.aiTarget = bastion; ignis.atkCd = 1;
   const x0 = ignis.x;
-  for (let k = 0; k < 12; k++) Hero.prototype.botControl.call(ignis, 1 / 60);
+  T.drive(ignis, 12);
   assert.ok(ignis.x < x0 - 5, `stepped away from the melee: ${ignis.x - x0}`);
 });
 
@@ -282,7 +285,7 @@ T.test('Volt: Thunderhead strikes five times over 2.2 s, its slow ramps 10% -> 4
   const slows = [];
   let hits = 0, lastTaken = 0;
   for (let k = 0; k < 60 * 3; k++) {
-    G.update(1 / 60);
+    G.update(1 / 60); T.reveal(G);
     if (bastion.stats.dmgTaken !== lastTaken) { hits++; lastTaken = bastion.stats.dmgTaken; slows.push(bastion.cc.slowPct); }
   }
   assert.equal(hits, 5, 'five strikes');
@@ -300,7 +303,7 @@ T.test('Volt: Thunderhead strikes five times over 2.2 s, its slow ramps 10% -> 4
 T.test('Volt bot: Chain Arc rates highest with a second enemy unit within 320 of the target; Flashover only for a melee inside its ring or 2+ heroes; Thunderhead on a frontliner or a hero standing still in a fight', () => {
   reset();
   T.place(volt, open.x, open.y); T.place(vesper, open.x + 500, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(volt.botSkillUrgency(0, vesper, 500, true, false), 500, 'a lone target: a normal poke');
   T.place(hexa, open.x + 500, open.y + 250);
   assert.equal(volt.botSkillUrgency(0, vesper, 500, true, false), 720, 'a second hero within 320 of the target: the arc bounces');
@@ -384,7 +387,7 @@ T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed
   reset();
   T.place(mira, open.x, open.y); T.place(bastion, open.x + 400, open.y); T.place(grom, open.x + 400, open.y + 120);
   bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   const gromSpd = grom.curSpeed();
   assert.ok(mira.castSkill(1, { x: open.x + 400, y: open.y }));
   const z = G.zones[G.zones.length - 1];
@@ -421,7 +424,7 @@ T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed
 T.test('Mira bot: Rime Field between her and a melee inside 520 (or on the target once an ally engages); Frost Shard prefers a hero in her field; Glacial Prison for 2+ heroes or one at 3 Chill; holds 335', () => {
   reset();
   T.place(mira, open.x, open.y); T.place(vesper, open.x + 500, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(mira.botSkillUrgency(1, vesper, 500, true, false), 520, 'no melee, no ally engaged: a routine drop');
   T.place(grom, open.x + 400, open.y + 60); grom.lastDmgT = G.time;   // an ally trading with the target
   assert.equal(mira.botSkillUrgency(1, vesper, 500, true, false), 600, 'an ally on the target: field on the carry');
@@ -475,7 +478,7 @@ T.test('Nadir: Crush drags heroes and minions 120 toward him over 0.13 s (stoppi
   T.place(nadir, open.x, open.y); T.place(grom, open.x + 250, open.y); T.place(zephyr, open.x, open.y + 100);
   const m = creep(0, open.x - 200, open.y);
   grom.attrs.bonus.tenacity = 0;
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   const spd0 = grom.attrs.get('speed');
   assert.ok(nadir.castSkill(1, null));
   assert.ok(grom.forced && grom.forced.mode === 'slide', 'a tween, not a teleport');
@@ -547,7 +550,7 @@ T.test('Nadir: Implosion pulls enemy heroes toward its centre at 260 u/s for its
 T.test('Nadir bot: Implosion for 2+ heroes within 280 of the target or one under 40%; Crush at 900 right after the detonation; Singularity at 700 on a hero retreating; holds 310', () => {
   reset();
   T.place(nadir, open.x, open.y); T.place(grom, open.x + 450, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(nadir.botSkillUrgency(2, grom, 450, true, false), 0, 'one healthy hero: held');
   grom.hp = grom.maxHp * 0.35;
   assert.equal(nadir.botSkillUrgency(2, grom, 450, true, false), 820, 'one hero under 40%: fire');
@@ -605,7 +608,7 @@ T.test('Ashara: Sand Veil pulses, then for 4 s conceals allied heroes inside fro
   T.place(ashara, open.x, open.y); T.place(nadir, open.x + 150, open.y);         // red, will stand in the veil (centre open.x + 300)
   T.place(grom, open.x + 450, open.y); T.place(zephyr, open.x + 800, open.y);      // blue: one in the veil 300 from Nadir, one 650 away
   grom.attrs.bonus.tenacity = 0;
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(ashara.castSkill(1, { x: open.x + 300, y: open.y }));
   T.seconds(G, 0.5);
   const z = G.zones[G.zones.length - 1];
@@ -678,10 +681,10 @@ T.test('Ashara: Burial has no opening hit, its slow ramps 20% -> 60% over 4 s, e
 T.test('Ashara bot: Sand Veil on herself with a melee inside 300, on the allied group with an enemy hero inside 600, otherwise held; Burial for 2+ heroes who are not retreating or one already slowed; holds 305', () => {
   reset();
   T.place(ashara, open.x, open.y); T.place(zephyr, open.x + 700, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(ashara.botSkillUrgency(1, zephyr, 700, true, false), 0, 'nobody inside 600: the veil is held');
   T.place(zephyr, open.x + 480, open.y); T.place(hexa, open.x - 200, open.y + 100);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(ashara.botSkillUrgency(1, zephyr, 480, true, false), 700, 'an enemy hero inside 600: veil the group');
   ashara.botFireSkill(1, zephyr, 480, true, false);
   let z = G.zones[G.zones.length - 1];
@@ -690,7 +693,7 @@ T.test('Ashara bot: Sand Veil on herself with a melee inside 300, on the allied 
   near(gp.x, open.x - 100, 1e-6, 'the centroid of Ashara and Hexa');
   ashara.skillCd[1] = 0; G.zones.length = 0;
   T.place(grom, open.x + 250, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(ashara.botSkillUrgency(1, grom, 250, true, false), 850, 'a melee inside 300: veil herself');
   ashara.botFireSkill(1, grom, 250, true, false);
   z = G.zones[G.zones.length - 1];
@@ -698,7 +701,7 @@ T.test('Ashara bot: Sand Veil on herself with a melee inside 300, on the allied 
   // Burial
   G.zones.length = 0; T.place(grom, FAR.x, FAR.y);
   T.place(zephyr, open.x + 450, open.y); T.place(mira, open.x + 450, open.y + 150);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   zephyr.vx = zephyr.vy = mira.vx = mira.vy = 0;
   assert.equal(ashara.botSkillUrgency(2, zephyr, 450, true, false), 880, 'two heroes standing their ground');
   zephyr.vx = 200; mira.vx = 200;
@@ -758,7 +761,8 @@ T.test('Hexa: Blight is 45 (+30% MAGIC) over 3 s per stack, two at most, from ba
   T.seconds(G, 1.0);
   const ticked = grom.stats.dmgTaken - took0;
   assert.ok(ticked > 0, 'the rot ticked');
-  near(hexa.hp - hp0, ticked * 0.12, 2, 'healed 12% of the Blight damage (some regen)');
+  const regen = hexa.maxHp * sim.context.BALANCE.hpRegenPct + hexa.attrs.get('hpRegen');
+  near(hexa.hp - hp0, ticked * 0.12 + regen, 2, 'healed 12% of the Blight damage, on top of one second of regen');
   // nothing off a creep
   reset();
   T.place(hexa, open.x, open.y);
@@ -775,7 +779,7 @@ T.test('Hexa: Leech Thread ticks five times over 3 s healing her 40% of each wit
   reset();
   T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 300, open.y + 150); T.place(ignis, open.x + 300, open.y + 400);
   grom.attrs.bonus.tenacity = 0;
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   hexa.hp = hexa.maxHp * 0.4;
   assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
   const tt = hexa.liveTether();
@@ -784,7 +788,7 @@ T.test('Hexa: Leech Thread ticks five times over 3 s healing her 40% of each wit
   // the thread's ticks are the big hits; the Blight rot they apply ticks small amounts at 4 Hz in between
   let ticks = 0, lastTaken = grom.stats.dmgTaken, healed = 0, dealt = 0, hpBefore = hexa.hp, slowSeen = 0;
   for (let k = 0; k < 60 * 2.9; k++) {
-    G.update(1 / 60);
+    G.update(1 / 60); T.reveal(G);
     slowSeen = Math.max(slowSeen, grom.cc.slowPct);
     const took = grom.stats.dmgTaken - lastTaken;
     if (took > 30) { ticks++; dealt += took; healed += hexa.hp - hpBefore; }
@@ -809,32 +813,32 @@ T.test('Hexa: Leech Thread ticks five times over 3 s healing her 40% of each wit
   // breaks past 620 with no payload
   reset();
   T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
   T.seconds(G, 0.7);
   T.place(grom, open.x + 700, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(!hexa.liveTether(), 'snapped past 620');
   assert.ok(!(grom.cc.slowPct >= 0.4), 'no burst');
   // a stun on Hexa cuts it
   reset();
   T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
   hexa.cc.apply('stun', 0.5, 0);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(!hexa.liveTether(), 'cut by a stun on her');
   // Purify on the target releases it
   reset();
   T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
   grom.cc.purify(1);
   assert.ok(!hexa.liveTether(), 'released by Purify');
   // fallback: nobody in the 60-degree cone, the nearest hero in reach is taken instead
   reset();
   T.place(hexa, open.x, open.y); T.place(grom, open.x, open.y + 300);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }), 'aimed 90 degrees off him');
   assert.ok(hexa.liveTether() && hexa.liveTether().target === grom, 'the nearest hero in reach');
 });
@@ -845,7 +849,7 @@ T.test('Hexa: Black Mass pulses four times over 2 s and every pulse applies Blig
   assert.ok(hexa.castSkill(2, { x: open.x + 400, y: open.y }));
   let hits = 0, lastTaken = 0;
   for (let k = 0; k < 60 * 3; k++) {
-    G.update(1 / 60);
+    G.update(1 / 60); T.reveal(G);
     const took = grom.stats.dmgTaken - lastTaken;
     if (took > 30) hits++;   // a pulse (the rot's own ticks are small)
     lastTaken = grom.stats.dmgTaken;
@@ -857,7 +861,7 @@ T.test('Hexa: Black Mass pulses four times over 2 s and every pulse applies Blig
 T.test('Hexa bot: the thread goes on the closest hero in reach, then she kites at 490 while it holds; Hex Bolt at the tethered target; Black Mass on the burst or 2+ heroes; retreats under 40%', () => {
   reset();
   T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 500, open.y + 300);   // Zephyr 360 from Grom: outside a mass on him
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.equal(hexa.p.retreatHp, 0.4, 'retreats to heal under 40%');
   assert.ok(hexa.botSkillUrgency(1, grom, 300, true, false) > 0, 'the thread on a hero in reach');
   assert.equal(hexa.botHoldNow(), 345, 'holds 345 with no thread');

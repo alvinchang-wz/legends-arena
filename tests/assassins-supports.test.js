@@ -44,11 +44,14 @@ function reset() {
     h.recalcStats(false);
     h.hp = h.maxHp;
   }
+  /* Lane waves wander past the open spot and shoot whatever they find;
+     these tests are about kits, so the board starts empty of them. */
+  G.minions.length = 0;
   G.projectiles.length = 0; G.tethers.length = 0; G.zones.length = 0; G.objects.length = 0;
   for (let k = G.minions.length - 1; k >= 0; k--) if (G.minions[k]._test) { G.minions[k].alive = false; G.minions.splice(k, 1); }
 }
 reset();
-G.update(1 / 60);
+G.update(1 / 60); T.reveal(G);
 
 /* A creep of `team` parked at (x, y) for the rest of the test (reset removes
    it): it still runs CC, shields and dots, but never walks its lane. */
@@ -420,7 +423,7 @@ T.test('Sable bot: Needle never at creeps; Lunge for the third Venom (760 at two
   T.place(grom, open.x + 300, open.y);
   T.place(nyx, open.x - 300, open.y);
   nyx.level = 6; nyx.recalcStats(true);   // no longer a one-rotation kill: a fair comparison
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   sable.aiTarget = null;
   assert.equal(sable.botCanKill(nyx), false);
   sable.def0.botTargetMaxHp = false;
@@ -572,7 +575,7 @@ T.test('Wick: the Lantern pulses a refreshing lantern-tagged shield on allies wi
   assert.ok(wick.castSkill(1, { x: wick.x, y: wick.y }));
   assert.equal(G.objects.length, 1); assert.equal(G.objects[0].mode, 'pulse');
   near(wick.mana, mana0 - 80, 1e-9, '60 +4/rank mana');
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   const expect = 45 + 7 * 5 + wick.magicPower() * 0.2;
   for (const a of [rook, wick]) {
     const sh = a.shields.filter(x => x.tag === 'lantern');
@@ -799,7 +802,7 @@ T.test('Sylva: Vine Link heals the chosen ally at once (Verdant Gift: +60 speed,
   sylva.skillCd[1] = 0; pact.hp = pact.maxHp * 0.5; sylva.mana = sylva.maxMana;
   assert.ok(sylva.castSkill(1, null));
   T.place(pact, open.x + 900, open.y);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(!G.tethers.some(t => !t.dead && t.src === sylva), 'snapped past 650');
   // recasting replaces: the aim picks the ally nearest the point
   T.place(pact, open.x + 200, open.y);

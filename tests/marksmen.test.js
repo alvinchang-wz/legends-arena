@@ -43,11 +43,14 @@ function reset() {
     h.recalcStats(false);
     h.hp = h.maxHp;
   }
+  /* Lane waves wander past the open spot and shoot whatever they find;
+     these tests are about kits, so the board starts empty of them. */
+  G.minions.length = 0;
   G.projectiles.length = 0; G.tethers.length = 0; G.zones.length = 0; G.objects.length = 0;
   for (let k = G.minions.length - 1; k >= 0; k--) if (G.minions[k]._test) { G.minions[k].alive = false; G.minions.splice(k, 1); }
 }
 reset();
-G.update(1 / 60);
+G.update(1 / 60); T.reveal(G);
 
 /* A creep of `team` parked at (x, y) for the rest of the test (reset removes it). */
 function creep(team, x, y) {
@@ -87,7 +90,7 @@ T.test('Zephyr: base stats and skill numbers match the spec (marksman band: lowe
 T.test('Zephyr: Slipstream stacks +6% move speed per basic hit to 5 (30%), drops together after 2 s, and adds +18 (+12% ATK) to basics at 5 stacks', () => {
   reset();
   T.place(zephyr, open.x, open.y); T.place(bastion, open.x + 250, open.y);
-  G.update(1 / 60);   // settle the terrain flags (river) before reading the speed
+  G.update(1 / 60); T.reveal(G);   // settle the terrain flags (river) before reading the speed
   const spd0 = zephyr.curSpeed();
   basic(zephyr, bastion);
   assert.equal(zephyr.pv.stacks, 1, 'one stack per basic that lands');
@@ -177,14 +180,14 @@ T.test('Marksman bots kite: during attack recovery a marksman steps straight awa
   T.place(zephyr, open.x, open.y); T.place(mira, open.x + 300, open.y); T.place(brass, open.x - 150, open.y);
   zephyr.aiTarget = mira; zephyr.atkCd = 0.9; zephyr.combatPoint = null;
   const d0 = zephyr.distTo(brass);
-  for (let k = 0; k < 12; k++) Hero.prototype.botControl.call(zephyr, 1 / 60);
+  T.drive(zephyr, 12);
   assert.ok(zephyr.distTo(brass) > d0 + 40, `stepped away from the melee: ${zephyr.distTo(brass) - d0}`);
   assert.ok(zephyr.x > open.x + 40 && Math.abs(zephyr.y - open.y) < 5, 'straight away from Brass');
   // no melee near: the usual orbit point around the target instead
   reset();
   T.place(zephyr, open.x, open.y); T.place(mira, open.x + 300, open.y); T.place(brass, open.x - 600, open.y);
   zephyr.aiTarget = mira; zephyr.atkCd = 0.9; zephyr.combatPoint = null;
-  for (let k = 0; k < 12; k++) Hero.prototype.botControl.call(zephyr, 1 / 60);
+  T.drive(zephyr, 12);
   assert.ok(zephyr.combatPoint, 'orbit point chosen');
   assert.equal(zephyr.meleeThreat(250), null);
 });
@@ -405,7 +408,7 @@ T.test('Quill: Snare arms after 0.7 s, triggers on the first enemy hero within 1
 T.test('Quill: Bola turns on its first hit and hits again on the way back with a 40% slow for 1.2 s; Quarry makes basics on a marked target +12% and stacks +8% speed to 3', () => {
   reset();
   T.place(quill, open.x, open.y); T.place(bastion, open.x + 300, open.y); T.place(vesper, open.x + 150, open.y + 200);
-  G.update(1 / 60);
+  G.update(1 / 60); T.reveal(G);
   assert.ok(quill.castSkill(1, { x: open.x + 600, y: open.y }));
   const p = G.projectiles[G.projectiles.length - 1];
   assert.ok(p.boomerang && !p.pierce);
@@ -524,7 +527,7 @@ T.test('Lumen: base stats and skill numbers match the spec; Focus is a flat 100 
   lumen.items.length = 0; lumen.recalcStats(false);
   T.place(lumen, open.x, open.y);
   lumen.mana = 0;
-  for (let k = 0; k < 60; k++) { lumen.x += 2; G.update(1 / 60); }
+  for (let k = 0; k < 60; k++) { lumen.x += 2; G.update(1 / 60); T.reveal(G); }
   assert.ok(lumen.mana < 0.01, `walking: no charge (${lumen.mana})`);
   T.seconds(G, 1.5);
   assert.ok(lumen.mana > 29 && lumen.mana < 31, `1.5 s still: 0.5 s delay then 30/s -> 30 (${lumen.mana})`);
@@ -603,10 +606,10 @@ T.test('Lumen bot: Railshot only from 60 Focus; Overcharge only on a held or sub
   reset();
   T.place(lumen, open.x, open.y); T.place(grom, open.x + 700, open.y);
   lumen.mana = 20; lumen.aiTarget = grom;
-  for (let k = 0; k < 20; k++) Hero.prototype.botControl.call(lumen, 1 / 60);
+  T.drive(lumen, 20);
   assert.ok(Math.abs(lumen.x - open.x) < 0.01 && Math.abs(lumen.y - open.y) < 0.01, `planted: ${lumen.x - open.x}, ${lumen.y - open.y}`);
   T.place(grom, open.x + 450, open.y);
-  for (let k = 0; k < 20; k++) Hero.prototype.botControl.call(lumen, 1 / 60);
+  T.drive(lumen, 20);
   assert.ok(Math.hypot(lumen.x - open.x, lumen.y - open.y) > 20, 'a hero inside 500: she moves again');
   lumen.mana = 100;
   const pt = lumen.chooseCombatPoint(grom);

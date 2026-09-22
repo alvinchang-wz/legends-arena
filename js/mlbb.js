@@ -134,22 +134,11 @@ const Mlbb = {
   },
 
   /* ---------- vision: bushes hide you unless sharing, close, or revealed ---------- */
-  bushHiddenFrom(team, u) {
-    if (!u || u.bush < 0 || u.isStructure) return false;
-    if (u.team === team) return false;
-    if (Game.isDuel && Game.isDuel()) return false;
-    if (u.revealT > 0) return false;
-    let close = false, same = false;
-    for (const h of Game.heroes) {
-      if (h.team !== team || !h.alive) continue;
-      if (h.bush === u.bush) same = true;
-      if (dist(h, u) < 72) close = true;
-    }
-    return !same && !close;
-  },
+  /* The rule itself is `bushHides` in js/combat.js (core, so the headless
+     bots hide too); this stays as the name the HUD and older callers use. */
+  bushHiddenFrom(team, u) { return bushHides(team, u); },
 
   onDamaged(u) {
-    if (u && u.type === 'hero') u.revealT = 1.6;
     if (u && u.arrivalT > 0) {
       u.arrivalT = 0; u.arrivalDest = null;
       if (u.isPlayer) UI.announce('Arrival interrupted!', 'minor');
