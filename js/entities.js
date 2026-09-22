@@ -1065,6 +1065,7 @@ class Hero extends Unit {
   onDamaged(src, dmg, packet) {
     this.hitFlash = 0.14;
     this.lastDmgT = Game.time;
+    this.lastHurtT = Game.time;   // taken only (lastDmgT also counts dealt): F29 (Sylva's hint) links the ally hurt most recently
     if (this.recallT > 0) { this.recallT = 0; if (this.isPlayer) UI.announce('Recall interrupted!', 'minor'); }
     if (typeof Mlbb !== 'undefined') Mlbb.onDamaged(this);
     if (src instanceof Hero && src.team !== this.team) {
@@ -1505,7 +1506,13 @@ class Hero extends Unit {
       }
       case 'blinkstrike': {
         let best = null, bd = Infinity;
-        for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+        /* an aimed unit (a bot passing the hero it chose: the lowest hero for
+           Haunt, the carry for Skyfall, the Venomed hero for Kiss) is taken
+           when it is a legal target; a joystick point falls back to the
+           nearest, heroes counting 150 closer */
+        const aimed = point && point.alive && point.team !== undefined && point.team !== this.team && !point.isStructure ? point : null;
+        if (aimed && aimed.alive && !aimed.untargetable && dist(this, aimed) <= s.range && Game.canSee(this.team, aimed)) best = aimed;
+        else for (const u of Game.enemyUnits(this.team, { neutral: true })) {
           const dd = dist(this, u) + (u.type === 'hero' ? -150 : 0);
           if (dist(this, u) <= s.range && dd < bd && Game.canSee(this.team, u)) { bd = dd; best = u; }
         }
@@ -2526,7 +2533,10 @@ class Hero extends Unit {
       if (this.recast && this.recast.skillIdx === i && Game.time < this.recast.until) { this.castSkill(i, null); continue; }
       if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
       if (s.charges && !(this.skillCharges[i] > 0)) continue;   // F8
-      if (s.type === 'heal') { if (this.hpPct < 0.7) this.castSkill(i, null); continue; }
+      // a heal that cannot land on the caster (Pact's Offering) is no escape
+      if (s.type === 'heal') { if (this.hpPct < 0.7 && !(s.allyTarget && !s.allyTarget.self)) this.castSkill(i, null); continue; }
+      // F19 / F29 (Nyx's hint): vanishing is the exit when a chaser is close
+      if (s.type === 'selfState' && s.untargetable) { if (threat && bd < 500) this.castSkill(i, null); continue; }
       // F29 (Quill's hint): a trap goes down between him and the chaser as he runs
       if (s.type === 'trap') {
         if (threat && bd < 700) { const k = Math.min(1, 140 / Math.max(1, bd)); this.castSkill(i, { x: this.x + (threat.x - this.x) * k, y: this.y + (threat.y - this.y) * k }); }
@@ -2765,6 +2775,80 @@ class Hero extends Unit {
     }
     return { near: near.length, aligned };
   }
+  /* F29 (Nyx's hint): is an enemy skillshot going to land on this hero
+     within `within` seconds? The same line test dodgeProjectiles runs. */
+  incomingShot(within = 0.6) {
+    for (const p of Game.projectiles) {
+      if (!p || p.dead || p.kind !== 'skillshot' || p.team === this.team || !(p.dmg > 0)) continue;
+      const relX = this.x - p.x, relY = this.y - p.y;
+      const along = relX * p.dx + relY * p.dy;
+      if (along < 0 || along > (p.maxDist || 800) - (p.traveled || 0) + this.radius) continue;
+      const miss = Math.hypot(relX - p.dx * along, relY - p.dy * along);
+      if (miss > (p.radius || 24) + this.radius) continue;
+      if (along / Math.max(120, p.speed || 800) <= within) return p;
+    }
+    return null;
+  }
+  /* F29 (Wick's hint): where a lantern goes. The allied hero (this one
+     included; a Tank or Fighter first) with the most enemy heroes within
+     500, when that count reaches 2 (`strict`); otherwise the ally nearest
+     the enemy the bot is fighting. Null when nobody qualifies. */
+  lanternSpot(s, strict) {
+    let best = null, bs = -Infinity;
+    for (const a of Game.heroes) {
+      if (a.team !== this.team || !a.alive || this.distTo(a) > (s.range || 480) + 40) continue;
+      let n = 0;
+      for (const e of Game.heroes) if (e.team !== this.team && e.alive && e.distTo(a) < 500 && Game.canSee(this.team, e)) n++;
+      if (n < 2) continue;
+      const role = a.def0 && a.def0.role;
+      const score = n * 10 + (role === 'Tank' || role === 'Fighter' ? 5 : 0) - this.distTo(a) * 0.002;
+      if (score > bs) { bs = score; best = a; }
+    }
+    if (best || strict) return best;
+    const t = this.aiTarget;
+    if (!t || t.type !== 'hero') return null;
+    let bd = Infinity;
+    for (const a of Game.heroes) {
+      if (a.team !== this.team || !a.alive || this.distTo(a) > (s.range || 480) + 40) continue;
+      const d = a.distTo(t);
+      if (d < bd) { bd = d; best = a; }
+    }
+    return best;
+  }
+  /* F29 (Sylva's hint): allied heroes (this one included) within `r` under `hp`. */
+  alliesBelow(r, hp) {
+    let n = 0;
+    for (const a of Game.heroes) if (a.team === this.team && a.alive && a.hpPct < hp && this.distTo(a) <= r) n++;
+    return n;
+  }
+  /* F29 (Wick's hint): allied heroes (this one included) within `r` who dealt or took damage in the last 2 s. */
+  alliesFighting(r) {
+    let n = 0;
+    for (const a of Game.heroes) if (a.team === this.team && a.alive && Game.time - a.lastDmgT < 2 && this.distTo(a) <= r) n++;
+    return n;
+  }
+  /* F29 (Wraith's hint): the visible enemy hero with the lowest HP fraction inside `r`, or null. */
+  lowestHeroWithin(r) {
+    let best = null, bh = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || this.distTo(e) >= r || !Game.canSee(this.team, e)) continue;
+      if (e.hpPct < bh) { bh = e.hpPct; best = e; }
+    }
+    return best;
+  }
+  /* F29 (Sylva's hint): the ally a link should land on: among the allied
+     heroes (never this one) inside `r` under `hp`, the one hurt most
+     recently (within 3 s), the lowest HP breaking the tie; null when none. */
+  hurtAllyWithin(r, hp) {
+    let best = null, bs = -Infinity;
+    for (const a of Game.heroes) {
+      if (a === this || a.team !== this.team || !a.alive || a.hpPct >= hp || this.distTo(a) > r) continue;
+      const recent = Game.time - (a.lastHurtT || -99) < 3 ? 1 : 0;
+      const score = recent * 2 + (1 - a.hpPct);
+      if (score > bs) { bs = score; best = a; }
+    }
+    return best;
+  }
 
   botSkillUrgency(i, t, d, isHero, farmOk) {
     const s = this.skills[i];
@@ -2782,8 +2866,11 @@ class Hero extends Unit {
     if (s.botMinMana && this.mana < s.botMinMana) return 0;   // F29 (Lumen's hint): Railshot only from 60 Focus
     // botOwnHpBelow: the skill is for when the caster is hurt (Torren's Toll, Cinder's Furnace)
     const ownLow = s.botOwnHpBelow ? this.hpPct < s.botOwnHpBelow : false;
-    if (i === 2 && s.type !== 'basicMod') {
+    // a heal ultimate (Canopy, Warding Glow) answers the allies' health, not the enemy target: no hero gate
+    if (i === 2 && s.type !== 'basicMod' && s.type !== 'heal') {
       if (!isHero) return 0;
+      // F29 (Nyx's hint): an execute that is never thrown above this HP, whatever the crowd
+      if (s.botNeverAbove && t.hpPct > s.botNeverAbove) return 0;
       // F29 (Vesper's / Lumen's hint): a pure execute (botExecuteOnly) waits for its threshold whatever the
       // crowd; with botCcOk a slowed, rooted, stunned or channelling target qualifies too
       if (s.botExecuteOnly && t.hpPct > (s.botExecuteHp || p.ultExecuteHp) && !(s.botCcOk && this.unitHeld(t))) return 0;
@@ -2796,8 +2883,9 @@ class Hero extends Unit {
           !(s.type === 'zone' && s.wallStun && s.knockback && this.wallShoveDir(t, s.knockback + 10)) &&   // F29 (Tide's hint): a wall to throw at
           !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.crowdZoneSingleOk(s, t))) &&   // F29 (Quill's / Mira's hint): a crowd in the box, or one hero who qualifies alone
           !(s.botCcOk && this.unitHeld(t)) &&   // F29 (Lumen's hint): a target that cannot run
-          !(s.type === 'zone' && s.botMark && this.botMarkOk(s.botMark, t)) &&   // F29 (Ignis's hint): a target already carrying the mark
+          !(s.botMark && this.botMarkOk(s.botMark, t)) &&   // F29 (Ignis's / Sable's hint): a target already carrying the mark (Pyroclasm's Ember, Kiss's three Venom)
           !(s.type === 'zone' && s.botFrontline && this.frontlineTarget(t)) &&   // F29 (Volt's hint): a frontliner, or a hero standing still in a fight
+          !(s.botCarry && this.carryWithin(s.range || 500)) &&   // F29 (Rook's hint): a marksman or mage in reach
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2910,6 +2998,10 @@ class Hero extends Unit {
         if (isHero && this.advancedAI && !this.gapCloseLegal(t)) return 0;
         // F29 (Zephyr's hint): a carry's engage dash (botWithAlly) waits for an ally to be on the target
         if (s.botWithAlly && isHero && !this.allyEngagedNear(t)) return 0;
+        // F29 (Rook's hint): a dive (botAllyWithin) waits for an allied hero inside that distance of her
+        if (s.botAllyWithin && isHero && !this.allyWithin(s.botAllyWithin)) return 0;
+        if (isHero && s.botHoldMark && this.botMarkOk(s.botHoldMark, t)) return 0;   // F29 (Sable's hint): the target already carries three Venom: Lunge is kept for the exit
+        if (isHero && s.botMark && this.botMarkOk(s.botMark, t)) return 760;         // ... two Venom: Lunge for the third
         return cc && isHero && !locked ? 780 : 360;
       case 'zone':
         if (d >= s.range || !(isHero || farmOk)) return 0;
@@ -2950,14 +3042,23 @@ class Hero extends Unit {
         return isHero ? 520 : 210;
       case 'heal': {
         const patient = s.allyTarget ? this.pickAllyTarget(s, null) : this.lowestHealTarget(s.radius || 360);
+        // F29 (Sylva's hint): Canopy for botHealCount.n allied heroes in its radius under botHealCount.hp
+        if (s.botHealCount && this.alliesBelow(s.radius || 360, s.botHealCount.hp) >= s.botHealCount.n) return 920;
+        // F29 (Wick's hint): Warding Glow when botHealCrowd allies are fighting inside its radius
+        if (s.botHealCrowd && this.alliesFighting(s.radius || 360) >= s.botHealCrowd) return 900;
         // botHealHp: the skill's own threshold (Marrow's Splint at 60%)
         if (!patient || patient.hpPct >= (s.botHealHp || (this.advancedAI ? p.healAllyHp : 0.65))) return 0;
         return patient.hpPct < 0.4 ? 980 : 900;
       }
-      case 'blinkstrike':
+      case 'blinkstrike': {
         if (!isHero || d >= s.range) return 0;
+        // F29 (Sable's hint): Kiss the moment the target carries the third Venom
+        if (s.botMark && this.botMarkOk(s.botMark, t)) return 900;
         if (this.advancedAI && !this.gapCloseLegal(t)) return 0;
+        // F29 (Rook's hint): Skyfall the marksman or mage in reach (botFireSkill aims at them)
+        if (s.botCarry && this.carryWithin(s.range)) return t.hpPct < 0.35 ? 870 : 720;
         return t.hpPct < 0.35 ? 870 : 540;
+      }
       case 'buff':
         if (!isHero || d >= 300) return 0;
         // F29 (Cinder's hint): a steroid with botOwnHpBelow (Furnace) waits until she is hurt
@@ -2986,9 +3087,11 @@ class Hero extends Unit {
       case 'trap':       // F9: plant under an approaching hero
         if (!isHero || d >= (s.range || 400)) return 0;
         return 330;
-      case 'object':     // F9: a lantern goes down where the fight is
+      case 'object': {   // F9 / F29 (Wick's hint): a lantern goes under the allied frontliner when 2+ enemy heroes are within 500 of an ally
         if (!isHero || d >= 700) return 0;
-        return 350;
+        if (this.lanternSpot(s, true)) return 720;
+        return this.inFight(t) ? 350 : 0;
+      }
       case 'barrier':    // F9 / F29 (Bastion's hint): a gate against a ranged hero within 700 who is on an ally
         return this.barrierThreat() ? 520 : 0;
       case 'channel': {  // F18: a channelled nova wants a crowd in its radius and no interrupt waiting
@@ -3002,7 +3105,15 @@ class Hero extends Unit {
       }
       case 'selfState': { // F19: vanish when in danger; dig in when the enemy is on top of you
         if (!isHero) return 0;
-        if (s.untargetable) return this.hpPct < 0.5 && d < 450 ? 760 : 0;
+        if (s.untargetable) {
+          // F29 (Nyx's hint): Shade Step through a skillshot about to land on her
+          if (this.incomingShot(0.6)) return 820;
+          if (this.hpPct < 0.5 && d < 450) return 760;
+          // ... or to close the last botClose units on a hunted hero who is getting away
+          if (s.botClose && d > 150 && d < s.botClose + 150 && this.retreatingFromMe(t) &&
+              (t.hpPct < 0.5 || this.botCanKill(t)) && this.gapCloseLegal(t)) return 600;
+          return 0;
+        }
         if (s.tetherSlowMult) {   // F29 (Anchor's hint): Weigh Anchor when the tethered target is slowed inside 400
           const tt = this.liveTether();
           return tt && tt.target.cc.has('slow') && this.distTo(tt.target) < 400 ? 760 : 0;
@@ -3292,24 +3403,34 @@ class Hero extends Unit {
       case 'heal':
         this.castSkill(i, null);
         break;
-      case 'blinkstrike':
-        this.castSkill(i, t);
+      case 'blinkstrike': {
+        /* F29: the aimed unit castSkill honours: the hero carrying the botMark stacks (Sable's Kiss),
+           the marksman or mage in reach (Rook's Skyfall), the lowest hero in reach (Wraith's Haunt) */
+        const at = (s.botMark && this.markedHeroWithin(s.botMark, s.range)) ||
+          (s.botCarry && this.carryWithin(s.range)) ||
+          (s.botLowest && this.lowestHeroWithin(s.range)) || t;
+        this.castSkill(i, at);
         break;
+      }
       case 'buff':
         this.castSkill(i, null);
         break;
       case 'tether':
         this.castSkill(i, t);
         break;
-      case 'link':
-        this.castSkill(i, null);
+      case 'link': {     // F29 (Sylva's hint): the ally hurt most recently, lowest HP first (castSkill picks the ally nearest the aim)
+        const a = s.allyTarget ? this.hurtAllyWithin(s.allyTarget.range || 500, 0.8) : null;
+        this.castSkill(i, a ? { x: a.x, y: a.y } : null);
         break;
+      }
       case 'trap':
         this.castSkill(i, Game.aimLeadPoint(this, t, 400));
         break;
-      case 'object':
-        this.castSkill(i, { x: this.x + (t.x - this.x) * 0.5, y: this.y + (t.y - this.y) * 0.5 });
+      case 'object': {   // F29 (Wick's hint): under the allied frontliner, else the ally nearest the fight, else halfway to the target
+        const a = this.lanternSpot(s, false);
+        this.castSkill(i, a ? { x: a.x, y: a.y } : { x: this.x + (t.x - this.x) * 0.5, y: this.y + (t.y - this.y) * 0.5 });
         break;
+      }
       case 'barrier':
         this.castSkill(i, this.barrierThreat() || t);
         break;
@@ -3391,7 +3512,7 @@ class Hero extends Unit {
       const urgency = this.botSkillUrgency(i, t, d, isHero, farmOk);
       if (urgency <= 0) continue;
       if (urgency < 700 && Math.random() > p.castChance) continue;
-      if (i !== 2 && reserve && urgency < 700 && this.mana - this.costOf(this.skills[i], this.skillRank[i]) < reserve) continue;
+      if (i !== 2 && reserve && urgency < 700 && !this.skills[i].hpCost && this.mana - this.costOf(this.skills[i], this.skillRank[i]) < reserve) continue;
       this.botFireSkill(i, t, d, isHero, farmOk);
     }
   }

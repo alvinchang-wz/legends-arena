@@ -207,16 +207,19 @@ const HEROES = [
   },
   {
     id: 'nyx', name: 'Nyx', role: 'Assassin', icon: '🗡️', color: '#c084fc', projColor: '#d8b4fe',
-    desc: 'A shadow blade who erases squishy targets.',
+    desc: 'The execute assassin: one long-cooldown, armor-piercing blow that grows the lower the target is; she vanishes to reach her spot and does nothing to a full-HP frontline.',
     difficulty: 3, damageStyle: 'physical',
-    /* An assassin has to buy its damage with something. Nyx used to beat the
-       Marksman on health, armour, attack, attack speed AND move speed at the
-       same time while also topping the game in burst — no axis was left for
-       the Marksman to win on, so picking one over Nyx was strictly wrong. The
-       durability is what pays for the damage now: squishier than the Marksman
-       and the Support, still tougher than the two Mages. Damage, mobility and
-       burst are untouched — that is the archetype. */
-    hp: 515, hpLv: 68, mp: 230, mpLv: 25, atk: 68, atkLv: 8,
+    /* docs/design/heroes.md, Assassins: Nyx. The only kit scaled on the
+       TARGET's missing HP (F21): Deathmark adds 20/25/30% of it (cap 400 vs
+       non-heroes) behind 22% armor penetration and carries no CC at all.
+       Shade Step is the roster's only untargetable state (F19): 0.8 s out of
+       every target list, hit test, nova and zone, +30% move speed, no
+       attacks or casts, dots keep ticking. Squishier than the Marksman, the
+       durability pays for the burst. Bot fields: Deathmark is held for a
+       hero under 50% (botExecuteHp) and never thrown above 70%
+       (botNeverAbove); Shade Step goes through an incoming skillshot or
+       closes the last 200 on a hunted target (botClose), and is her exit. */
+    hp: 515, hpLv: 68, mp: 230, mpLv: 25, atk: 68, atkLv: 8.0,
     armor: 12, armorLv: 2.0, mr: 10, mrLv: 1.6,
     range: 95, atkSpd: 1.15, speed: 275,
     passive: {
@@ -224,9 +227,9 @@ const HEROES = [
       desc: 'Attacks and skills that land on a target facing away deal 18% bonus true damage. Killing a hero grants +25% move speed for 3s.',
     },
     skills: [
-      { name: 'Shadow Strike', icon: '🌑', type: 'dash', cd: 8, mana: 45, dmgType: 'physical', dist: 340, speed: 1100, dmg: 140, dmgLv: 17, scaleAd: 0.7, desc: 'Dash through enemies, damaging everyone in your path.' },
-      { name: 'Fan of Knives', icon: '🔪', type: 'nova', cd: 7, mana: 40, dmgType: 'physical', radius: 230, dmg: 130, dmgLv: 15, scaleAd: 0.7, desc: 'Fling blades at every enemy around you.' },
-      { name: 'Deathmark', icon: '☠️', type: 'blinkstrike', cd: 44, mana: 100, dmgType: 'physical', range: 500, dmg: 300, dmgLv: 34, scaleAd: 0.85, physPenPct: 0.22, silence: 0.9, desc: 'Blink to a target, silence them, and strike a lethal armor-piercing blow. The biggest single hit of any assassin, less often.' },
+      { name: 'Shadow Strike', icon: '🌑', type: 'dash', cd: 8, mana: 45, dmgType: 'physical', dist: 340, speed: 1100, dmg: 130, dmgLv: 16, scaleAd: 0.7, desc: 'Dash 340 units through enemies in a line for 130+16/rank (+70% ATK) physical damage to everyone on the path.' },
+      { name: 'Shade Step', icon: '🌫', type: 'selfState', cd: 12, mana: 40, dur: 0.8, untargetable: true, speedPct: 0.3, noAttack: true, botClose: 200, desc: 'Vanish for 0.8s: untargetable, skipped by projectiles, novas and zones, +30% move speed; she cannot attack or cast, and dots on her keep ticking.' },
+      { name: 'Deathmark', icon: '☠️', type: 'blinkstrike', cd: [42, 38, 34], mana: 100, dmgType: 'physical', range: 500, dmg: 260, dmgLv: 40, scaleAd: 1.0, missingPct: 0.2, missingPctLv: 0.05, missingCap: 400, physPenPct: 0.22, botExecuteHp: 0.5, botNeverAbove: 0.7, desc: 'Blink behind the nearest hero within 500 and strike for 260/300/340 (+100% ATK) plus 20/25/30% of its missing HP (cap 400 vs non-heroes), ignoring 22% of its armor. No CC.' },
     ],
   },
   {
