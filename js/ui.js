@@ -1361,9 +1361,9 @@ const UI = {
       const goldLane = Game.isTen() ? 'dusk' : 'top';
       const expLane = Game.isTen() ? 'dawn' : 'bot';
       const rule = lane === goldLane
-        ? [Game.isTen() ? 'DUSK ROAD' : 'GOLD LANE', `+${Math.round((BALANCE.goldLaneMult - 1) * 100)}% LAST-HIT GOLD`, 'gold']
+        ? [Game.isTen() ? 'DUSK ROAD' : 'GOLD LANE', `+${Math.round((BALANCE.goldLaneMult - 1) * 100)}% CANNON GOLD`, 'gold']
         : lane === expLane
-          ? [Game.isTen() ? 'DAWN ROAD' : 'EXP LANE', `+${Math.round((BALANCE.expLaneMult - 1) * 100)}% MINION XP`, 'exp']
+          ? [Game.isTen() ? 'DAWN ROAD' : 'EXP LANE', `+${Math.round((BALANCE.expLaneMult - 1) * 100)}% CANNON XP`, 'exp']
           : null;
       this.els.laneBuff.classList.toggle('hidden', !p.alive || !rule);
       if (rule) {

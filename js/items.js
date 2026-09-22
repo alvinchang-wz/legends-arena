@@ -326,7 +326,7 @@ const BATTLE_SPELLS = [
   },
   {
     id: 'retribution', name: 'Retribution', icon: '🐾', cd: 35,
-    desc: 'Deal 500 true damage to a nearby monster (800 to Turtle or Lord). The only objective-steal spell.',
+    desc: 'Deal 400 (+40 per level) true damage to a nearby monster, Turtle and Lord included. +40% creep rewards, 40% less creep damage. The only objective-steal spell.',
     cast(h, point) {
       let best = point && point.type === 'monster' && point.alive && dist(h, point) < 420
         ? point : null;
@@ -337,8 +337,7 @@ const BATTLE_SPELLS = [
         if (!best && d < bd) { bd = d; best = m; }
       }
       if (!best) return false;
-      const amount = (typeof Mlbb !== 'undefined' ? Mlbb.retriDamage(h, best) : (best.epic ? 800 : 500));
-      resolveDamage(h, best, { amount, type: 'true' });
+      resolveDamage(h, best, { amount: retributionDamage(h), type: 'true' });
       if (typeof Mlbb !== 'undefined') Mlbb.applyRetriEvolve(h, best);
       Game.fx.ring(best.x, best.y, best.radius + 40, THEME.warn, 0.5);
       return true;

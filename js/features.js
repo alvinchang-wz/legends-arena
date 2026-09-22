@@ -193,7 +193,6 @@ const Features = {
 
   tickHeroes(dt) {
     for (const h of Game.heroes) {
-      if (h.spawnProtT > 0) h.spawnProtT -= dt;
       if (h.spawnGateT > 0) h.spawnGateT -= dt;
       if (h.combatT > 0) h.combatT -= dt;
       if (h.shrineT > 0) h.shrineT -= dt;
@@ -402,19 +401,21 @@ const Features = {
     }
   },
 
-  onMinionDeath(m, src) {
+  /* `gold` is what the last-hitter actually earned (its share plus the
+     last-hit bonus, see Minion.die). */
+  onMinionDeath(m, src, gold) {
     if (!(src instanceof Hero) || src.team === m.team) return;
     src.cs = (src.cs || 0) + 1;
-    if (src.isPlayer) {
+    if (src.isPlayer && gold > 0) {
       Game.floaters.push({
-        x: m.x, y: m.y - 20, vy: -50, txt: `+${m.goldValue}g`, color: THEME.gold,
+        x: m.x, y: m.y - 20, vy: -50, txt: `+${Math.round(gold)}g`, color: THEME.gold,
         age: 0, dur: 0.7, size: 13, outline: true,
       });
     }
   },
 
+  /* Spawn protection itself is set and ticked by Hero (it must run headless). */
   onRespawn(h) {
-    h.spawnProtT = 2.5;
     h.spawnGateT = 0.7;
     Game.fx.ring(h.x, h.y, 80, '#9be7ff', 0.7);
   },

@@ -157,48 +157,10 @@ const Mlbb = {
     }
   },
 
-  /* ---------- economy / roles ---------- */
-  onMinionKill(m, src) {
-    if (!(src instanceof Hero)) return;
-    if (src.lane === 'jungle') return;
-    for (const h of Game.heroes) {
-      if (h === src || h.team !== src.team || !h.alive) continue;
-      if (h.lane !== 'roam') continue;
-      if (dist(h, m) > 820) continue;
-      const share = Math.round(m.goldValue * 0.22);
-      h.gainGold(share);
-      if (h.isPlayer) {
-        Game.floaters.push({
-          x: m.x + 12, y: m.y - 8, vy: -44, txt: `+${share}g roam`, color: THEME.gold,
-          age: 0, dur: 0.7, size: 12, outline: true,
-        });
-      }
-    }
-  },
-
-  monsterGold(src, gold) {
-    if (src && src.lane === 'jungle') return Math.round(gold * 1.18);
-    return gold;
-  },
-  monsterXp(src, xp) {
-    if (src && src.lane === 'jungle') return Math.round(xp * 1.12);
-    return xp;
-  },
-
-  proximityAssists(victim, killer) {
-    const extra = [];
-    for (const h of Game.heroes) {
-      if (h.team !== killer.team || h === killer || !h.alive) continue;
-      if (dist(h, victim) > 720) continue;
-      extra.push(h);
-    }
-    return extra;
-  },
-
-  assistGold(assister, share) {
-    if (assister.lane === 'roam') return share * 1.35;
-    return share;
-  },
+  /* ---------- economy / roles ----------
+     Every economy rule (minion share, roam and jungle roles, proximity
+     assists, first-turret gold) lives in entities.js / data.js so the
+     headless simulator sees it. This file keeps HUD, chat and callouts. */
 
   /* ---------- slogans ---------- */
   killSlogan(killer, victim, info) {
@@ -239,19 +201,15 @@ const Mlbb = {
     return dist(home, b0) < dist(home, b1) ? TEAM_BLUE : TEAM_RED;
   },
 
-  onTurretKill(tower, src) {
-    if (tower.isBase || Game.firstTurret || Game.isDuel()) return;
-    Game.firstTurret = true;
-    const team = src && src.team != null ? src.team : (tower.team === TEAM_BLUE ? TEAM_RED : TEAM_BLUE);
-    const bonus = 60;
-    for (const h of Game.heroes) if (h.team === team) h.gainGold(bonus);
-    UI.announce('🗼 FIRST TURRET', 'major');
+  /* The first-turret gold is paid in Tower.die; this is the banner only. */
+  onTurretKill(tower, src, first) {
+    if (!first || tower.isBase || Game.isDuel()) return;
     UI.banner('FIRST TURRET');
   },
 
   /* ---------- Retribution evolve ---------- */
   retriDamage(h, monster) {
-    return monster && monster.epic ? 800 : 500;
+    return retributionDamage(h);
   },
   applyRetriEvolve(h, monster) {
     const ev = h.retriEvolve;

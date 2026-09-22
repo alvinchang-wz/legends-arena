@@ -38,7 +38,24 @@ const COMBAT = {
   CDR_CAP: 0.40,        // cooldown reduction hard cap
   TENACITY_CAP: 0.60,   // CC-duration reduction hard cap
   LIFESTEAL_MINION: 0.4,// lifesteal is weaker off non-heroes, as in ML
-  BACKDOOR_MULT: 0.25,  // hero damage to structures with no allied minion nearby
+  BACKDOOR_MULT: 0.5,   // hero damage to structures with no allied minion within COVER_RADIUS
+  COVER_RADIUS: 410,    // = turret range: a wave standing in the turret's ring is cover
+};
+
+/* ============================================================
+   Minions
+   ============================================================
+   One row per kind, evaluated as `base + perMin * minutes` at spawn (a wave
+   keeps the stats it spawned with). Side waves are melee + ranged + siege
+   every wave; mid runs melee + 3 ranged until the eleventh wave. Gold is at
+   the 0.6x scale of the whole economy (docs/design/lanes-economy.md, 2).
+   `atkPerMinLate` replaces `atkPerMin` for the minutes after
+   BALANCE.minionLateAtkFrom (the cannon's late-game ramp). */
+const MINION_STATS = {
+  melee:  { hp: 330,  hpPerMin: 14, atk: 14, atkPerMin: 0.6, atkPerMinLate: 0.6, armor: 8,  armorPerMin: 0.4, range: 55,  atkSpd: 1.0, radius: 16, structMult: 2,   gold: 40, goldPerMin: 0.7, xp: 44 },
+  ranged: { hp: 230,  hpPerMin: 9,  atk: 22, atkPerMin: 0.9, atkPerMinLate: 0.9, armor: 8,  armorPerMin: 0.4, range: 260, atkSpd: 1.0, radius: 16, structMult: 2,   gold: 20, goldPerMin: 1.1, xp: 30 },
+  siege:  { hp: 620,  hpPerMin: 30, atk: 32, atkPerMin: 2.0, atkPerMinLate: 3.0, armor: 14, armorPerMin: 0.5, range: 300, atkSpd: 0.8, radius: 22, structMult: 3,   gold: 60, goldPerMin: 1.0, xp: 60 },
+  super:  { hp: 1800, hpPerMin: 60, atk: 95, atkPerMin: 3.0, atkPerMinLate: 3.0, armor: 30, armorPerMin: 0.5, range: 90,  atkSpd: 1.0, radius: 24, structMult: 3.4, gold: 60, goldPerMin: 0,   xp: 60 },
 };
 
 /* Effective post-mitigation multiplier for one damage type. */
@@ -590,30 +607,63 @@ const HEROES = [
 /* Fast lookup — several systems (draft, mastery, save files) key on hero id. */
 const HERO_BY_ID = Object.fromEntries(HEROES.map(h => [h.id, h]));
 
+/* Retribution's true damage to any monster, camps and epics alike: 560 at L4,
+   1,000 at L15 (8% of a late Lord), so a secure is contested rather than a
+   coin flip. Bots cast it when the epic's HP is at or under this. */
+const retributionDamage = h => 400 + 40 * (h ? h.level : 1);
+
 /* ============================================================
    Misc tuning
    ============================================================ */
 const BALANCE = {
   xpNeed: l => 80 + 65 * (l - 1),
   maxLevel: 15,
-  respawnTime: l => 4.2 + 1.15 * l,
-  /* Economy rewards are deliberately flatter than combat power. A level-15
-     pick is worth 310 before modifiers, so one late fight cannot create an
-     entire completed item out of thin air. */
-  heroKillGold: victim => 145 + 11 * victim.level,
-  heroKillXp: victim => 95 + 24 * victim.level,
-  assistGoldPool: 110,
-  repeatDeathPenalty: 0.14,
-  repeatDeathFloor: 0.50,
-  shutdownGold: streak => Math.min(280, Math.max(0, streak - 2) * 56),
-  towerGold: 85,
-  inhibitorGold: 95,
+  /* Respawn grows with the clock, not only with level: a won fight late has
+     to buy the time to walk a lane and take an inhibitor. x1.25 from 18:00,
+     hard cap 75 s (L12 at 12:00 = 40.4 s, L15 at 18:00 = 66.5 s). */
+  respawnTime: (l, t = 0) => Math.min(75, (3.2 + 2.1 * l + t / 60) * (t >= 1080 ? 1.25 : 1)),
+  spawnProtection: 2.5,
+  /* Economy rewards are deliberately flatter than combat power (0.6x of the
+     reference). A level-15 pick is worth 160 before modifiers, so kills are
+     15-25% of team gold and the map is the main income. */
+  heroKillGold: victim => 100 + 4 * victim.level,
+  heroKillXp: victim => 70 + 15 * victim.level,
+  assistShare: 0.60,           // of the kill base, split among assisters
+  assistRadius: 720,           // allies this close to the victim assist without touching it
+  repeatDeathPenalty: 0.12,
+  repeatDeathFloor: 0.30,
+  shutdownGold: streak => Math.min(180, Math.max(0, streak - 2) * 40),
+  /* Structures. Turret tiers by `frac` (outer >= 0.39, middle >= 0.26, else
+     inner); the base crystal has its own row. Gold is per hero of the
+     taking team. `shield` is the outer's opening energy shield pool. */
+  turret: {
+    outer:  { hp: 3000, armor: 20, atk: 190, atkPerMin: 2.3, gold: 50, shield: 1800 },
+    middle: { hp: 3400, armor: 20, atk: 215, atkPerMin: 2.5, gold: 65, shield: 0 },
+    inner:  { hp: 3800, armor: 40, atk: 300, atkPerMin: 3.0, gold: 80, shield: 0 },
+    base:   { hp: 4800, armor: 40, atk: 300, atkPerMin: 1.2, gold: 0,  shield: 0 },
+  },
+  firstTowerGold: 30,
+  towerRamp: 0.35,             // turret hit n on the same hero = ATK x (1 + ramp x min(rampCap, n - 1))
+  towerRampCap: 8,
+  towerRampReset: 2.0,         // seconds without the turret damaging that hero
+  towerShieldEnd: 300,         // the six outers' energy shield lasts 0:00-5:00
+  towerShieldDr: 0.30,         // damage reduction on what leaks past the shield
+  towerShieldMinionHit: 25,    // minions deal a fixed amount to the shield (siege: x2)
+  towerShieldGoldCap: 180,     // 1 gold per 10 shield damage, per outer
+  towerShieldAllyDr: 0.15,     // allied heroes within turret range of a shielded outer
+  orangeAlertUntil: 480,       // an outer dying before this arms the middle turret behind it
+  orangeAlertDur: 60,
+  orangeAlertDr: 0.5,
+  inhibitorHp: 1800,
+  inhibitorGold: 80,
+  lateSiegeAt: 1200,           // from 20:00 inhibitors and the crystal take +25% and Lord respawns faster
+  lateSiegeMult: 1.25,
   objectiveComebackMax: 0.7,
   comebackStartGold: 1200,
   comebackFullGold: 5200,
   comebackMaxGoldPerSec: 1.35,
   passiveGoldPerSec: 1.8,
-  passiveXpPerSec: 4,
+  passiveXpPerSec: 2,
   /* Padding applied in Hero.recalcStats so every kit gets a longer TTK
      without rewriting 28 stat blocks. Armor/MR now halve damage around 95. */
   heroHpPad: 55,
@@ -622,21 +672,45 @@ const BALANCE = {
   /* Duel starts with enough gold for boots plus a component so the 1v1 is a
      build-and-fight, not a naked auto-attack trade. */
   duelStartGold: 1800,
-  waveInterval: 26,
-  minionScalePerMin: 0.045,
+  /* Waves: first at 0:10, then every 30 s on every lane for the whole match.
+     Mid gets its cannon from wave 11 (5:10). */
+  waveInterval: 30,
+  firstWaveAt: 10,
+  midCannonFromWave: 11,
+  minionSpeed: 180,            // 0.69x hero speed: side waves clash at 0:40, mid at 0:31
+  minionSpeedUpFrom: 600,      // from 10:00, +10 wu/s per minute, cap +80 (260 at 18:00)
+  minionSpeedUpPerMin: 10,
+  minionSpeedUpCap: 80,
+  minionLateAtkFrom: 720,      // the cannon's ATK growth steepens from 12:00
+  /* Minion gold is proximity-shared: the pool is split among enemy heroes
+     within the share radius, the last-hitting hero adds a bonus on top, and
+     a non-hero kill (turret, minion) pays 80% of the pool. The jungler
+     (Retribution) and the roamer (Roam item) stay out of lane income early. */
+  minionShareRadius: 600,
+  lastHitBonus: 0.20,
+  nonHeroKillShare: 0.80,
+  junglerMinionPenaltyUntil: 300,
+  junglerMinionShare: 0.5,
+  roamNoFarmUntil: 480,
+  junglerCreepMult: 1.4,       // Retribution holder: creep gold and XP
+  junglerCreepDr: 0.4,         // ... and takes 40% less damage from creeps
 
-  /* The opening five minutes have jobs instead of three identical roads.
-     Gold lane accelerates a carry's first item, EXP lane accelerates levels,
-     and outer-turret plates give pressure a bounded reward without making a
-     full early tower worth an entire build. */
+  /* The opening waves have jobs instead of three identical roads. The cannon
+     of the gold lane (top) pays more gold, the cannon of the EXP lane (bot)
+     more XP, for the first ten waves; the outers' energy shield gives early
+     pressure a bounded reward. laneBonusEnd is the shield / announcement clock. */
   laneBonusEnd: 300,
-  goldLaneMult: 1.25,
-  expLaneMult: 1.25,
-  towerPlateGold: 80,
+  laneBonusWaves: 10,
+  goldLaneMult: 1.30,
+  expLaneMult: 1.35,
 
-  /* A stalled match needs a stronger question than "take the same Lord
-     again". After fifteen minutes Lord evolves and pressures all three lanes. */
+  /* Epics. Turtle: three at most (2:00, then 120 s after each death, none
+     scheduled after a 6:00 death); Lord from 8:00, evolves at 15:00 and
+     pressures all three lanes. */
+  turtleLastSpawnBefore: 360,
+  turtleGold: [45, 55, 65],
   ancientLordAt: 900,
+  lordWaveBoost: 60,           // seconds of +50% HP/ATK waves for the team that took Lord
 
   /* Skill points: one per hero level, ultimate gated behind these levels.
      maxSkillRank must sum to maxLevel or heroes finish with points they can

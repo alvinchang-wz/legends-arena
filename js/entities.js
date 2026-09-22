@@ -392,6 +392,12 @@ class Hero extends Unit {
     if (this.emblem && this.emblem.id === 'marksman' && target.cc) {
       target.cc.applySlow(0.15, 1, target.attrs ? target.attrs.get('tenacity') : 0);
     }
+    // Fury Rune: basic attacks on heroes slow 30% for 1 s, once per 3 s per target
+    if (this.runes.redBuff > 0 && target.type === 'hero' && target.cc && target.marks &&
+        !(target.marks.furyT > Game.time)) {
+      target.marks.furyT = Game.time + 3;
+      target.cc.applySlow(0.3, 1, target.attrs ? target.attrs.get('tenacity') : 0);
+    }
     this.emblemOnHeroDamage(target, dmg);
   }
   onSkillLanded(target, dmg, s) {
@@ -560,18 +566,31 @@ class Hero extends Unit {
     this.curTarget = null; this.aiTarget = null;
     this.fleeT = 0;
     this.adapt.caution = Math.min(0.2, this.adapt.caution + 0.05);
-    this.respawnT = BALANCE.respawnTime(this.level);
+    this.respawnT = BALANCE.respawnTime(this.level, Game.time);
     Game.fx.death(this);
     Game.kills[1 - this.team]++;
 
-    const killer = (src instanceof Hero && src.team !== this.team) ? src : null;
+    /* A turret or minion kill is credited to the enemy hero that hurt the
+       victim most recently (within 8 s); with no hero involved the death is
+       an execution and pays nothing. */
+    let killer = (src instanceof Hero && src.team !== this.team) ? src : null;
+    if (!killer) {
+      let latest = -Infinity;
+      for (const r of this.recentDmg) {
+        if (r.h && r.h.alive !== undefined && r.h.team !== this.team && Game.time - r.t < 8 && r.t > latest) {
+          latest = r.t; killer = r.h;
+        }
+      }
+    }
+    const xp = BALANCE.heroKillXp(this);
     if (killer) {
       killer.kills++; killer.streak++; killer.deathStreak = 0;
       killer.adapt.caution = Math.max(-0.06, killer.adapt.caution - 0.02);
+      const killBase = BALANCE.heroKillGold(this);
       const repeatMult = Math.max(BALANCE.repeatDeathFloor,
         1 - repeatedDeaths * BALANCE.repeatDeathPenalty);
       const shutdown = BALANCE.shutdownGold(bountyStreak);
-      killer.gainGold(BALANCE.heroKillGold(this) * repeatMult + shutdown);
+      killer.gainGold(killBase * repeatMult + shutdown);
       killer.fire('onKill', this);
       if (killer.emblem && killer.emblem.id === 'assassin') killer.heal(killer.maxHp * 0.12);
       let firstBloodNow = false;
@@ -594,25 +613,31 @@ class Hero extends Unit {
       else if (killer.isPlayer && killer.comboKills < 2) UI.announce('You have slain an enemy', 'kill');
       if (shutdown > 0) UI.announce(`💰 SHUTDOWN — ${killer.name} +${shutdown}`, 'major');
       if (killer.isPlayer) SFX.kill();
+      /* Assists: everyone who damaged the victim in the last 8 s, plus any
+         teammate close enough to have been part of the fight. The pool is
+         60% of the kill base, split equally; kill XP is split between the
+         killer and the assisters. */
       const assisters = this.recentDmg
-        .filter(r => r.h !== killer && r.h.alive !== undefined && Game.time - r.t < 8)
+        .filter(r => r.h !== killer && r.h.alive !== undefined && r.h.team === killer.team && Game.time - r.t < 8)
         .map(r => r.h);
-      if (typeof Mlbb !== 'undefined') {
-        for (const h of Mlbb.proximityAssists(this, killer)) {
-          if (!assisters.includes(h)) assisters.push(h);
-        }
+      for (const h of Game.heroes) {
+        if (h.team !== killer.team || h === killer || !h.alive || assisters.includes(h)) continue;
+        if (dist(h, this) < BALANCE.assistRadius) assisters.push(h);
       }
-      const assistShare = assisters.length ? BALANCE.assistGoldPool / assisters.length : 0;
+      const assistShare = assisters.length ? killBase * BALANCE.assistShare / assisters.length : 0;
+      const xpEach = xp / (1 + assisters.length);
+      killer.gainXp(xpEach);
       for (const assister of assisters) {
         assister.assists++;
-        const gold = typeof Mlbb !== 'undefined' ? Mlbb.assistGold(assister, assistShare) : assistShare;
-        assister.gainGold(gold);
+        assister.gainGold(assistShare);
+        assister.gainXp(xpEach);
         assister.fire('onAssist', this);
       }
-    }
-    const xp = BALANCE.heroKillXp(this);
-    for (const h of Game.heroes) {
-      if (h.team !== this.team && h.alive && dist(h, this) < 700) h.gainXp(xp);
+    } else {
+      // executed: no gold anywhere, XP only to the enemies standing there
+      for (const h of Game.heroes) {
+        if (h.team !== this.team && h.alive && dist(h, this) < 700) h.gainXp(xp);
+      }
     }
     const recapHits = this.recentDmg.slice();
     this.recentDmg = [];
@@ -651,16 +676,25 @@ class Hero extends Unit {
   pullMinionAggro(attacker) {
     for (const m of Game.minions) {
       if (!m.alive || m.team !== this.team) continue;
-      if (dist(m, this) > 420) continue;
-      if (dist(m, attacker) > 520) continue;
+      if (dist(m, this) > 500) continue;
+      if (dist(m, attacker) > 600) continue;
       m.target = attacker;
-      m.retargetT = 2.5;              // hold the new target through a retarget tick
+      m.retargetT = 3.0;              // hold the new target through a retarget tick
     }
+  }
+
+  /* The roamer, for the early minion-share rule: whoever carries a Roam item,
+     or a bot assigned the roam position (bots do not reliably buy one). */
+  isRoamer() {
+    if (this.lane === 'roam') return true;
+    for (const it of this.items) if (it && it.cat === 'Roam') return true;
+    return false;
   }
 
   respawn() {
     this.recalcStats(true);
     this.alive = true;
+    this.spawnProtT = BALANCE.spawnProtection;
     this.cc.clear();
     const b = Game.fountain(this.team);
     this.x = b.x + rand(-70, 70); this.y = b.y + rand(-70, 70);
@@ -813,7 +847,10 @@ class Hero extends Unit {
     if (this.fleeT > 0) this.fleeT -= dt;
     if (this.spellCd > 0) this.spellCd -= dt;
     if (this.reflectT > 0) this.reflectT -= dt;
+    if (this.spawnProtT > 0) this.spawnProtT -= dt;
     if (this.hot) { this.heal(this.hot.rate * dt); this.hot.t -= dt; if (this.hot.t <= 0) this.hot = null; }
+    // the crab's Gold Buff: a trickle rather than a lump, so it is worth holding on to
+    if (this.buffs.goldBuff && this.buffs.goldBuff.t > 0) this.gainGold(this.buffs.goldBuff.value * dt);
 
     // bots shop whenever they are home with gold to spend
     if (!this.isPlayer) {
@@ -1234,6 +1271,7 @@ class Hero extends Unit {
   }
 
   botTargetSafe(u) {
+    if (u.isStructure && u.shieldedByOuter) return false;   // immune while the tier in front stands
     if (!this.advancedAI) return true;
     const tower = this.enemyTowerCovering(u);
     if (!tower || this.hasMinionCover(tower)) return true;
@@ -1621,7 +1659,7 @@ class Hero extends Unit {
       if (allies < p.objectiveMinAllies) continue;
       if (this.advancedAI) {
         const f = this.localFightPower(mo.x, mo.y, p.objectiveRange);
-        const secureDamage = this.spell && this.spell.id === 'retribution' && this.spellCd <= 0 ? 800 : 0;
+        const secureDamage = this.spell && this.spell.id === 'retribution' && this.spellCd <= 0 ? retributionDamage(this) : 0;
         const secureWindow = mo.hp <= secureDamage + Game.basicAttackDamage(this, mo);
         if (!secureWindow && f.enemies > 0 && f.enemyPower > f.allyPower * p.objectiveEnemyRatio) continue;
       }
@@ -1834,9 +1872,9 @@ class Hero extends Unit {
       // Secure on actual damage, not an HP percentage that fires thousands of
       // health too early on Lord. Prefer the epic when two monsters overlap.
       let best = null, bestScore = Infinity;
+      const damage = retributionDamage(this);
       for (const m of Game.monsters) {
         if (!m.alive || dist(this, m) > 380) continue;
-        const damage = m.epic ? 800 : 500;
         if (m.hp > damage) continue;
         const score = m.hp - (m.epic ? 10000 : 0);
         if (score < bestScore) { bestScore = score; best = m; }
@@ -2256,39 +2294,52 @@ class Hero extends Unit {
 
 /* ================= Minion ================= */
 class Minion extends Unit {
-  constructor(team, lane, kind) {
+  /* `slot` / `count`: this minion's place in its wave, front to back. A wave
+     spawns as a column (melee in front, the cannon last) rather than a
+     cloud, so the clash timing is the same for every wave. Kinds without a
+     MINION_STATS row (the Lord minion) start from the melee row and
+     override in their own constructor. */
+  constructor(team, lane, kind, slot = 0, count = 1) {
     const path = Game.lanesFor(team)[lane];
     const p0 = path[0];
     const p1 = path[Math.min(1, path.length - 1)];
     const dx = p1.x - p0.x, dy = p1.y - p0.y;
     const seg = Math.hypot(dx, dy) || 1;
     const ux = dx / seg, uy = dy / seg;
+    const spec = MINION_STATS[kind] || MINION_STATS.melee;
     /* Spawn on this lane's first stretch, not on the shared citadel pixel.
-       10v10's four roads all begin at the same point; a ±50 scatter there
-       makes twelve minions walk back into the fountain before they split. */
+       10v10's four roads all begin at the same point; a scatter there makes
+       twelve minions walk back into the fountain before they split. */
     const formSide = rand(0, 1) < 0.5 ? -1 : 1;
-    const formOff = kind === 'melee' ? 16 : 24;
-    const along = 40 + rand(0, Math.min(96, seg * 0.7));
+    const formOff = spec.range < 100 ? 16 : 24;
+    const along = 40 + 60 * Math.max(0, count - 1 - slot);
     const lat = formOff * formSide;
     let x = p0.x + ux * along - uy * lat;
     let y = p0.y + uy * along + ux * lat;
     if (Game.wallAt(x, y, 18)) { x = p0.x + ux * along; y = p0.y + uy * along; }
     super(x, y, team);
     this.type = 'minion'; this.lane = lane; this.kind = kind;
+    this.siege = kind === 'siege';
     this.path = path; this.wpIdx = path.length > 1 ? 1 : 0;
-    this.radius = 16;
+    this.waveN = Game.waveN;
+    this.radius = spec.radius;
+    /* Linear growth per minute of the clock at spawn; a wave keeps the stats
+       it spawned with. The old post-18:00 kicker is gone: matches must not
+       depend on it. */
     const mins = Game.time / 60;
-    const s = 1 + mins * BALANCE.minionScalePerMin + Math.max(0, mins - 18) * 0.12;
+    const late = Math.max(0, mins - BALANCE.minionLateAtkFrom / 60);
+    const boosted = Game.waveBoost && Game.waveBoost[team] > Game.time ? 1.5 : 1;
     const A = this.attrs.base;
-    A.speed = 180; A.atkSpd = 1; A.armor = 8; A.mr = 8;
-    if (kind === 'melee') {
-      this.maxHp = Math.round(330 * s); A.physAtk = Math.round(14 * s);
-      this.range = 55; this.goldValue = 38; this.xpValue = 55;
-    } else {
-      this.maxHp = Math.round(230 * s); A.physAtk = Math.round(22 * s);
-      this.range = 260; this.ranged = true; this.projColor = TEAM_COLORS[team];
-      this.goldValue = 42; this.xpValue = 45;
-    }
+    A.speed = BALANCE.minionSpeed + clamp((mins - BALANCE.minionSpeedUpFrom / 60) * BALANCE.minionSpeedUpPerMin, 0, BALANCE.minionSpeedUpCap);
+    A.atkSpd = spec.atkSpd;
+    A.armor = A.mr = spec.armor + spec.armorPerMin * mins;
+    this.maxHp = Math.round((spec.hp + spec.hpPerMin * mins) * boosted);
+    A.physAtk = Math.round((spec.atk + spec.atkPerMin * (mins - late) + spec.atkPerMinLate * late) * boosted);
+    this.range = spec.range;
+    this.structMult = spec.structMult;
+    this.goldValue = spec.gold + spec.goldPerMin * mins;
+    this.xpValue = spec.xp;
+    if (spec.range > 150) { this.ranged = true; this.projColor = TEAM_COLORS[team]; }
     A.maxHp = this.maxHp;
     this.hp = this.maxHp;
     this.target = null; this.retargetT = 0;
@@ -2297,7 +2348,7 @@ class Minion extends Unit {
   }
   attackPacket(target) {
     return {
-      amount: this.curAtk() * (target && target.isStructure ? 2 : 1),
+      amount: this.curAtk() * (target && target.isStructure ? this.structMult : 1),
       type: 'physical', isBasic: true,
     };
   }
@@ -2321,7 +2372,7 @@ class Minion extends Unit {
   }
 
   pickMinionTarget() {
-    const siege = this.kind === 'super' || this.kind === 'lord';
+    const siege = this.kind === 'super' || this.kind === 'lord' || this.kind === 'siege';
     const pathLeash = siege ? 640 : 240;
     let nearbyMinion = false;
     for (const u of Game.enemyUnits(this.team, { structures: true })) {
@@ -2408,7 +2459,7 @@ class Minion extends Unit {
     if (t) {
       if (this.inAttackRange(t)) {
         this.tryAttack(t);
-        if (this.ranged && this.distTo(t) < this.range * 0.62) {
+        if (this.ranged && !this.siege && this.distTo(t) < this.range * 0.62) {
           const dx = this.x - t.x, dy = this.y - t.y, m = Math.hypot(dx, dy) || 1;
           const kx = this.x + dx / m * 90, ky = this.y + dy / m * 90;
           if (!Game.wallAt(kx, ky, this.radius + 4)) this.moveToward(kx, ky, dt);
@@ -2427,79 +2478,134 @@ class Minion extends Unit {
     }
     this.trackVelocity(dt);
   }
+  /* Minion rewards are proximity-shared (docs/design/lanes-economy.md, 5):
+     the gold and XP pools are split equally among enemy heroes within the
+     share radius; the last-hitting hero adds a bonus on top; a kill by a
+     turret or a minion pays 80% of the pool. The jungler (Retribution) takes
+     half a share and is not counted against the laner before 5:00; the
+     roamer (Roam item) takes nothing while a teammate is nearby before 8:00.
+     The cannon of the gold lane pays +30% gold and the cannon of the EXP
+     lane +35% XP for the first ten waves. */
   die(src) {
     this.alive = false;
     Game._minionDeaths = (Game._minionDeaths || 0) + 1;   // invalidates per-frame wave caches
     Game.fx.spark(this.x, this.y, TEAM_COLORS[this.team], 5);
-    const opening = !Game.isDuel() && Game.time < BALANCE.laneBonusEnd;
-    if (src instanceof Hero && src.team !== this.team) {
-      const gold = this.goldValue * (opening && (this.lane === 'top' || this.lane === 'dusk') ? BALANCE.goldLaneMult : 1);
-      src.gainGold(gold);
-      if (typeof Features !== 'undefined') Features.onMinionDeath(this, src);
-      if (typeof Mlbb !== 'undefined') Mlbb.onMinionKill(this, src);
+    let gold = this.goldValue, xp = this.xpValue;
+    if (this.siege && this.waveN <= BALANCE.laneBonusWaves && !Game.isDuel()) {
+      if (this.lane === 'top' || this.lane === 'dusk') gold *= BALANCE.goldLaneMult;
+      else if (this.lane === 'bot' || this.lane === 'dawn') xp *= BALANCE.expLaneMult;
     }
+    const heroKill = src instanceof Hero && src.team !== this.team;
+    const R = BALANCE.minionShareRadius;
+    const junglerEarly = Game.time < BALANCE.junglerMinionPenaltyUntil;
+    const roamEarly = Game.time < BALANCE.roamNoFarmUntil;
+    const sharers = Minion._sharers; sharers.length = 0;
+    let counted = 0;
     for (const h of Game.heroes) {
-      if (h.team !== this.team && h.alive && dist(h, this) < 600) {
-        const xp = this.xpValue * (opening && (this.lane === 'bot' || this.lane === 'dawn') ? BALANCE.expLaneMult : 1);
-        h.gainXp(xp);
+      if (h.team === this.team || !h.alive || dist(h, this) >= R) continue;
+      let weight = 1;
+      if (junglerEarly && h.spell && h.spell.id === 'retribution') weight = BALANCE.junglerMinionShare;
+      else if (roamEarly && h.isRoamer()) {
+        let ally = false;
+        for (const a of Game.heroes) {
+          if (a !== h && a.team === h.team && a.alive && dist(a, this) < R) { ally = true; break; }
+        }
+        if (ally) continue;
       }
+      if (weight >= 1) counted++;
+      sharers.push(h, weight);
     }
+    if (sharers.length) {
+      const pool = gold * (heroKill ? 1 : BALANCE.nonHeroKillShare);
+      const n = Math.max(1, counted);
+      for (let i = 0; i < sharers.length; i += 2) {
+        const h = sharers[i], w = sharers[i + 1];
+        let g = pool / n * w;
+        if (h === src) g += gold * BALANCE.lastHitBonus;
+        h.gainGold(g);
+        h.gainXp(xp / n * w);
+        if (h === src && typeof Features !== 'undefined') Features.onMinionDeath(this, src, g);
+      }
+    } else if (heroKill && typeof Features !== 'undefined') Features.onMinionDeath(this, src, 0);
+    sharers.length = 0;
   }
 }
+Minion._sharers = [];   // scratch list, so a wave dying under a turret allocates nothing
 
 /* ================= Tower / Base ================= */
 class Tower extends Unit {
+  /* `tier` is 'outer' | 'middle' | 'inner' | 'base', a BALANCE.turret row.
+     Game.start sets it from the spot's `frac` after construction. */
   constructor(x, y, team, isBase) {
     super(x, y, team);
     this.type = 'tower'; this.isStructure = true; this.isBase = !!isBase;
     this.radius = isBase ? 150 : 100;     // the reference turret footprint is about 7 map px
-    this.maxHp = this.hp = isBase ? 5600 : 3200;
     const A = this.attrs.base;
-    A.maxHp = this.maxHp;
-    A.armor = 45; A.mr = 45;
-    A.physAtk = isBase ? 280 : 190;
-    A.atkSpd = 0.8; A.speed = 0;
+    A.atkSpd = 1.0; A.speed = 0;
+    this.setTier(isBase ? 'base' : 'outer');
     this.range = isBase ? 470 : 410;     // 28 map px: the reference turret's range ring, measured on the phone
     this.ranged = true; this.projColor = THEME.gold;
     this.target = null;
-    this.focusTarget = null; this.focusHits = 0;
-    this.shieldedByOuter = false;   // set by Game each frame (Tier 3 turret shielding)
+    this.focusTarget = null; this.focusHits = 0; this.focusT = -Infinity;
+    this.shieldedByOuter = false;   // set by Game each frame (the tier behind a live one is immune)
+    this.alertT = 0;                // Orange Alert: 50% damage taken until this clock time
+    this.disabledT = 0;             // cannot fire while > 0 (Summoned Lord charge)
     this.chargeT = 0;               // fire telegraph, for the renderer
   }
+  setTier(tier, hpMult = 1) {
+    const T = BALANCE.turret[tier] || BALANCE.turret.outer;
+    this.tier = tier;
+    this.maxHp = this.hp = Math.round(T.hp * hpMult);
+    const A = this.attrs.base;
+    A.maxHp = this.maxHp;
+    A.armor = T.armor; A.mr = T.armor;
+    A.physAtk = T.atk;
+    this.atkPerMin = T.atkPerMin;
+    this.shield = Game.isDuel() ? 0 : T.shield;   // energy shield pool, outers only
+    this.shieldMax = this.shield;
+    this.shieldGold = 0;
+  }
+  curAtk() { return this.attrs.get('physAtk') + this.atkPerMin * Game.time / 60; }
+  /* The outer's opening energy shield: absorbs before HP until 5:00. */
+  get shieldActive() { return this.shield > 0 && Game.time < BALANCE.towerShieldEnd; }
+  get shieldPhase() { return this.shieldMax > 0 && Game.time < BALANCE.towerShieldEnd; }
+  /* Hero ramp: hit n on the same hero deals ATK x (1 + 0.35 x min(8, n - 1)).
+     It resets 2 s after the turret last damaged that hero, not when the
+     turret shoots a minion in between. */
   attackPacket(target) {
     let ramp = 1;
     if (target && target.type === 'hero') {
-      if (this.focusTarget !== target) { this.focusTarget = target; this.focusHits = 0; }
-      ramp += Math.min(4, this.focusHits) * 0.18;
+      if (this.focusTarget !== target || Game.time - this.focusT > BALANCE.towerRampReset) {
+        this.focusTarget = target; this.focusHits = 0;
+      }
+      ramp += Math.min(BALANCE.towerRampCap, this.focusHits) * BALANCE.towerRamp;
       this.focusHits++;
-    } else {
-      this.focusTarget = target; this.focusHits = 0;
+      this.focusT = Game.time;
     }
-    return {
-      amount: this.curAtk() * (target && target.type === 'hero' ? 1.22 * ramp : 1),
-      type: 'true', isBasic: false,
-    };
+    return { amount: this.curAtk() * ramp, type: 'true', isBasic: false };
   }
   onDamaged(src, dmg, packet) {
     super.onDamaged(src, dmg, packet);
-    if (this.isBase || !this.plates || Game.isDuel() || Game.time >= BALANCE.laneBonusEnd || !src) return;
-    const attackerTeam = src.team;
-    if (attackerTeam !== TEAM_BLUE && attackerTeam !== TEAM_RED || attackerTeam === this.team) return;
-    while (this.plates > 0 && this.hp <= this.plateMaxHp * this.plates / 4) {
-      this.plates--;
-      const earners = Game.heroes.filter(h => h.team === attackerTeam && h.alive && dist(h, this) < 760);
-      const share = earners.length ? BALANCE.towerPlateGold / earners.length : 0;
-      for (const h of earners) h.gainGold(share);
+    if (!this.shieldActive || !src || src.team === this.team) return;
+    // the shield eats the hit before health, and pays the hero that chips it
+    const absorbed = Math.min(this.shield, dmg);
+    this.shield -= absorbed;
+    this.hp += absorbed;
+    if (src.type === 'hero') {
+      const pay = Math.min(absorbed / 10, BALANCE.towerShieldGoldCap - this.shieldGold);
+      if (pay > 0) { this.shieldGold += pay; src.gainGold(pay); }
+    }
+    if (this.shield <= 0) {
+      this.shield = 0;
       Game.fx.ring(this.x, this.y, this.radius + 34, THEME.gold, 0.45);
-      const player = Game.player;
-      if (player && player.team === attackerTeam && earners.includes(player)) {
-        UI.announce(`🛡 Turret plate broken +${Math.round(share)} gold`, 'minor');
-      }
+      if (Game.player && Game.player.team === src.team) UI.announce('🛡 Enemy turret shield broken', 'minor');
     }
   }
   update(dt) {
     if (!this.alive) return;
     this.baseUpdate(dt);
+    if (this.disabledT > 0) { this.disabledT -= dt; this.chargeT = 0; return; }
+    if (this.focusHits > 0 && Game.time - this.focusT > BALANCE.towerRampReset) this.focusHits = 0;
     let t = this.target;
     if (t && (!t.alive || this.distTo(t) > this.range + this.radius + t.radius + 30)) t = null;
     /* Protect allied heroes: if an enemy in range just hit one of ours, that
@@ -2525,7 +2631,10 @@ class Tower extends Unit {
       for (const m of Game.minions) {
         if (m.team === this.team || !m.alive) continue;
         const dx = m.x - this.x, dy = m.y - this.y, d2 = dx * dx + dy * dy, r = reach + m.radius;
-        if (d2 <= r * r && d2 < bd) { bd = d2; t = m; }
+        if (d2 > r * r) continue;
+        // the Summoned Lord is shot before any other non-hero
+        if (m.kind === 'lord') { t = m; break; }
+        if (d2 < bd) { bd = d2; t = m; }
       }
       if (!t) {
         bd = Infinity;
@@ -2536,7 +2645,6 @@ class Tower extends Unit {
         }
       }
     }
-    if (t !== this.focusTarget) { this.focusTarget = t; this.focusHits = 0; }
     this.target = t;
     this.chargeT = t && this.atkCd > 0 ? clamp(1 - this.atkCd * this.curAtkSpd(), 0, 1) : 0;
     if (t) this.tryAttack(t);
@@ -2548,11 +2656,25 @@ class Tower extends Unit {
     SFX.tower();
     if (this.isBase) { Game.endGame(1 - this.team); return; }
     const enemyTeam = 1 - this.team;
-    const reward = Game.objectiveGoldPerHero(enemyTeam, BALANCE.towerGold);
+    const T = BALANCE.turret[this.tier] || BALANCE.turret.outer;
+    let reward = Game.objectiveGoldPerHero(enemyTeam, T.gold);
+    let first = false;
+    if (!Game.firstTurret && !Game.isDuel()) {
+      Game.firstTurret = true; first = true;
+      reward += BALANCE.firstTowerGold;
+    }
     for (const h of Game.heroes) if (h.team === enemyTeam) h.gainGold(reward);
+    /* Orange Alert: an outer lost before 8:00 hardens the middle turret
+       behind it for a minute, so an early snowball cannot run a whole lane. */
+    if (this.tier === 'outer' && Game.time < BALANCE.orangeAlertUntil) {
+      for (const o of Game.towers) {
+        if (o.alive && o.team === this.team && o.lane === this.lane && o.tier === 'middle') o.alertT = Game.time + BALANCE.orangeAlertDur;
+      }
+    }
     UI.announce(this.team === TEAM_BLUE ? '💔 Your turret has fallen!' : '🎉 Enemy turret destroyed!', this.team === TEAM_BLUE ? 'death' : 'kill');
     UI.killFeed(src, this);
-    if (typeof Mlbb !== 'undefined') Mlbb.onTurretKill(this, src);
+    if (first) UI.announce('🗼 FIRST TURRET', 'major');
+    if (typeof Mlbb !== 'undefined') Mlbb.onTurretKill(this, src, first);
   }
 }
 
@@ -2606,17 +2728,21 @@ class Monster extends Unit {
     if (this.inAttackRange(best)) this.tryAttack(best);
     else this.moveToward(best.x, best.y, dt);
   }
+  /* Camp rewards go to the killer; a Retribution holder gets x1.4. The crab
+     pays a Gold Buff trickle (+2/s for 18 s) instead of a lump. */
   die(src) {
     this.alive = false;
     Game.fx.spark(this.x, this.y, THEME.neutral, 10);
     if (src instanceof Hero) {
-      const gold = typeof Mlbb !== 'undefined' ? Mlbb.monsterGold(src, this.goldValue) : this.goldValue;
-      const xp = typeof Mlbb !== 'undefined' ? Mlbb.monsterXp(src, this.xpValue) : this.xpValue;
+      const mult = src.spell && src.spell.id === 'retribution' ? BALANCE.junglerCreepMult : 1;
+      let gold = Math.round(this.goldValue * mult);
+      const xp = Math.round(this.xpValue * mult);
+      if (this.kind === 'crab') src.addTimedBuff('goldBuff', 2 * mult, 18);
       src.gainGold(gold);
       src.gainXp(xp);
       src.jungleHits = (src.jungleHits || 0) + 1;
       if (typeof Mlbb !== 'undefined') Mlbb.onBuffKill(this, src);
-      if (src.isPlayer) UI.announce(`Jungle monster slain +${gold} 💰`, 'minor');
+      if (src.isPlayer) UI.announce(this.kind === 'crab' ? `Crab slain +${gold} 💰 and Gold Buff (+2/s for 18s)` : `Jungle monster slain +${gold} 💰`, 'minor');
     }
     this.home.respawnT = this.respawn || 55;
   }

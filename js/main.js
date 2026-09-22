@@ -122,7 +122,8 @@ const Game = {
     this.spectate = !heroDef;
     this.followHero = null;
     if (!this.spectate) this.simSpeed = 1;
-    this.time = 0; this.waveT = 3; this.waveN = 0;
+    this.time = 0; this.waveT = BALANCE.firstWaveAt; this.waveN = 0;
+    this.waveBoost = [0, 0];      // per team: clock time until which new waves spawn enhanced (Lord)
     this.kills = [0, 0]; this.firstBlood = false; this.firstTurret = false;
     this.heroes = []; this.minions = []; this.monsters = [];
     this.projectiles = []; this.zones = []; this.effects = []; this.floaters = []; this.indicators = [];
@@ -135,22 +136,14 @@ const Game = {
       const t = new Tower(s.x, s.y, s.team, false);
       t.lane = s.lane; t.frac = s.frac;
       /* A turret is a siege objective, not a large minion. Outer towers can be
-         pressured early, while middle and inner towers demand progressively
-         longer commitments after the map opens. */
-      let tierHp = s.frac >= 0.39 ? 3600 : s.frac >= 0.26 ? 4100 : 4800;
-      if (this.isTen()) tierHp = Math.round(tierHp * 1.28);
-      t.maxHp = t.hp = tierHp;
-      t.attrs.base.maxHp = tierHp;
-      t.plates = s.frac >= 0.39 ? 3 : 0;
-      t.plateMaxHp = tierHp;
+         pressured early (behind an energy shield until 5:00), while middle
+         and inner towers are immune until the tier in front of them falls. */
+      t.setTier(s.frac >= 0.39 ? 'outer' : s.frac >= 0.26 ? 'middle' : 'inner', this.isTen() ? 1.28 : 1);
       return t;
     });
     this.bases = basePts.map((b, i) => {
       const t = new Tower(b.x, b.y, i, true);
-      if (this.isTen()) {
-        t.maxHp = t.hp = 8200;
-        t.attrs.base.maxHp = 8200;
-      }
+      t.setTier('base', this.isTen() ? 1.7 : 1);
       return t;
     });
 
@@ -166,7 +159,7 @@ const Game = {
     for (const c of this.camps) this.monsters.push(new BuffMonster(c));
 
     this.epics = this.isDuel() ? null : {
-      turtle: { next: this.TURTLE_AT, unit: null, pos: this.isTen() ? TEN_MAP.beaconWest : TURTLE_PIT, n: 0 },
+      turtle: { next: this.TURTLE_AT, unit: null, pos: this.isTen() ? TEN_MAP.beaconWest : TURTLE_PIT, n: 0, taken: 0 },
       lord:   { next: this.LORD_AT,   unit: null, pos: this.isTen() ? TEN_MAP.crater : LORD_PIT },
     };
     /* `kind` is always the rune that is up *or* the one the clock is counting
@@ -868,7 +861,7 @@ const Game = {
     for (const k of ['lord', 'turtle']) {
       const e = this.epics[k];
       // the turtle stops spawning once Lord is on the clock, as in ML
-      if (k === 'turtle' && this.time >= this.LORD_AT) continue;
+      if (k === 'turtle' && (this.time >= this.LORD_AT || (!e.unit && e.next === Infinity))) continue;
       out.push({
         key: k,
         icon: this.isTen() ? (k === 'lord' ? '🌋' : '🕯️') : (k === 'lord' ? '👑' : '🐢'),
@@ -948,30 +941,62 @@ const Game = {
     this.surrender = null;
   },
 
+  /* Turtle: 120 s after each death, but nothing is scheduled after a death at
+     6:00 or later, so there are at most three (2:00, ~4:30, ~7:00) before the
+     Lord takes the clock at 8:00. Lord: 180 s, 120 s from 20:00. */
   scheduleEpic(kind) {
     const e = this.epics[kind];
     e.unit = null;
-    e.next = this.time + (kind === 'lord' ? this.LORD_RESPAWN : this.TURTLE_RESPAWN);
+    if (kind === 'turtle' && !this.isTen() && this.time >= BALANCE.turtleLastSpawnBefore) { e.next = Infinity; return; }
+    const lordRespawn = this.time >= BALANCE.lateSiegeAt ? 120 : this.LORD_RESPAWN;
+    e.next = this.time + (kind === 'lord' ? lordRespawn : this.TURTLE_RESPAWN);
   },
-  /* Lord minions push the lane the winning team is furthest ahead in — the
-     one where the extra siege pressure actually converts. */
-  spawnLordMinion(team, evolved = false) {
+  /* Wave composition per lane. Side lanes: melee + ranged + siege from wave
+     one; mid: melee + three ranged until the cannon joins from wave 11. The
+     array order is the marching order (first = front). 10v10 keeps its own
+     smaller waves. */
+  WAVE_SIDE: ['melee', 'ranged', 'siege'],
+  WAVE_MID_EARLY: ['melee', 'ranged', 'ranged', 'ranged'],
+  WAVE_TEN: ['melee', 'melee', 'ranged'],
+  waveComposition(lane, waveN) {
+    if (this.isTen()) return this.WAVE_TEN;
+    if (lane === 'mid' && waveN < BALANCE.midCannonFromWave) return this.WAVE_MID_EARLY;
+    return this.WAVE_SIDE;
+  },
+  /* The lane a Summoned Lord walks: fewest live enemy structures on that
+     polyline (turret labels are physical for both teams), tie -> the enemy
+     outer with the least HP, tie -> mid. */
+  lordMinionLane(team) {
     const lanes = this.pushLanes();
+    let best = 'mid', bestScore = -Infinity;
+    for (const lane of lanes) {
+      let left = 0, outerHp = 1;
+      for (const t of this.towers) {
+        if (!t.alive || t.team === team || t.lane !== lane) continue;
+        left++;
+        if (t.tier === 'outer') outerHp = t.hp / t.maxHp;
+      }
+      for (const inh of this.inhibitors) if (inh.alive && inh.team !== team && inh.lane === lane) left++;
+      const score = -left * 10 - outerHp + (lane === 'mid' ? 0.001 : 0);
+      if (score > bestScore) { bestScore = score; best = lane; }
+    }
+    return best;
+  },
+  /* One Summoned Lord per Lord kill (one per lane once the Lord has evolved),
+     starting at the river so it arrives while the fight that won it still
+     matters. Waves spawned by the killing team are enhanced for a minute. */
+  spawnLordMinion(team, evolved = false) {
+    this.waveBoost[team] = this.time + BALANCE.lordWaveBoost;
     if (evolved) {
-      for (const lane of lanes) this.minions.push(new LordMinion(team, lane, true));
+      for (const lane of this.pushLanes()) this.minions.push(new LordMinion(team, lane, true));
       UI.announce(this.isTen()
         ? '🌋 ELDER COLOSSUS — siege engines on every road!'
         : '👑 ANCIENT LORD — empowered waves marching every lane!', 'major');
       return;
     }
-    let best = lanes[0], bestScore = -Infinity;
-    for (const lane of lanes) {
-      const enemyLeft = this.towers.filter(t => t.alive && t.team !== team && t.lane === lane).length;
-      const score = -enemyLeft;
-      if (score > bestScore) { bestScore = score; best = lane; }
-    }
-    for (let i = 0; i < 2; i++) this.minions.push(new LordMinion(team, best, false));
-    UI.announce(this.isTen() ? `🌋 Colossus engines marching ${best}!` : `👑 The Warden's host marching ${best}!`, 'minor');
+    const best = this.lordMinionLane(team);
+    this.minions.push(new LordMinion(team, best, false));
+    UI.announce(this.isTen() ? `🌋 Colossus engine marching ${best}!` : `👑 The Warden's host marching ${best}!`, 'minor');
   },
   enemyUnits(team, opts = {}) {
     const out = [];
@@ -1174,8 +1199,8 @@ const Game = {
       if (!this.phaseFlags.laningEnded && this.time >= BALANCE.laneBonusEnd) {
         this.phaseFlags.laningEnded = true;
         UI.announce(this.isTen()
-          ? '🛡 TURRET PLATING FALLEN — Dusk tribute and Dawn ascendant bonuses ended'
-          : '🛡 TURRET PLATING FALLEN — Gold and EXP lane bonuses ended', 'major');
+          ? '🛡 TURRET SHIELDS DOWN — Dusk tribute and Dawn ascendant bonuses ended'
+          : '🛡 TURRET SHIELDS DOWN — cannon gold and EXP bonuses ended', 'major');
       }
       if (!this.phaseFlags.ancientLord && this.time >= BALANCE.ancientLordAt) {
         this.phaseFlags.ancientLord = true;
@@ -1190,18 +1215,17 @@ const Game = {
     // minion waves
     if (!this.isDuel()) this.waveT -= dt;
     if (!this.isDuel() && this.waveT <= 0) {
-      this.waveT = BALANCE.waveInterval;
+      this.waveT += BALANCE.waveInterval;
       this.waveN++;
       if (this.minions.length < (this.isTen() ? 260 : 180)) {
-        const extra = this.isTen() ? 0 : ((this.time > 300 ? 1 : 0) + (this.time > 600 ? 1 : 0));
-        const meleeN = this.isTen() ? 2 : 3 + extra;
-        const rangedN = this.isTen() ? 1 : 2;
         for (const team of [TEAM_BLUE, TEAM_RED]) {
           for (const lane of this.pushLanes()) {
-            for (let i = 0; i < meleeN; i++) this.minions.push(new Minion(team, lane, 'melee'));
-            for (let i = 0; i < rangedN; i++) this.minions.push(new Minion(team, lane, 'ranged'));
+            const kinds = this.waveComposition(lane, this.waveN);
             const inh = this.inhibitors.find(x => x.team !== team && x.lane === lane);
-            if (inh && !inh.alive) this.minions.push(new SuperMinion(team, lane));
+            const superN = inh && !inh.alive ? 1 : 0;
+            const count = kinds.length + superN;
+            kinds.forEach((kind, i) => this.minions.push(new Minion(team, lane, kind, i, count)));
+            if (superN) this.minions.push(new SuperMinion(team, lane, kinds.length, count));
           }
         }
       }
@@ -1241,12 +1265,21 @@ const Game = {
       }
     }
 
-    /* Turret shielding is sequential: a tier only becomes vulnerable once
-       every tower farther down that lane has fallen. */
+    /* Sieges are sequential: a tier is immune until every tower farther down
+       that lane has fallen; an inhibitor is immune while its inner turret
+       stands; the crystal is immune while all of its inhibitors stand. */
     for (const t of this.towers) {
       if (!t.alive) continue;
       t.shieldedByOuter = this.towers.some(o => o.alive && o.team === t.team &&
         o.lane === t.lane && o.frac > t.frac);
+    }
+    for (const inh of this.inhibitors) {
+      if (!inh.alive) continue;
+      inh.shieldedByOuter = this.towers.some(o => o.alive && o.team === inh.team && o.lane === inh.lane);
+    }
+    for (const b of this.bases) {
+      if (!b.alive) continue;
+      b.shieldedByOuter = this.inhibitors.length > 0 && this.inhibitors.every(i => i.team !== b.team || i.alive);
     }
 
     for (const inh of this.inhibitors) inh.update(dt);
@@ -2609,6 +2642,14 @@ function drawMinionKind(m) {
       ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, TAU);
       ctx.fillStyle = THEME.gold; ctx.fill();
       ctx.restore();
+    } else if (m.kind === 'siege') {
+      // the cannon: a squat barrel on a gold wheel
+      ctx.beginPath(); ctx.arc(0, cy + r * 0.1, r * 0.34, 0, TAU);
+      ctx.fillStyle = THEME.gold; ctx.fill();
+      ctx.strokeStyle = 'rgba(10,14,24,0.55)'; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.beginPath();
+      ctx.rect(-r * 0.16, cy - r * 0.62, r * 0.32, r * 0.7);
+      ctx.fillStyle = THEME.text; ctx.fill();
     } else {
       ctx.beginPath();
       ctx.moveTo(0, cy - r * 0.42);
@@ -3429,17 +3470,26 @@ function drawStructureGround(t) {
     ctx.strokeStyle = rgba(THEME.shield, 0.45); ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]); ctx.stroke(); ctx.setLineDash([]);
   }
-  // Three opening plates are both a reward track and a readable timer. Each
-  // broken quarter removes one gold arc; every arc disappears at five minutes.
-  if (!t.isBase && t.plates > 0 && Game.time < BALANCE.laneBonusEnd) {
+  // The outer's opening energy shield is both a reward track and a readable
+  // timer: three gold arcs, each fading with its third of the pool; every arc
+  // disappears at five minutes.
+  if (t.shieldActive) {
+    const frac = t.shield / t.shieldMax;
     ctx.lineWidth = 4;
-    ctx.strokeStyle = rgba(THEME.gold, 0.82);
     ctx.shadowColor = THEME.gold; ctx.shadowBlur = 9;
-    for (let i = 0; i < t.plates; i++) {
+    for (let i = 0; i < 3; i++) {
+      const fill = clamp(frac * 3 - i, 0, 1);
+      if (fill <= 0) continue;
+      ctx.strokeStyle = rgba(THEME.gold, 0.25 + 0.57 * fill);
       const a = -Math.PI / 2 + i * TAU / 3;
       ctx.beginPath(); ctx.arc(t.x, t.y, R + 17, a + 0.16, a + TAU / 3 - 0.16); ctx.stroke();
     }
     ctx.shadowBlur = 0;
+  }
+  // Orange Alert: the hardened middle turret shows a warm ring
+  if (t.alertT > Game.time) {
+    ctx.beginPath(); ctx.arc(t.x, t.y, R + 22, 0, TAU);
+    ctx.strokeStyle = rgba(THEME.warn, 0.5); ctx.lineWidth = 3; ctx.stroke();
   }
 }
 
@@ -3462,7 +3512,7 @@ function drawInhibitor(u) {
       ctx.fillStyle = rgba(THEME.text, 0.8);
       ctx.font = `800 14px ${UI_FONT}`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(Math.ceil(u.respawnT) + 's', 0, -10);
+      ctx.fillText('DESTROYED', 0, -10);   // inhibitors never come back
       ctx.textBaseline = 'alphabetic';
       ctx.globalAlpha = 1;
     });

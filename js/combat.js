@@ -165,19 +165,49 @@ function resolveDamage(src, target, packet) {
     amount *= COMBAT.SKILL_DMG;
   }
 
-  if (target instanceof Hero && typeof Features !== 'undefined' && Features.blockDamage(target)) {
-    return 0;
-  }
-  /* --- structures take reduced hero damage without minion support --- */
-  if (target.isStructure && src && src.type === 'hero') {
-    if (target.shieldedByOuter) amount *= 0.4;
-    const cover = Game.minions.some(m => m.team === src.team && m.alive && dist(m, target) < 340);
-    if (!cover) amount *= COMBAT.BACKDOOR_MULT;
+  if (target.type === 'hero' && target.spawnProtT > 0) return 0;   // spawn protection
+
+  /* --- structures (docs/design/lanes-economy.md, 9-10, 14) --- */
+  let fixed = false;   // the hit ignores mitigation (fixed minion damage to a shield)
+  if (target.isStructure) {
+    // the tier behind a live one, an inhibitor behind its inner, the crystal behind its inhibitors
+    if (target.shieldedByOuter) return 0;
+    const srcType = src ? src.type : null;
+    if (srcType === 'hero') {
+      // no minion cover -> half damage; a Summoned Lord nearby -> +15%
+      let cover = false, escort = false;
+      for (const m of Game.minions) {
+        if (m.team !== src.team || !m.alive) continue;
+        if (!cover && dist(m, target) < COMBAT.COVER_RADIUS) cover = true;
+        if (!escort && m.kind === 'lord' && dist(m, src) < 600) escort = true;
+        if (cover && escort) break;
+      }
+      if (!cover) amount *= COMBAT.BACKDOOR_MULT;
+      if (escort) amount *= 1.15;
+    } else if (srcType === 'minion') {
+      if (target.shieldActive) { amount = BALANCE.towerShieldMinionHit * (src.siege ? 2 : 1); fixed = true; }
+      else if (target.isBase && src.kind !== 'super' && src.kind !== 'lord') amount *= 0.5;
+    }
+    if (target.shieldPhase && !target.shieldActive && !fixed) amount *= 1 - BALANCE.towerShieldDr;
+    if (target.alertT > Game.time) amount *= BALANCE.orangeAlertDr;
+    if ((target.isBase || target.type === 'inhibitor') && Game.time >= BALANCE.lateSiegeAt) amount *= BALANCE.lateSiegeMult;
+  } else if (target.type === 'hero' && src) {
+    if (src.type === 'hero' && Game.time < BALANCE.towerShieldEnd) {
+      // allied heroes standing with a shielded outer take less from heroes
+      for (const t of Game.towers) {
+        if (t.team !== target.team || !t.alive || !t.shieldActive) continue;
+        if (dist(t, target) < t.range) { amount *= 1 - BALANCE.towerShieldAllyDr; break; }
+      }
+    } else if (src.type === 'monster' && target.spell && target.spell.id === 'retribution') {
+      amount *= 1 - BALANCE.junglerCreepDr;
+    }
   }
 
   /* --- mitigation --- */
   let mult = 1;
-  if (type === 'physical') {
+  if (fixed) {
+    // already final
+  } else if (type === 'physical') {
     const flat = (S ? S.get('physPen') : 0) + (packet.pen ? packet.pen.flat || 0 : 0);
     const pct = (S ? S.get('physPenPct') : 0) + (packet.pen ? packet.pen.pct || 0 : 0);
     mult = mitigation(target.armorValue(), flat, pct);
