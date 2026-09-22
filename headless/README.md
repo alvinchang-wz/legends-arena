@@ -1,7 +1,8 @@
 # Headless simulator
 
 Runs the browser game's real `Game.update()` loop in Node (no build step, no
-dependencies) at roughly 50x real time, bit-identical for a given seed. The
+dependencies) at roughly 35-45x real time single-threaded (full match,
+stats on), bit-identical for a given seed. The
 game scripts under `js/` are loaded as-is; everything in this directory is
 instrumentation around them.
 
@@ -27,6 +28,15 @@ and `performance.now` are stubbed. Two fresh simulators with the same seed and
 options produce identical state streams, event logs and statistics
 (`runtime.test.js`: 300 s of game time compared as JSON). Instrumentation
 adds no random draws, so `stats: true|false` does not change a match.
+
+The timestep is genuinely fixed: every `Game.update` call receives exactly
+`stepMs` (1/60 s) and the number of steps is an integer derived from the total
+time requested, so `intervalMs`, `step(n)` and `Env.step(actions, dtMs)` only
+decide *when you look*, never what happens. Seed 1 is the same match whether
+you snapshot every 50 ms or every minute (`runtime.test.js`). The price is that
+snapshot times quantize to whole steps (`run({durationMs: 125})` stops at
+116.67 ms, reported as 117); a duration that is not a multiple of 16.67 ms is
+never overshot.
 
 ## Statistics (`sim.stats()`)
 

@@ -138,8 +138,7 @@ function main() {
     stream.write(jsonLine(complete));
   }
   if (args.output) stream.end();
-  if (args.stats) fs.writeFileSync(args.stats, JSON.stringify(simulator.stats(), null, 2) + '
-');
+  if (args.stats) fs.writeFileSync(args.stats, JSON.stringify(simulator.stats(), null, 2) + '\n');
 }
 
 process.stdout.on('error', error => {

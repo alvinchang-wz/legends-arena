@@ -251,9 +251,12 @@ class HeadlessSimulator {
     this.Game = this.runtime.Game;
     this.sequence = 0;
     this.outputTimeMs = 0;
+    this.requestedMs = 0;
+    this.stepsDone = 0;
     this._dynamicIds = new WeakMap();
     this._nextDynamicId = 1;
     this._start();
+    this._labelEntities();
     this._stats = this.options.stats ? require('./stats').attachStats(this) : null;
   }
 
@@ -326,6 +329,17 @@ class HeadlessSimulator {
 
   availableHeroes() {
     return this.runtime.HEROES.map(h => ({ id: h.id, name: h.name, role: h.role }));
+  }
+
+  /* Give every dynamic entity (monster, minion, projectile, zone) its id in
+     game-array order as soon as it exists, so an id never depends on when a
+     snapshot or observation first happened to include the entity. */
+  _labelEntities() {
+    const G = this.Game;
+    for (const list of [G.monsters, G.minions, G.projectiles, G.zones]) {
+      if (!list) continue;
+      for (let i = 0; i < list.length; i++) this._entityRef(list[i]);
+    }
   }
 
   _entityRef(unit) {
@@ -549,13 +563,21 @@ class HeadlessSimulator {
   step(intervalMs = this.options.intervalMs) {
     intervalMs = numberOption(intervalMs, this.options.intervalMs, 'intervalMs', 0);
     if (this.Game.state !== 'play') return this.snapshot();
-    let remaining = intervalMs;
-    while (remaining > 1e-9 && this.Game.state === 'play') {
-      const dtMs = Math.min(this.options.stepMs, remaining);
-      this.Game.update(dtMs / 1000);
-      remaining -= dtMs;
+    // Fixed timestep: every Game.update gets exactly stepMs, and the number
+    // of steps is derived from the total requested time (an integer count,
+    // no float accumulator), so the update sequence, and therefore the
+    // match, is the same whatever intervalMs or dtMs callers step by.
+    // Snapshot times are quantized to whole steps as a consequence.
+    const stepMs = this.options.stepMs;
+    this.requestedMs += intervalMs;
+    const targetSteps = Math.floor(this.requestedMs / stepMs + 1e-6);
+    const dt = stepMs / 1000;
+    while (this.stepsDone < targetSteps && this.Game.state === 'play') {
+      this.Game.update(dt);
+      this.stepsDone++;
+      this._labelEntities();
     }
-    this.outputTimeMs += intervalMs - remaining;
+    this.outputTimeMs = this.requestedMs;
     return this.snapshot();
   }
 
