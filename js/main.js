@@ -98,9 +98,25 @@ const Game = {
     return p;
   },
 
+  /* The five archetype slots a drafted side fills: gold-lane carry, mid mage,
+     jungler, front-liner, roamer. Each slot lists the archetypes that can take
+     it, first choice first. The alternates keep Fighters and Tanks in the pool
+     without ever producing more than one doubled archetype: only slots 3-5 can
+     collide, and a collision in one rules out the other. */
+  DRAFT_SLOTS: [
+    ['Marksman'],
+    ['Mage'],
+    ['Assassin', 'Fighter'],
+    ['Tank', 'Fighter'],
+    ['Support', 'Tank'],
+  ],
+
   /* Turn a (possibly sparse) drafted side into a full five. Explicit picks are
-     kept exactly as drafted; empty slots roll random heroes that the side isn't
-     already fielding, which is what the old shuffle did for every slot. */
+     kept exactly as drafted and claim the slot they fit; every empty slot rolls
+     a hero for the archetype that side still needs, so a drafted team always
+     fields a jungler and a front line instead of five random heroes (which gave
+     86% of teams a doubled archetype and sometimes left the jungle to a
+     Marksman). Modes other than 5v5 keep the old any-hero fill. */
   rosterFor(wanted) {
     const n = this.teamSize();
     const out = (wanted || []).slice(0, n);
@@ -108,8 +124,32 @@ const Game = {
     const used = new Set(out.filter(Boolean));
     const unique = shuffle(HEROES).filter(h => !used.has(h) && !(typeof Mlbb !== 'undefined' && Mlbb.isBanned(h)));
     const pool = unique.concat(shuffle(HEROES));
-    let pi = 0;
-    return out.map(h => h || pool[pi++] || HEROES[0]);
+    if (n !== 5) {
+      let pi = 0;
+      return out.map(h => h || pool[pi++] || HEROES[0]);
+    }
+    const slots = this.DRAFT_SLOTS.map(roles => roles.slice());
+    for (const h of out) {
+      if (!h) continue;
+      const i = slots.findIndex(roles => roles.indexOf(h.role) >= 0);
+      if (i >= 0) slots.splice(i, 1);
+    }
+    const take = role => {
+      const i = role ? pool.findIndex(h => h.role === role) : 0;
+      return i >= 0 ? pool.splice(i, 1)[0] : null;
+    };
+    return out.map(h => {
+      if (h) return h;
+      const slot = slots.shift() || [];
+      // the alternate archetype comes up about two times in five, so Fighters
+      // and second Tanks stay in the game without crowding out the first pick
+      const order = slot.length > 1 && Math.random() < 0.4 ? [slot[1], slot[0]] : slot;
+      for (const role of order) {
+        const hero = take(role);
+        if (hero) return hero;
+      }
+      return take(null) || HEROES[0];
+    });
   },
 
   /* Build one 5v5 side. Positions come from assignLanes (bot-ai.md §7):

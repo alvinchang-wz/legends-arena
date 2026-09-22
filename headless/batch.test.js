@@ -31,6 +31,34 @@ test('random lineups follow the role composition and are reproducible', () => {
   assert.equal(drawLineup(roster, prng(1), taken, 'red').length, 5);
 });
 
+test('draft lineups hand the game nothing and it drafts a sane five', () => {
+  const jobs = buildJobs(parseOptions({ matches: '3', lineups: 'draft' }), roster);
+  assert.equal(jobs.length, 3);
+  for (const job of jobs) {
+    assert.equal(job.blueLineup, null);
+    assert.equal(job.redLineup, null);
+  }
+  /* The game's own draft: one archetype may be doubled, never two, and the
+     jungle goes to an assassin or fighter whenever the team has one. */
+  for (let seed = 1; seed <= 12; seed++) {
+    const sim = createSimulator({ seed, stats: false });
+    for (const team of [0, 1]) {
+      const side = sim.Game.heroes.filter(h => h.team === team);
+      assert.equal(side.length, 5);
+      const counts = {};
+      for (const h of side) counts[h.def0.role] = (counts[h.def0.role] || 0) + 1;
+      const extra = Object.values(counts).reduce((sum, n) => sum + Math.max(0, n - 1), 0);
+      assert.ok(extra <= 1, `seed ${seed} team ${team}: ${JSON.stringify(counts)}`);
+      const jungler = side.find(h => h.lane === 'jungle');
+      assert.ok(jungler, `seed ${seed} team ${team} has no jungler`);
+      const native = side.some(h => h.def0.role === 'Assassin' || h.def0.role === 'Fighter');
+      assert.ok(native, `seed ${seed} team ${team} drafted nobody who can jungle`);
+      assert.ok(jungler.def0.role !== 'Marksman' && jungler.def0.role !== 'Support',
+        `seed ${seed} team ${team}: ${jungler.def0.role} in the jungle`);
+    }
+  }
+});
+
 test('batch runs matches in workers and aggregates them', async () => {
   const options = parseOptions({ matches: '3', 'seed-start': '11', 'duration-cap-ms': '45000', workers: '3', quiet: true });
   const { aggregate, results, markdown } = await runBatch(options);

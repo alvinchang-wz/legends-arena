@@ -68,12 +68,18 @@ const POSITION_PERMS = (() => {
    and the longer-ranged hero takes the gold lane. Deterministic — no RNG,
    so a seeded match always drafts the same way. */
 function assignLanes(defs) {
+  /* A Marksman or a Support in the jungle is a draft accident, not a plan: it
+     starves the gold lane and hands the enemy jungler the camps. Forbidden
+     outright whenever somebody on the team can take the position instead. */
+  const hasJungler = defs.some(d => d && (d.role === 'Assassin' || d.role === 'Fighter'));
   let best = null, bestScore = -Infinity;
   for (const perm of POSITION_PERMS) {
     let score = 0;
     for (let i = 0; i < defs.length && i < 5; i++) {
-      const pref = LANE_PREF[defs[i] && defs[i].role] || LANE_PREF.Fighter;
+      const role = defs[i] && defs[i].role;
+      const pref = LANE_PREF[role] || LANE_PREF.Fighter;
       score += (pref[perm[i]] || 0) * 100;
+      if (hasJungler && perm[i] === 'jungle' && (role === 'Marksman' || role === 'Support')) score -= 1e6;
     }
     for (let i = 0; i < defs.length && i < 5; i++) {
       if (perm[i] === 'jungle') score += (defs[i].speed || 250) * 0.02;

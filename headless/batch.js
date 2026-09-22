@@ -9,7 +9,8 @@
  *
  * Each match is fully determined by (seed, lineups, mode, bots), so a batch
  * is reproducible from its --seed-start. Random lineups are drawn from the
- * batch seed, not from the game's RNG.
+ * batch seed, not from the game's RNG; `--lineups draft` draws nothing and
+ * lets the game draft both sides itself, which is what a real match plays.
  */
 
 const fs = require('fs');
@@ -27,7 +28,8 @@ Options:
   --seed-start S         First game seed; match i uses S + i (default: 1)
   --duration-cap-ms N    Stop a match after this much game time (default: none; the game caps at 30 min)
   --mode standard|duel   Match mode (default: standard)
-  --lineups random|fixed random: 5 per team drawn by role composition (default)
+  --lineups MODE         draft: the game drafts both sides itself, exactly as a real match
+                         random: 5 per team drawn by role composition (default)
                          fixed: --blue-lineup / --red-lineup (or the game's own draft when omitted)
   --blue-lineup IDS      Comma-separated hero ids (fixed lineups)
   --red-lineup IDS       Comma-separated hero ids (fixed lineups)
@@ -106,7 +108,13 @@ function buildJobs(options, roster) {
   for (let i = 0; i < options.matches; i++) {
     const seed = options.seedStart + i;
     const job = { index: i, seed, mode: options.mode, bots: options.bots, durationCapMs: options.durationCapMs };
-    if (options.lineups === 'random' && options.mode === 'standard') {
+    if (options.lineups === 'draft') {
+      /* Nothing is handed to the game: Game.start() runs its own draft
+         (rosterFor + assignLanes) off the seeded RNG, so the batch measures
+         the compositions players actually get. */
+      job.blueLineup = null;
+      job.redLineup = null;
+    } else if (options.lineups === 'random' && options.mode === 'standard') {
       const random = prng(seed * 7919 + 17);
       const taken = new Set();
       job.blueLineup = drawLineup(roster, random, taken, 'blue');
@@ -182,6 +190,39 @@ function goldAt(hero, timeMs) {
   return sample ? sample.goldEarned : null;
 }
 
+/* What the drafts actually produced, per side of every match: how many
+   archetypes are doubled up and which archetype ended up in the jungle. With
+   --lineups draft this is the composition players really get. */
+function composition(results) {
+  const sides = [];
+  for (const result of results) {
+    for (const team of ['blue', 'red']) {
+      const side = result.heroes.filter(h => h.team === team);
+      if (!side.length) continue;
+      const counts = {};
+      for (const hero of side) counts[hero.role] = (counts[hero.role] || 0) + 1;
+      const extra = Object.values(counts).reduce((sum, n) => sum + Math.max(0, n - 1), 0);
+      const jungler = side.find(h => h.lane === 'jungle');
+      const hasNativeJungler = side.some(h => h.role === 'Assassin' || h.role === 'Fighter');
+      sides.push({
+        extraCopies: extra,
+        jungleRole: jungler ? jungler.role : null,
+        offRoleJungle: !!jungler && hasNativeJungler && (jungler.role === 'Marksman' || jungler.role === 'Support'),
+      });
+    }
+  }
+  if (!sides.length) return null;
+  const jungleRoles = {};
+  for (const side of sides) if (side.jungleRole) jungleRoles[side.jungleRole] = (jungleRoles[side.jungleRole] || 0) + 1;
+  return {
+    teams: sides.length,
+    withDuplicate: sides.filter(s => s.extraCopies >= 1).length,
+    withTwoOrMoreDuplicates: sides.filter(s => s.extraCopies >= 2).length,
+    offRoleJungle: sides.filter(s => s.offRoleJungle).length,
+    jungleRoles,
+  };
+}
+
 function aggregate(results, options) {
   const heroes = new Map();
   const roles = new Map();
@@ -246,6 +287,7 @@ function aggregate(results, options) {
   const kpm = results.map(r => r.match.killsPerMinute);
   const wallMs = results.map(r => r.match.wallMs);
   return {
+    composition: composition(results),
     matches: results.length,
     finished: results.filter(r => r.match.finished).length,
     blueWins: results.filter(r => r.match.winner === 'blue').length,
@@ -274,6 +316,14 @@ function markdown(agg, options, elapsedMs) {
   lines.push('## Match length distribution', '', '| Bucket | Matches |', '|---|---|');
   for (const [key, count] of Object.entries(agg.matchLengthMinutes.histogram).sort((a, b) => parseInt(a[0], 10) - parseInt(b[0], 10))) {
     lines.push(`| ${key} | ${count} |`);
+  }
+  if (agg.composition) {
+    const c = agg.composition;
+    const jungle = Object.entries(c.jungleRoles).sort((a, b) => b[1] - a[1]).map(([role, n]) => `${role} ${n}`).join(', ') || '-';
+    lines.push('', '## Draft composition', '',
+      `- Teams with a doubled archetype: ${c.withDuplicate}/${c.teams} (${pct(c.withDuplicate / c.teams)}); two or more doubled: ${c.withTwoOrMoreDuplicates}`,
+      `- Jungle archetype: ${jungle}`,
+      `- Marksman/Support jungling with an assassin or fighter on the team: ${c.offRoleJungle}`);
   }
   lines.push('', '## Per role', '', '| Role | Picks | Win rate | K | D | A | Damage share | Gold at 10:00 |', '|---|---|---|---|---|---|---|---|');
   for (const role of agg.perRole) {
@@ -351,7 +401,7 @@ function parseOptions(args) {
     quiet: !!args.quiet,
   };
   if (!Number.isInteger(options.matches) || options.matches < 1) throw new Error('--matches must be a positive integer');
-  if (!['random', 'fixed'].includes(options.lineups)) throw new Error('--lineups must be random or fixed');
+  if (!['draft', 'random', 'fixed'].includes(options.lineups)) throw new Error('--lineups must be draft, random or fixed');
   if (!['heuristic', 'neural'].includes(options.bots)) throw new Error('--bots must be heuristic or neural');
   return options;
 }
@@ -377,4 +427,4 @@ if (isMainThread && require.main === module) {
   });
 }
 
-module.exports = { runBatch, parseOptions, buildJobs, drawLineup, aggregate, markdown, prng };
+module.exports = { runBatch, parseOptions, buildJobs, drawLineup, aggregate, composition, markdown, prng };

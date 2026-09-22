@@ -17,7 +17,7 @@ instrumentation around them.
 
 ```sh
 node headless/simulate.js --until-end --interval-ms 1000 --seed 7 --stats match-stats.json > match.jsonl
-node headless/batch.js --matches 100 --seed-start 1 --out ./batch-out
+node headless/batch.js --matches 100 --lineups draft --seed-start 1 --out ./batch-out
 for f in headless/*.test.js; do node "$f"; done
 ```
 
@@ -69,20 +69,26 @@ damage-based (`recentDmg`); the game may also grant proximity assists, so
 ## Batch runner
 
 ```
-node headless/batch.js --matches 100 --seed-start 1 --workers 8 --out ./batch-out
+node headless/batch.js --matches 100 --lineups draft --seed-start 1 --workers 8 --out ./batch-out
   --duration-cap-ms N      stop each match at N ms of game time
   --mode standard|duel
-  --lineups random|fixed   random: 1 marksman, 1 mage, 1 tank, 1 assassin/fighter,
+  --lineups draft          the game drafts both sides itself (Game.rosterFor +
+                           assignLanes off the seeded RNG): the compositions a
+                           player actually gets. Use this to measure the game
+  --lineups random         (default) 1 marksman, 1 mage, 1 tank, 1 assassin/fighter,
                            1 support/fighter per team, drawn from the batch seed
-                           (not the game's RNG) and ordered to the lanes Game.start assigns
-  --blue-lineup a,b,c,d,e --red-lineup ...   (fixed)
+                           (not the game's RNG) and ordered to the lanes Game.start assigns.
+                           Role win rates from it are partly arithmetic: the composition
+                           is forced, so it answers "this hero in this slot", not "this draft"
+  --lineups fixed          --blue-lineup a,b,c,d,e --red-lineup ...
   --bots heuristic|neural
 ```
 
 Writes `batch.json` (options, aggregate, every match's statistics) and
 `batch.md`: per hero (picks, win rate, mean K/D/A, damage share of the team's
-hero damage, gold earned at 10:00), per role, match length distribution,
-kills per minute, wall time. Progress goes to stderr, the Markdown to stdout.
+hero damage, gold earned at 10:00), per role, draft composition (doubled
+archetypes, what jungles), match length distribution, kills per minute, wall
+time. Progress goes to stderr, the Markdown to stdout.
 Measured: 20 full matches in 156 s on a 16-thread machine (each match is
 single-threaded, ~33 s alone, ~90 s with 16 running at once).
 
