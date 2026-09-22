@@ -160,6 +160,12 @@ class Unit {
     this.atkCd = 1 / Math.max(0.15, this.curAtkSpd());
     this.attackAnim = 0.18;
     if (this.isPlayer) Game.fx.attackRange(this);
+    this.launchBasic(target);
+  }
+  /* The swing itself, once the cooldown and facing are settled: an arrow
+     for a ranged unit, a slash for a melee one. Heroes override it for
+     their basic-attack states (F7 volley, F25 thrown blades). */
+  launchBasic(target) {
     if (this.ranged) {
       Game.projectiles.push(Projectile.homing(this, target, this.attackPacket(target)));
       if (this.isPlayer) SFX.shoot();
@@ -291,7 +297,12 @@ class Hero extends Unit {
     this.state = null;        // F19 self state {s, t}
     this.untargetable = false; // F19: mirrors state.s.untargetable (a plain field: enemyUnits/canSee read it constantly)
     this.channelS = null;     // F18 channel {s, t, i, rank}
-    this.basicRangeState = null;
+    this.basicRangeState = null;   // F25 {s, rank, count, t}: basics are thrown at rangeSet
+    this.basicMod = null;     // F7 {s, rank, t, asMult}: basics are piercing volleys
+    /* F8 charge skills: charges banked per skill and the seconds left on the
+       one charge that is recharging (one at a time, never reduced by cdr) */
+    this.skillCharges = [0, 0, 0];
+    this.skillRecharge = [0, 0, 0];
     this.revealT = 0;         // seconds this hero is revealed through bush / conceal
     this.concealT = 0;        // F13: standing in a concealing zone (hidden like a bush)
     this.recallT = 0; this.respawnT = 0;
@@ -406,6 +417,11 @@ class Hero extends Unit {
       else if (k === 'atkSpd') A.addBonus({ atkSpd: b.value });
     }
 
+    /* F25: while the basic-range state runs, range reads rangeSet exactly */
+    if (this.basicRangeState && this.basicRangeState.s.rangeSet) {
+      A.addBonus({ range: this.basicRangeState.s.rangeSet - A.get('range') });
+    }
+
     this.maxHp = Math.round(A.get('maxHp'));
     this.maxMana = Math.round(A.get('maxMana'));
     /* F3/F4/F5: an energy pool is flat whatever the level or items, a heat
@@ -434,8 +450,11 @@ class Hero extends Unit {
     const m = this.buffAtkT > 0 ? this.buffAtkMult : 1;
     return this.attrs.get('physAtk') * m;
   }
+  /* Attack-speed steroids never multiply each other: a dash asMult and a
+     basicMod asMult (F7) resolve to the larger one. */
   curAtkSpd() {
-    const m = this.buffAsT > 0 ? this.buffAsMult : 1;
+    let m = this.buffAsT > 0 ? this.buffAsMult : 1;
+    if (this.basicMod && this.basicMod.asMult > m) m = this.basicMod.asMult;
     return this.attrs.get('atkSpd') * m;
   }
   curSpeed() {
@@ -457,6 +476,52 @@ class Hero extends Unit {
   tryAttack(target) {
     if (this.channelS || (this.state && this.state.t > 0 && this.state.s.noAttack)) return;
     super.tryAttack(target);
+  }
+  /* F7 / F25: a basic-attack state replaces the swing. A volley (basicMod)
+     is a piercing line through the aimed target; thrown blades (basicRange)
+     take the ranged path with the state's bonus folded into the packet and
+     spend one of its count. */
+  launchBasic(target) {
+    if (this.basicMod) {
+      Game.projectiles.push(Projectile.volley(this, target, this.basicMod));
+      if (this.isPlayer) SFX.shoot();
+      return;
+    }
+    const st = this.basicRangeState;
+    if (st) {
+      const pkt = this.attackPacket(target);
+      pkt.amount += (rankVal(st.s, 'bonusDmg', st.rank) || 0) + this.curAtk() * (st.s.bonusScaleAd || 0);
+      Game.projectiles.push(Projectile.homing(this, target, pkt));
+      if (this.isPlayer) SFX.shoot();
+      if (--st.count <= 0) this.endBasicRange();
+      return;
+    }
+    super.launchBasic(target);
+  }
+  endBasicRange() {
+    if (!this.basicRangeState) return;
+    this.basicRangeState = null;
+    this.recalcStats(false);
+  }
+  /* F8: the recharge of one charge at a rank. Cooldown reduction never
+     touches it. */
+  rechargeFor(s, rank) {
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    return Math.max(0.5, rankVal(s, 'recharge', r) || 0);
+  }
+  /* F8: one charge at a time refills; an idle counter below max starts one
+     (which is also how a freshly learned skill begins at 0 charges). */
+  tickCharges(dt) {
+    for (let i = 0; i < 3; i++) {
+      const s = this.skills[i];
+      if (!s || !s.charges || this.skillRank[i] < 1 || this.skillCharges[i] >= s.charges) continue;
+      if (!(this.skillRecharge[i] > 0)) this.skillRecharge[i] = this.rechargeFor(s, this.skillRank[i]);
+      this.skillRecharge[i] -= dt;
+      if (this.skillRecharge[i] <= 0) {
+        this.skillCharges[i]++;
+        this.skillRecharge[i] = this.skillCharges[i] < s.charges ? this.rechargeFor(s, this.skillRank[i]) : 0;
+      }
+    }
   }
   /* End a self state early (expiry or recast): its stat buffs go with it. */
   endState() {
@@ -595,6 +660,11 @@ class Hero extends Unit {
   rankUp(i) {
     if (!this.canRankUp(i)) return false;
     this.skillRank[i]++; this.skillPoints--;
+    // F8: a charge skill is learned empty and starts recharging at once
+    if (this.skills[i].charges && this.skillRank[i] === 1) {
+      this.skillCharges[i] = 0;
+      this.skillRecharge[i] = this.rechargeFor(this.skills[i], 1);
+    }
     if (this.isPlayer) {
       SFX.levelup();
       if (UI.hideTip) UI.hideTip();
@@ -932,7 +1002,7 @@ class Hero extends Unit {
   /* F28: the CC state calls back when a timer starts. An airborne drops a
      dash in progress; a channel (F18) breaks on any hard CC. */
   onCC(type) {
-    if (type === 'airborne') { this.dashS = null; this.basicRangeState = null; }
+    if (type === 'airborne') { this.dashS = null; this.endBasicRange(); }
     if (this.channelS && CHANNEL_BREAKERS[type]) this.cancelChannel(true);
   }
 
@@ -967,7 +1037,7 @@ class Hero extends Unit {
     this.alive = false;
     this.deaths++; this.deathStreak++; this.streak = 0;
     this.dashS = null; this.forced = null; this.recallT = 0; this.hot = null;
-    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null;
+    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null; this.basicMod = null;
     this.cc.clear(); this.shields = []; this.dots = []; this.marks = {};
     this.runes = {};
     this.curTarget = null; this.aiTarget = null;
@@ -1171,6 +1241,7 @@ class Hero extends Unit {
     }
     if (this.skillCd[i] > 0 || !this.canAfford(s0, rank)) return false;
     if (rank < 1) return false;                          // ultimate not learned yet
+    if (s0.charges && !(this.skillCharges[i] > 0)) return false;   // F8: nothing banked
     if (!this.cc.canCast || this.dashS || this.forced || this.channelS) return false;
     if (this.state && this.state.t > 0 && this.state.s.noAttack) return false;   // F19
     this.recallT = 0;
@@ -1243,6 +1314,17 @@ class Hero extends Unit {
       case 'channel': {  // F18: stand and channel; the payload nova lands at the end
         this.channelS = { s, t: s.channel || 1, i, rank };
         Game.fx.ring(this.x, this.y, (s.payload && s.payload.radius) || 200, this.color, s.channel || 1);
+        break;
+      }
+      case 'basicMod': {    // F7: basics become piercing volleys for dur seconds
+        this.basicMod = { s, rank, t: s.dur || 6, asMult: rankVal(s, 'asMult', rank) || 1 };
+        Game.fx.ring(this.x, this.y, this.radius + 30, this.color, 0.5);
+        break;
+      }
+      case 'basicRange': {  // F25: the next `count` basics are thrown from rangeSet
+        this.basicRangeState = { s, rank, count: s.count || 3, t: s.dur || 4 };
+        this.recalcStats(false);
+        Game.fx.ring(this.x, this.y, this.radius + 24, this.color, 0.4);
         break;
       }
       case 'selfState': {   // F19: a timed state on the caster (immunities, root, untargetable...)
@@ -1342,7 +1424,12 @@ class Hero extends Unit {
     }
     this.payCost(s0, rank);
     if (overheated) { this.mana = 0; Game.fx.ring(this.x, this.y, this.radius + 30, this.color, 0.5); }
-    this.skillCd[i] = this.cooldownFor(s0, rank);
+    if (s0.charges) {
+      // F8: spend a charge; the recharge starts if none is running; castDelay (with cdr) gates the next shot
+      this.skillCharges[i]--;
+      if (!(this.skillRecharge[i] > 0)) this.skillRecharge[i] = this.rechargeFor(s0, rank);
+      this.skillCd[i] = (s0.castDelay || 0) * (1 - this.cdr());
+    } else this.skillCd[i] = this.cooldownFor(s0, rank);
     Game.fx.skillCast(this, s, castAt);
     if (this.isPlayer) {
       if (i === 2) SFX.ult(); else SFX.skill();
@@ -1372,8 +1459,11 @@ class Hero extends Unit {
     }
     this.baseUpdate(dt);
     for (let i = 0; i < 3; i++) if (this.skillCd[i] > 0) this.skillCd[i] -= dt;
+    this.tickCharges(dt);
     if (this.buffAtkT > 0) this.buffAtkT -= dt;
     if (this.buffAsT > 0) this.buffAsT -= dt;
+    if (this.basicMod) { this.basicMod.t -= dt; if (this.basicMod.t <= 0) this.basicMod = null; }
+    if (this.basicRangeState) { this.basicRangeState.t -= dt; if (this.basicRangeState.t <= 0) this.endBasicRange(); }
     if (this.revealT > 0) this.revealT -= dt;
     if (this.concealT > 0) this.concealT -= dt;
     if (this.state) { this.state.t -= dt; if (this.state.t <= 0) this.endState(); }
@@ -2235,6 +2325,7 @@ class Hero extends Unit {
     for (let i = 0; i < 3; i++) {
       const s = this.skills[i];
       if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
+      if (s.charges && !(this.skillCharges[i] > 0)) continue;   // F8
       if (s.type === 'heal') { if (this.hpPct < 0.7) this.castSkill(i, null); continue; }
       // a self-buff (Rampage's regen and tenacity) is at its best mid-escape
       if (s.type === 'buff') { if (threat && bd < 560) this.castSkill(i, null); continue; }
@@ -2265,7 +2356,8 @@ class Hero extends Unit {
     const s = this.skills[i];
     const p = this.p;
     if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
-    if (i === 2) {
+    if (s.charges && !(this.skillCharges[i] > 0)) return 0;   // F8
+    if (i === 2 && s.type !== 'basicMod') {
       if (!isHero) return 0;
       const crowd = Game.heroes.filter(h => h.team !== this.team && h.alive && this.distTo(h) < 420).length;
       if (t.hpPct > p.ultExecuteHp && crowd < 2) return 0;
@@ -2349,6 +2441,16 @@ class Hero extends Unit {
         if (!isHero) return 0;
         if (s.untargetable) return this.hpPct < 0.5 && d < 450 ? 760 : 0;
         return d < 300 ? 420 : 0;
+      case 'basicMod': { // F7: the volley wants heroes inside its line
+        const lr = s.lineRange || 420;
+        if (!isHero || d >= lr) return 0;
+        let near = 0;
+        for (const h of Game.heroes) if (h.team !== this.team && h.alive && this.distTo(h) < lr) near++;
+        return near >= 2 ? 900 : 600;
+      }
+      case 'basicRange': // F25: thrown blades for a target just past melee reach
+        if (!isHero || d < 150 || d >= (s.rangeSet || 300)) return 0;
+        return 560;
     }
     return 0;
   }
@@ -2399,6 +2501,12 @@ class Hero extends Unit {
         this.castSkill(i, t);
         break;
       case 'selfState':
+        this.castSkill(i, null);
+        break;
+      case 'basicMod':
+        this.castSkill(i, t);
+        break;
+      case 'basicRange':
         this.castSkill(i, null);
         break;
     }
@@ -3385,6 +3493,56 @@ class Projectile {
       heroOnly: !!s.heroOnly,
     });
   }
+  /* F7: a basic attack under basicMod. A piercing line through the aimed
+     target: crit is rolled once here for every unit it meets; the aimed
+     target (or, if it is gone, the first unit met) is the primary hit with
+     full basic rules (lifesteal, onBasicHit); everyone else in the line
+     takes AD + bonus as a secondary basic hit with 40% lifesteal and no
+     on-hit hooks. Structures are only ever hit as the aimed target. */
+  static volley(src, target, bm) {
+    const s = bm.s, S = src.attrs;
+    const dir = norm(target.x - src.x, target.y - src.y);
+    const chance = S.get('critChance');
+    const crit = chance > 0 && Math.random() < chance;
+    const bonus = (rankVal(s, 'bonusDmg', bm.rank) || 0) + src.curAtk() * (s.bonusScaleAd || 0);
+    return new Projectile({
+      kind: 'volley', x: src.x, y: src.y, src, team: src.team, s, rank: bm.rank, primary: target, primaryDone: false,
+      dx: dir.x, dy: dir.y, speed: s.speed || 1400, maxDist: s.lineRange || 420, radius: s.radius || 30,
+      pierce: true, hitSet: new Set(), atk: src.curAtk(), bonus,
+      crit, critMult: crit ? COMBAT.CRIT_DMG_BASE + S.get('critDmg') : 1,
+      size: 7, color: src.projColor, style: 'bolt', dmgType: 'physical',
+    });
+  }
+  updateVolley(dt, px, py) {
+    const step = this.speed * dt;
+    this.x += this.dx * step; this.y += this.dy * step;
+    this.traveled += step;
+    if (Game.objects.length && Game.barrierBlocks(this.team, px, py, this.x, this.y)) {
+      this.dead = true; Game.fx.spark(this.x, this.y, this.color, 4); return;
+    }
+    const list = Game.enemyUnits(this.team, { neutral: true });
+    const pr = this.primary;
+    if (pr && pr.isStructure && pr.alive) list.push(pr);
+    for (const u of list) {
+      if (this.hitSet.has(u)) continue;
+      if (Math.hypot(u.x - this.x, u.y - this.y) > this.radius + u.radius) continue;
+      this.hitSet.add(u);
+      const primary = !this.primaryDone && (u === pr || !(pr && pr.alive && !pr.untargetable));
+      const isStruct = u.type === 'structure';
+      const amount = (this.atk + this.bonus) * (isStruct ? 1 : this.critMult);
+      const pkt = { amount, type: 'physical', isBasic: true, critRolled: this.crit && !isStruct };
+      if (!primary) pkt.lifestealMult = 0.4;
+      const dealt = resolveDamage(this.src, u, pkt);
+      if (primary) {
+        this.primaryDone = true;
+        if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(u, dealt);
+        if (u.isPlayer) SFX.hit();
+      }
+    }
+    const bounds = Game.mapBounds();
+    if (this.traveled >= this.maxDist || this.x < bounds.minX || this.y < bounds.minY ||
+        this.x > bounds.maxX || this.y > bounds.maxY) this.dead = true;
+  }
   /* One victim of a skillshot pass (per-victim damage, CC, marks, hooks). */
   landOn(u) {
     let o = null;
@@ -3448,6 +3606,7 @@ class Projectile {
   update(dt) {
     if (this.dead) return;
     const px = this.x, py = this.y;   // for the barrier crossing test (F9)
+    if (this.kind === 'volley') { this.updateVolley(dt, px, py); return; }
     if (this.kind === 'homing') {
       const t = this.target;
       if (!t || !t.alive || t.untargetable) { this.dead = true; return; }

@@ -1597,6 +1597,12 @@ const Game = {
         case 'cone':   // F11: the fan itself is drawn by doCone; show its reach
           this.range({ unit: h, r: s.length || 400, color: c, dur: 0.5, dash: true, lw: 2 });
           break;
+        case 'basicMod':   // F7: how far the volleys fly
+          this.range({ unit: h, r: s.lineRange || 420, color: c, dur: 0.8, dash: true, lw: 2 });
+          break;
+        case 'basicRange': // F25: the thrown-blade reach
+          this.range({ unit: h, r: s.rangeSet || 300, color: c, dur: 0.8, dash: true, lw: 2 });
+          break;
         default:   // skillshot / zone / blinkstrike — show the cast range
           this.range({ unit: h, r: s.range || 400, color: c, dur: 0.7, dash: true, lw: 2.5 });
           if (s.type === 'zone' && at) this.range({ x: at.x, y: at.y, r: s.radius, color: c, dur: 0.9 });
@@ -1666,6 +1672,14 @@ const Game = {
         case 'cone':
           this.spark(ox, oy, col, 6);
           this.flash(ox, oy, 30, col);
+          break;
+        case 'basicMod':
+          this.rays(h.x, h.y, c, 120, 10);
+          this.ring(h.x, h.y, 90, c, 0.5);
+          break;
+        case 'basicRange':
+          this.ring(h.x, h.y, 70, c, 0.4);
+          this.spark(h.x, h.y, c, 5);
           break;
         case 'dash':
           this.ghost(h);
@@ -1796,7 +1810,7 @@ const Game = {
    (the headless tests in tests/ drive them directly; the browser never
    needs this table). Keep it in step with docs/design/heroes.md. */
 Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo,
-  markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, CHANNEL_BREAKERS };
+  markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, refundRecharge, CHANNEL_BREAKERS };
 Game.PlacedObject = PlacedObject;
 Game.Tether = Tether;
 

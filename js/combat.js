@@ -399,6 +399,18 @@ function refreshMark(src, target, r) {
 }
 
 /* ============================================================
+   Charge skills (docs/design/heroes.md F8)
+   ============================================================
+   Take `sec` off the recharge in progress on skill `i` (Vesper's Last
+   Light). A refund that would finish it leaves a hair, so the next frame
+   grants the charge instead of restarting the timer. */
+function refundRecharge(h, i, sec) {
+  if (!h || !h.skillRecharge || !(h.skillRecharge[i] > 0) || !(sec > 0)) return false;
+  h.skillRecharge[i] = Math.max(1e-3, h.skillRecharge[i] - sec);
+  return true;
+}
+
+/* ============================================================
    Taunt (docs/design/heroes.md F23) and channel breakers (F18)
    ============================================================ */
 /* The CC kinds that break a channel the moment they land. */
@@ -875,5 +887,5 @@ const PASSIVES = {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, applyDisplacement, applyPullTo, rankVal, applyChill,
-    markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, CHANNEL_BREAKERS, PASSIVES };
+    markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, refundRecharge, CHANNEL_BREAKERS, PASSIVES };
 }

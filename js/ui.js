@@ -1399,12 +1399,29 @@ const UI = {
       const mask = btn.querySelector('.cdMask');
       const num = btn.querySelector('.cdNum');
       const learned = p.skillRank[i] > 0;
-      if (cd > 0) {
-        mask.style.setProperty('--p', cd / p.cooldownFor(s));
+      const ch = s.charges ? p.skillCharges[i] : -1;   // F8: charges banked
+      if (s.charges && learned && ch <= 0 && p.skillRecharge[i] > 0) {
+        // F8: nothing banked — the ring is the charge on its way
+        mask.style.setProperty('--p', p.skillRecharge[i] / p.rechargeFor(s));
         mask.style.display = 'block';
-        this.setTxt(num, Math.ceil(cd));
+        this.setTxt(num, Math.ceil(p.skillRecharge[i]));
+      } else if (cd > 0) {
+        const full = s.charges ? Math.max(0.1, (s.castDelay || 0) * (1 - p.cdr())) : p.cooldownFor(s);
+        mask.style.setProperty('--p', cd / full);
+        mask.style.display = 'block';
+        this.setTxt(num, s.charges ? '' : Math.ceil(cd));
       } else { mask.style.display = 'none'; this.setTxt(num, ''); }
-      btn.classList.toggle('nomana', !p.canAfford(s));
+      if (s.charges) {
+        // F8: one pip per charge
+        let cp = btn.querySelector('.chargePips');
+        if (!cp) { cp = document.createElement('div'); cp.className = 'chargePips'; btn.appendChild(cp); }
+        const key = `${ch}/${s.charges}`;
+        if (cp.dataset.k !== key) {
+          cp.dataset.k = key;
+          cp.innerHTML = Array.from({ length: s.charges }, (_, k) => `<i class="${k < ch ? 'on' : ''}"></i>`).join('');
+        }
+      }
+      btn.classList.toggle('nomana', !p.canAfford(s) || (s.charges && learned && ch <= 0));
       btn.classList.toggle('locked', !learned);
       btn.classList.toggle('ready', i === 2 && learned && cd <= 0 && p.canAfford(s));
       // rank pips + the "spend a point here" affordance
