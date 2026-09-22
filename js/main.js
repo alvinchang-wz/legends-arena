@@ -39,7 +39,8 @@ const Game = {
   mapBounds() {
     if (this.isDuel()) return DUEL_MAP.bounds;
     if (this.isTen()) return TEN_MAP.bounds;
-    return { minX: 0, minY: 0, maxX: WORLD, maxY: WORLD };
+    // one shared object: every clampWorld() asks for this, every frame
+    return this._stdBounds || (this._stdBounds = { minX: 0, minY: 0, maxX: WORLD, maxY: WORLD });
   },
   /* The old spectator floor was a fixed 0.3x, which only shows about half of
      this 6400-unit map on a laptop. Derive the floor from the viewport so the
@@ -154,6 +155,12 @@ const Game = {
     });
 
     this.inhibitors = inhibSpots.map(s => new Inhibitor(s.x, s.y, s.team, s.lane));
+    /* The three structure lists never change after this point, so their
+       union is built once: structures() used to concatenate three arrays on
+       every call, and it is called hundreds of times a frame. */
+    this._structures = this.towers.concat(this.bases, this.inhibitors);
+    this._structGrid = null;
+    this._navFrame = null;
 
     this.camps = campSpots.map(c => ({ x: c.x, y: c.y, kind: c.kind, respawnT: 0 }));
     for (const c of this.camps) this.monsters.push(new BuffMonster(c));
@@ -338,7 +345,54 @@ const Game = {
   },
 
   /* ---------- queries ---------- */
-  structures() { return this.towers.concat(this.bases).concat(this.inhibitors); },
+  structures() {
+    return this._structures || (this._structures = this.towers.concat(this.bases, this.inhibitors));
+  },
+  /* Structures never move, so "which structures could a body of radius
+     `pad` at (x, y) be touching" is answered from a coarse grid built once
+     per match: each cell lists, in structures() order, every structure whose
+     footprint (plus the largest pad any caller uses) reaches into it. Most
+     cells are empty, so the movement, sampling and push-out tests that used
+     to walk all 26 structures now look at zero or one. */
+  STRUCT_GRID_PAD: 96,
+  STRUCT_HEAT_PAD: 280,
+  structureGrid(pad = this.STRUCT_GRID_PAD) {
+    const S = this.structures();
+    const grids = this._structGrid && this._structGrid.source === S
+      ? this._structGrid : (this._structGrid = { source: S, byPad: new Map() });
+    let g = grids.byPad.get(pad);
+    if (g) return g;
+    const b = this.mapBounds(), cell = 320;
+    const cols = Math.max(1, Math.ceil((b.maxX - b.minX) / cell) + 1);
+    const rows = Math.max(1, Math.ceil((b.maxY - b.minY) / cell) + 1);
+    const cells = new Array(cols * rows).fill(null);
+    const empty = [];
+    for (let i = 0; i < S.length; i++) {
+      const s = S[i], r = s.radius + pad;
+      s._sIndex = i;
+      const x0 = clamp(Math.floor((s.x - r - b.minX) / cell), 0, cols - 1);
+      const x1 = clamp(Math.floor((s.x + r - b.minX) / cell), 0, cols - 1);
+      const y0 = clamp(Math.floor((s.y - r - b.minY) / cell), 0, rows - 1);
+      const y1 = clamp(Math.floor((s.y + r - b.minY) / cell), 0, rows - 1);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const id = y * cols + x;
+        (cells[id] || (cells[id] = [])).push(s);
+      }
+    }
+    g = { pad, minX: b.minX, minY: b.minY, cell, cols, rows, cells, empty, all: S };
+    grids.byPad.set(pad, g);
+    return g;
+  },
+  /* Candidate structures for a point, in structures() order: every structure
+     whose footprint plus `pad` can reach (x, y). Falls back to the full list
+     for a pad larger than the grids are built for. */
+  structuresNear(x, y, pad) {
+    const g = this.structureGrid(pad <= this.STRUCT_GRID_PAD ? this.STRUCT_GRID_PAD : this.STRUCT_HEAT_PAD);
+    if (pad > g.pad) return g.all;
+    const cx = clamp(Math.floor((x - g.minX) / g.cell), 0, g.cols - 1);
+    const cy = clamp(Math.floor((y - g.minY) / g.cell), 0, g.rows - 1);
+    return g.cells[cy * g.cols + cx] || g.empty;
+  },
   bushes() {
     if (this.isDuel()) return DUEL_MAP.bushes;
     if (this.isTen()) return TEN_MAP.bushes;
@@ -358,7 +412,12 @@ const Game = {
     }
     /* standing structures are round obstacles: minions and heroes slide
        around a turret the way they slide along rock */
-    for (const s of this.structures()) {
+    return this.structureAt(x, y, pad);
+  },
+  structureAt(x, y, pad) {
+    const near = this.structuresNear(x, y, pad);
+    for (let i = 0; i < near.length; i++) {
+      const s = near[i];
       if (!s.alive) continue;
       const rr = s.radius + pad, dx = x - s.x, dy = y - s.y;
       if (dx * dx + dy * dy < rr * rr) return s._wall || (s._wall = { circle: s, r: 0, pts: [] });
@@ -375,14 +434,58 @@ const Game = {
     const walls = this.walls();
     if (!walls.length) return null;
     const dx = bx - ax, dy = by - ay;
-    const d = Math.min(Math.hypot(dx, dy), maxDist);
+    const len = Math.hypot(dx, dy);
+    const d = Math.min(len, maxDist);
     if (d < 1) return null;
-    const ux = dx / Math.hypot(dx, dy), uy = dy / Math.hypot(dx, dy);
+    const ux = dx / len, uy = dy / len;
     const step = Math.max(20, pad);
-    for (let t = step; t <= d; t += step) {
-      const w = this.wallAt(ax + ux * t, ay + uy * t, pad);
-      if (w) return w;
+    if (this.isDuel() || this.isTen()) {
+      for (let t = step; t <= d; t += step) {
+        const w = this.wallAt(ax + ux * t, ay + uy * t, pad);
+        if (w) return w;
+      }
+      return null;
     }
+    /* Same samples, same answer, far fewer tests. The distance field says how
+       far the nearest rock is from a sample; every later sample closer than
+       that (less the field's own cell slack) is clear of rock too, so the
+       walk jumps straight past them. Rock is checked in one pass and the
+       standing structures in another, each finding the first sample it
+       blocks; the earlier sample wins and rock wins a tie, exactly as the
+       one-test-per-sample loop decided it. */
+    const slack = WALL_DIST.slack, cellPad = 2 * WALL_DIST.cell;
+    let rockT = Infinity, rockW = null;
+    for (let t = step; t <= d; t += step) {
+      const x = ax + ux * t, y = ay + uy * t;
+      const c = WALL_DIST.at(x, y);
+      if (c > pad + slack) {
+        const free = c - pad - slack - cellPad;
+        if (free >= step) t += Math.floor(free / step) * step;
+        continue;
+      }
+      for (const w of walls) if (wallBlocks(w, x, y, pad)) { rockT = t; rockW = w; break; }
+      if (rockW) break;
+    }
+    let structT = rockT, structW = null;
+    const S = this.structures();
+    for (let i = 0; i < S.length; i++) {
+      const s = S[i];
+      if (!s.alive) continue;
+      const rr = s.radius + pad, rr2 = rr * rr;
+      const px = s.x - ax, py = s.y - ay;
+      const along = px * ux + py * uy;
+      const perp2 = px * px + py * py - along * along;
+      if (perp2 > rr2 + 1e-6 * rr2 + 1e-6) continue;      // the ray misses this circle
+      const half = Math.sqrt(Math.max(0, rr2 - perp2)) + 1e-3;
+      const tEnd = Math.min(d, along + half, structT);
+      let t = Math.max(step, Math.ceil((along - half) / step) * step);
+      for (; t <= tEnd + step && t <= d && t < structT; t += step) {
+        const ddx = ax + ux * t - s.x, ddy = ay + uy * t - s.y;
+        if (ddx * ddx + ddy * ddy < rr2) { structT = t; structW = s; break; }
+      }
+    }
+    if (rockW && rockT <= structT) return rockW;
+    if (structW) return structW._wall || (structW._wall = { circle: structW, r: 0, pts: [] });
     return null;
   },
 
@@ -441,11 +544,13 @@ const Game = {
     if (!hero) return 1;
     let risk = 1;
     if (opts.avoidTowers !== false) {
-      for (const s of this.structures()) {
-        if (!s.alive || s.team === hero.team || (s.type !== 'tower' && !s.isBase)) continue;
-        const edge = s.range + s.radius + 70;
+      const D = this.navFrame().teams[hero.team].danger;
+      for (let i = 0; i < D.length; i++) {
+        const e = D[i], s = e.s;
+        if (!s.alive) continue;
+        const edge = e.edge;
         const d = Math.hypot(x - s.x, y - s.y);
-        if (d >= edge || hero.hasMinionCover(s)) continue;
+        if (d >= edge || e.covered()) continue;
         risk += 8 + (edge - d) / edge * 12;
       }
     }
@@ -457,6 +562,93 @@ const Game = {
       }
     }
     return risk;
+  },
+
+  /* The facts navRisk needs that are the same for every bot on a team:
+     which enemy turrets and bases are there to fear, and which allied
+     minions stand close enough to each to make it safe. Built once per
+     frame (bots run before minions move, so the minion positions hold for
+     every bot) and read hundreds of times. Liveness is still checked at
+     read time, so a turret or a covering minion that dies mid-frame is
+     seen by the next bot exactly as before. */
+  navFrame() {
+    const F = this._navFrame;
+    if (F && F.t === this.time && F.nMin === this.minions.length && F.source === this.structures()) return F;
+    const S = this.structures();
+    const teams = [];
+    for (const team of [TEAM_BLUE, TEAM_RED]) {
+      const danger = [];
+      for (let i = 0; i < S.length; i++) {
+        const s = S[i];
+        if (s.team === team || (s.type !== 'tower' && !s.isBase)) continue;
+        const cover = [];
+        for (const m of this.minions) {
+          if (m.team === team && m.alive && dist(m, s) < 330) cover.push(m);
+        }
+        danger.push({
+          s, index: i, edge: s.range + s.radius + 70, cover,
+          covered() { for (let k = 0; k < this.cover.length; k++) if (this.cover[k].alive) return true; return false; },
+        });
+      }
+      teams[team] = { danger };
+    }
+    return (this._navFrame = { t: this.time, nMin: this.minions.length, source: S, teams });
+  },
+
+  /* navRisk evaluated at every cell of the nav grid, for A*. The turret
+     part depends only on which dangerous structures are live and uncovered,
+     so it is kept until that set changes; the retreat part depends on where
+     the visible enemies stand right now and is re-added per search over
+     the cells near them only. The sums are formed in the same order as
+     navRisk's loops, so the values are identical. */
+  navRiskGrid(hero, grid, opts) {
+    const towers = opts.avoidTowers !== false;
+    const D = this.navFrame().teams[hero.team].danger;
+    let key = `${hero.team}:${towers ? 1 : 0}`;
+    const live = [];
+    if (towers) for (let i = 0; i < D.length; i++) {
+      const e = D[i];
+      if (e.s.alive && !e.covered()) { live.push(e); key += ':' + e.index; }
+    }
+    const cache = grid.riskCache || (grid.riskCache = new Map());
+    let base = cache.get(key);
+    const count = grid.cols * grid.rows;
+    if (!base) {
+      base = new Float64Array(count);
+      for (let id = 0; id < count; id++) {
+        const px = grid.minX + (id % grid.cols) * grid.cell, py = grid.minY + Math.floor(id / grid.cols) * grid.cell;
+        let risk = 1;
+        for (let k = 0; k < live.length; k++) {
+          const e = live[k], s = e.s, edge = e.edge;
+          const d = Math.hypot(px - s.x, py - s.y);
+          if (d >= edge) continue;
+          risk += 8 + (edge - d) / edge * 12;
+        }
+        base[id] = risk;
+      }
+      if (cache.size > 64) cache.clear();
+      cache.set(key, base);
+    }
+    if (!opts.retreat) return base;
+    const out = grid.riskScratch && grid.riskScratch.length === count
+      ? grid.riskScratch : (grid.riskScratch = new Float64Array(count));
+    out.set(base);
+    for (const foe of this.heroes) {
+      if (!foe.alive || foe.team === hero.team || !this.canSee(hero.team, foe)) continue;
+      const x0 = clamp(Math.floor((foe.x - 720 - grid.minX) / grid.cell), 0, grid.cols - 1);
+      const x1 = clamp(Math.ceil((foe.x + 720 - grid.minX) / grid.cell), 0, grid.cols - 1);
+      const y0 = clamp(Math.floor((foe.y - 720 - grid.minY) / grid.cell), 0, grid.rows - 1);
+      const y1 = clamp(Math.ceil((foe.y + 720 - grid.minY) / grid.cell), 0, grid.rows - 1);
+      for (let cy = y0; cy <= y1; cy++) {
+        const py = grid.minY + cy * grid.cell;
+        for (let cx = x0; cx <= x1; cx++) {
+          const px = grid.minX + cx * grid.cell;
+          const d = Math.hypot(px - foe.x, py - foe.y);
+          if (d < 720) out[cy * grid.cols + cx] += (720 - d) / 90;
+        }
+      }
+    }
+    return out;
   },
 
   navSegmentClear(hero, a, b, opts = {}) {
@@ -482,59 +674,79 @@ const Game = {
     const startId = this.navCell(grid, hero.x, hero.y);
     const goalId = this.navCell(grid, goal.x, goal.y);
     if (startId < 0 || goalId < 0) return [];
-    const count = grid.cols * grid.rows;
-    const gScore = new Float64Array(count); gScore.fill(Infinity);
-    const came = new Int32Array(count); came.fill(-1);
-    const closed = new Uint8Array(count);
-    const heap = [];
-    const gx = goalId % grid.cols, gy = Math.floor(goalId / grid.cols);
+    const count = grid.cols * grid.rows, cols = grid.cols, rows = grid.rows, cell = grid.cell;
+    const blocked = grid.blocked;
+    const risk = this.navRiskGrid(hero, grid, opts);
+    /* Search scratch lives on the grid: no per-search allocation. The heap
+       is two parallel arrays (ids, scores) run by the same sift rules the
+       object heap used, so equal scores pop in the same order. */
+    let W = grid.work;
+    if (!W) {
+      W = grid.work = {
+        gScore: new Float64Array(count), came: new Int32Array(count), closed: new Uint8Array(count),
+        hId: new Int32Array(count * 2), hScore: new Float64Array(count * 2),
+      };
+    }
+    const gScore = W.gScore, came = W.came, closed = W.closed;
+    gScore.fill(Infinity); came.fill(-1); closed.fill(0);
+    let hId = W.hId, hScore = W.hScore, hn = 0;
+    const gx = goalId % cols, gy = Math.floor(goalId / cols);
     const heuristic = id => {
-      const x = id % grid.cols, y = Math.floor(id / grid.cols);
-      return Math.hypot(gx - x, gy - y) * grid.cell;
+      const x = id % cols, y = Math.floor(id / cols);
+      return Math.hypot(gx - x, gy - y) * cell;
     };
     const push = (id, score) => {
-      let i = heap.length; heap.push({ id, score });
+      if (hn === hId.length) {
+        const nId = new Int32Array(hn * 2), nScore = new Float64Array(hn * 2);
+        nId.set(hId); nScore.set(hScore);
+        hId = W.hId = nId; hScore = W.hScore = nScore;
+      }
+      let i = hn++;
       while (i > 0) {
         const p = (i - 1) >> 1;
-        if (heap[p].score <= score) break;
-        heap[i] = heap[p]; i = p;
+        if (hScore[p] <= score) break;
+        hId[i] = hId[p]; hScore[i] = hScore[p]; i = p;
       }
-      heap[i] = { id, score };
+      hId[i] = id; hScore[i] = score;
     };
     const pop = () => {
-      const root = heap[0], last = heap.pop();
-      if (heap.length) {
+      const root = hId[0];
+      hn--;
+      if (hn > 0) {
+        const lastId = hId[hn], lastScore = hScore[hn];
         let i = 0;
         while (true) {
           let c = i * 2 + 1;
-          if (c >= heap.length) break;
-          if (c + 1 < heap.length && heap[c + 1].score < heap[c].score) c++;
-          if (heap[c].score >= last.score) break;
-          heap[i] = heap[c]; i = c;
+          if (c >= hn) break;
+          if (c + 1 < hn && hScore[c + 1] < hScore[c]) c++;
+          if (hScore[c] >= lastScore) break;
+          hId[i] = hId[c]; hScore[i] = hScore[c]; i = c;
         }
-        heap[i] = last;
+        hId[i] = lastId; hScore[i] = lastScore;
       }
       return root;
     };
 
     gScore[startId] = 0; push(startId, heuristic(startId));
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-    while (heap.length) {
-      const cur = pop().id;
+    const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+    const diag = cell * Math.SQRT2;
+    while (hn > 0) {
+      const cur = pop();
       if (closed[cur]) continue;
       if (cur === goalId) break;
       closed[cur] = 1;
-      const x = cur % grid.cols, y = Math.floor(cur / grid.cols);
-      for (const [dx, dy] of dirs) {
+      const x = cur % cols, y = Math.floor(cur / cols);
+      const g = gScore[cur];
+      for (let k = 0; k < 8; k++) {
+        const dx = DX[k], dy = DY[k];
         const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= grid.cols || ny >= grid.rows) continue;
-        const ni = ny * grid.cols + nx;
-        if (grid.blocked[ni] || closed[ni]) continue;
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+        const ni = ny * cols + nx;
+        if (blocked[ni] || closed[ni]) continue;
         /* No diagonal corner cutting: both shoulder cells must be open. */
-        if (dx && dy && (grid.blocked[y * grid.cols + nx] || grid.blocked[ny * grid.cols + x])) continue;
-        const px = grid.minX + nx * grid.cell, py = grid.minY + ny * grid.cell;
-        const step = grid.cell * (dx && dy ? Math.SQRT2 : 1) * this.navRisk(hero, px, py, opts);
-        const score = gScore[cur] + step;
+        if (dx && dy && (blocked[y * cols + nx] || blocked[ny * cols + x])) continue;
+        const step = (dx && dy ? diag : cell) * risk[ni];
+        const score = g + step;
         if (score >= gScore[ni]) continue;
         came[ni] = cur; gScore[ni] = score;
         push(ni, score + heuristic(ni));
@@ -775,25 +987,47 @@ const Game = {
     const N = this.VIS_N, cell = this.worldSize() / N;
     if (!this.vision) this.vision = [new Uint8Array(N * N), new Uint8Array(N * N)];
     if (!this.explored) this.explored = new Uint8Array(N * N);
-    for (const g of this.vision) g.fill(0);
 
     const stamp = (g, x, y, r) => {
       const cx = x / cell, cy = y / cell, cr = r / cell;
       const x0 = Math.max(0, Math.floor(cx - cr)), x1 = Math.min(N - 1, Math.ceil(cx + cr));
       const y0 = Math.max(0, Math.floor(cy - cr)), y1 = Math.min(N - 1, Math.ceil(cy + cr));
       const cr2 = cr * cr;
+      /* Each row of the circle is one span. Its ends are found with the
+         exact per-cell test (the span is an interval, so scanning in from a
+         safe outer bound stops at the first cell that passes); the inside
+         is filled in one call rather than tested cell by cell. */
       for (let gy = y0; gy <= y1; gy++) {
-        const dy = gy + 0.5 - cy;
-        for (let gx = x0; gx <= x1; gx++) {
-          const dx = gx + 0.5 - cx;
-          if (dx * dx + dy * dy <= cr2) g[gy * N + gx] = 1;
-        }
+        const dy = gy + 0.5 - cy, dy2 = dy * dy;
+        if (dy2 > cr2) continue;
+        const half = Math.sqrt(cr2 - dy2);
+        let lo = Math.max(x0, Math.floor(cx - 0.5 - half) - 1);
+        let hi = Math.min(x1, Math.ceil(cx - 0.5 + half) + 1);
+        while (lo <= hi) { const dx = lo + 0.5 - cx; if (dx * dx + dy2 <= cr2) break; lo++; }
+        while (hi >= lo) { const dx = hi + 0.5 - cx; if (dx * dx + dy2 <= cr2) break; hi--; }
+        const base = gy * N;
+        for (let k = base + lo; k <= base + hi; k++) g[k] = 1;
       }
     };
+    /* Structures never move, so the vision they grant is a fixed layer per
+       team that only changes when one falls or an inhibitor comes back. It is
+       kept and copied in as the frame's starting grid; heroes and minions are
+       stamped on top. */
+    if (!this._staticVision) this._staticVision = [{ key: null, g: new Uint8Array(N * N) }, { key: null, g: new Uint8Array(N * N) }];
     for (const t of [TEAM_BLUE, TEAM_RED]) {
+      let key = this.mode + ':';
+      const S = this.structures();
+      for (let i = 0; i < S.length; i++) if (S[i].team === t && S[i].alive) key += i + ',';
+      const sv = this._staticVision[t];
+      if (sv.key !== key || sv.n !== N) {
+        sv.key = key; sv.n = N;
+        if (sv.g.length !== N * N) sv.g = new Uint8Array(N * N);
+        sv.g.fill(0);
+        for (const s of S) if (s.team === t && s.alive) stamp(sv.g, s.x, s.y, this.visionRadius(s));
+      }
       const g = this.vision[t];
+      g.set(sv.g);
       for (const h of this.heroes) if (h.team === t && h.alive) stamp(g, h.x, h.y, this.visionRadius(h));
-      for (const s of this.structures()) if (s.team === t && s.alive) stamp(g, s.x, s.y, this.visionRadius(s));
       for (const m of this.minions) if (m.team === t && m.alive) stamp(g, m.x, m.y, this.visionRadius(m));
       if (typeof Features !== 'undefined') {
         for (const w of Features.wards) if (w.team === t && w.t > 0) stamp(g, w.x, w.y, w.r || 420);
@@ -1038,8 +1272,7 @@ const Game = {
           let best = Infinity;
           for (const s of STREAMS) {
             for (let i = 1; i < s.length; i++) {
-              const c = segClosest(h.x, h.y, s[i - 1].x, s[i - 1].y, s[i].x, s[i].y);
-              const d = (h.x - c.x) * (h.x - c.x) + (h.y - c.y) * (h.y - c.y);
+              const d = segDist2(h.x, h.y, s[i - 1].x, s[i - 1].y, s[i].x, s[i].y);
               if (d < best) best = d;
             }
           }
@@ -1157,17 +1390,33 @@ const Game = {
     /* Units never block each other (heroes walk through minions, monsters and
        other heroes, as in the reference game); only structures and terrain
        push them out. */
+    const useGrid = !this.isDuel() && !this.isTen();
     for (let i = 0; i < mob.length; i++) {
       const a = mob[i];
-      // immovable structures push mobiles out
-      for (const s of this.structures()) {
-        if (!s.alive) continue;
-        const dx = a.x - s.x, dy = a.y - s.y;
-        const min = a.radius + s.radius - 2;
-        const d2 = dx * dx + dy * dy;
-        if (d2 >= min * min || d2 < 1e-4) continue;
-        const d = Math.sqrt(d2);
-        a.x = s.x + dx / d * min; a.y = s.y + dy / d * min;
+      /* Immovable structures push mobiles out, in structures() order. Only the
+         structures near the unit can overlap it, so each pass looks at the
+         grid cell's candidates; after a push the unit has moved, so the
+         candidates are fetched again for the new spot and the walk resumes
+         after the structure that pushed — the same sequence of tests and
+         pushes the full loop made. */
+      let from = 0;
+      for (;;) {
+        const near = useGrid ? this.structuresNear(a.x, a.y, a.radius) : this.structures();
+        let pushed = false;
+        for (let k = 0; k < near.length; k++) {
+          const s = near[k];
+          if (!s.alive || (useGrid && s._sIndex < from)) continue;
+          const dx = a.x - s.x, dy = a.y - s.y;
+          const min = a.radius + s.radius - 2;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= min * min || d2 < 1e-4) continue;
+          const d = Math.sqrt(d2);
+          a.x = s.x + dx / d * min; a.y = s.y + dy / d * min;
+          if (!useGrid) continue;
+          from = s._sIndex + 1; pushed = true;
+          break;
+        }
+        if (!pushed) break;
       }
       if (!this.isDuel() && !this.isTen() && WALL_DIST.clear(a.x, a.y, a.radius)) { a.clampWorld(); continue; }
       /* Walls do the same. Movement already slides along them, so this is the

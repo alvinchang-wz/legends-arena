@@ -353,7 +353,7 @@ const WALL_DIST = (() => {
   for (let i = 0; i < N * N; i++) dist[i] = Math.sqrt(f[i]) * CELL;
   const SLACK = CELL * 1.5;               // a point can be this far from its cell centre
   return {
-    cell: CELL, n: N, dist,
+    cell: CELL, n: N, dist, slack: SLACK,
     at(x, y) {
       const c = Math.max(0, Math.min(N - 1, Math.round(x / CELL))), r = Math.max(0, Math.min(N - 1, Math.round(y / CELL)));
       return dist[r * N + c];
@@ -385,10 +385,31 @@ const BUSHES = MAP_DATA.bushes.map(b => {
   }
   return out;
 });
+/* Point-in-polygon by the crossing rule: the same test polyClosest runs,
+   without also computing the closest outline point (and allocating it). */
+function polyInside(poly, x, y) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i];
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/* Squared distance from (px, py) to the segment a-b: segClosest's arithmetic
+   without the result object, for the per-frame terrain checks. */
+function segDist2(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay;
+  const len2 = vx * vx + vy * vy;
+  const t = len2 < 1e-6 ? 0 : clamp(((px - ax) * vx + (py - ay) * vy) / len2, 0, 1);
+  const cx = ax + vx * t, cy = ay + vy * t;
+  return (px - cx) * (px - cx) + (py - cy) * (py - cy);
+}
+
 function inBush(b, x, y) {
   if (b.poly) {
     if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) return false;
-    return polyClosest(b.poly, x, y).inside;
+    return polyInside(b.poly, x, y);
   }
   if (b.ax === undefined) return (x - b.x) * (x - b.x) + (y - b.y) * (y - b.y) <= b.r * b.r;
   const c = segClosest(x, y, b.ax, b.ay, b.bx, b.by);

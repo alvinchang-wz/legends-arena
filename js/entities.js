@@ -8,6 +8,10 @@
    subtracts from `hp` directly except the pipeline itself.
    ============================================================ */
 
+/* Lanes that have a minion wave to follow (see Hero.laneWaveAnchor). */
+const LANE_WAVE_INDEX = { top: 0, mid: 1, bot: 2, dusk: 3, west: 4, east: 5, dawn: 6 };
+const LANE_WAVE_LANES = new Set(Object.keys(LANE_WAVE_INDEX));
+
 class Unit {
   constructor(x, y, team) {
     this.x = x; this.y = y; this.team = team;
@@ -939,14 +943,25 @@ class Hero extends Unit {
 
   opportunityAttack() {
     let best = null, bd = Infinity;
-    for (const u of Game.enemyUnits(this.team, { structures: true })) {
+    const reach = this.range + this.radius;
+    /* runs every frame for every bot: walk the three lists in enemyUnits'
+       order without building the combined array */
+    const x = this.x, y = this.y;
+    const consider = u => {
+      /* squared pre-filter: units clearly out of reach skip the sqrt; anything
+         near the boundary still gets the original distance test */
+      const dx = u.x - x, dy = u.y - y, r = reach + u.radius;
+      if (dx * dx + dy * dy > r * r * 1.000001) return;
       const d = this.distTo(u);
-      if (d > this.range + this.radius + u.radius) continue;
-      if (!Game.canSee(this.team, u)) continue;
+      if (d > r) return;
+      if (!Game.canSee(this.team, u)) return;
       const score = d - (u.type === 'hero' ? 220 : 0) -
         (u.type === 'minion' && Game.canLastHit(this, u) ? 160 : 0);
       if (score < bd) { bd = score; best = u; }
-    }
+    };
+    for (const h of Game.heroes) if (h.team !== this.team && h.alive) consider(h);
+    for (const m of Game.minions) if (m.team !== this.team && m.alive) consider(m);
+    for (const t of Game.structures()) if (t.team !== this.team && t.alive) consider(t);
     if (best) this.tryAttack(best);
   }
 
@@ -1163,15 +1178,26 @@ class Hero extends Unit {
       for (const s of Game.structures()) {
         if (!s.alive) continue;
         let heat = 0;
+        const hr = (s.range || 400) + 90, hr2 = hr * hr;
         for (const h of Game.heroes) {
           if (h.team === s.team || !h.alive) continue;
-          if (dist(h, s) < (s.range || 400) + 90) heat += 3;
-        }
-        for (const m of Game.minions) {
-          if (m.team === s.team || !m.alive) continue;
-          if (dist(m, s) < 280) heat++;
+          const dx = h.x - s.x, dy = h.y - s.y;
+          if (dx * dx + dy * dy < hr2) heat += 3;
         }
         Game._heat.set(s, heat);
+      }
+      /* minion pressure: each minion can only be near the few structures its
+         grid cell lists, rather than every structure testing every minion */
+      const useGrid = !Game.isDuel() && !Game.isTen();
+      for (const m of Game.minions) {
+        if (!m.alive) continue;
+        const near = useGrid ? Game.structuresNear(m.x, m.y, Game.STRUCT_HEAT_PAD) : Game.structures();
+        for (let k = 0; k < near.length; k++) {
+          const s = near[k];
+          if (!s.alive || m.team === s.team) continue;
+          const dx = m.x - s.x, dy = m.y - s.y;
+          if (dx * dx + dy * dy < 280 * 280) Game._heat.set(s, Game._heat.get(s) + 1);
+        }
       }
     }
     let best = null, bd = Infinity;
@@ -1958,14 +1984,30 @@ class Hero extends Unit {
      Following its leading cluster makes laners pause, crash and regroup with
      the actual state of the road instead of marching through fixed waypoints. */
   laneWaveAnchor() {
-    if (!['top', 'mid', 'bot', 'dusk', 'west', 'east', 'dawn'].includes(this.lane)) return null;
-    const wave = Game.minions.filter(m => m.alive && m.team === this.team && m.lane === this.lane);
-    if (!wave.length) return null;
-    let lead = wave[0];
-    for (const m of wave) if ((m.wpIdx || 0) > (lead.wpIdx || 0)) lead = m;
-    const cluster = wave.filter(m => Math.abs((m.wpIdx || 0) - (lead.wpIdx || 0)) <= 1 && dist(m, lead) < 260);
-    const x = cluster.reduce((s, m) => s + m.x, 0) / cluster.length;
-    const y = cluster.reduce((s, m) => s + m.y, 0) / cluster.length;
+    if (!LANE_WAVE_LANES.has(this.lane)) return null;
+    /* The wave's leading cluster is a fact about the lane, not the bot, and
+       every idle laner asks for it every frame: find it once per frame per
+       lane, keyed so that a minion dying or spawning mid-frame invalidates it. */
+    const key = `${Game.time}:${Game.minions.length}:${Game._minionDeaths || 0}`;
+    let cache = Game._waveCache;
+    if (!cache || cache.key !== key) cache = Game._waveCache = { key, lanes: new Map() };
+    const laneKey = this.team * 16 + LANE_WAVE_INDEX[this.lane];
+    let lead = cache.lanes.get(laneKey);
+    if (lead === undefined) {
+      lead = null;
+      const wave = Game.minions.filter(m => m.alive && m.team === this.team && m.lane === this.lane);
+      if (wave.length) {
+        let front = wave[0];
+        for (const m of wave) if ((m.wpIdx || 0) > (front.wpIdx || 0)) front = m;
+        const cluster = wave.filter(m => Math.abs((m.wpIdx || 0) - (front.wpIdx || 0)) <= 1 && dist(m, front) < 260);
+        const x = cluster.reduce((s, m) => s + m.x, 0) / cluster.length;
+        const y = cluster.reduce((s, m) => s + m.y, 0) / cluster.length;
+        lead = { x, y };
+      }
+      cache.lanes.set(laneKey, lead);
+    }
+    if (!lead) return null;
+    const x = lead.x, y = lead.y;
     const home = Game.basePoint(this.team);
     const d = Math.hypot(home.x - x, home.y - y) || 1;
     const behind = this.ranged ? 175 : 105;
@@ -2327,13 +2369,18 @@ class Minion extends Unit {
     const prev = this.wpIdx | 0;
     const full = this._wpFullT === undefined || Game.time - this._wpFullT > 1.5 || prev >= path.length;
     const k0 = full ? 0 : Math.max(0, prev - 4), k1 = full ? path.length - 1 : Math.min(path.length - 1, prev + 10);
-    for (let k = k0; k <= k1; k++) {
-      const d = this.distTo(path[k]);
+    const x = this.x, y = this.y;
+    for (let k = k0; k <= k1; k++) {          // squared distances: same nearest point, no sqrt
+      const p = path[k], dx = p.x - x, dy = p.y - y, d = dx * dx + dy * dy;
       if (d < bd) { bd = d; bi = k; }
     }
     if (full) this._wpFullT = Game.time;
     let i = Math.min(bi + 1, path.length - 1);
-    while (i < path.length - 1 && this.distTo(path[i]) < 80) i++;
+    while (i < path.length - 1) {
+      const p = path[i], dx = p.x - x, dy = p.y - y;
+      if (dx * dx + dy * dy >= 80 * 80) break;
+      i++;
+    }
     this.wpIdx = i;
   }
 
@@ -2378,6 +2425,7 @@ class Minion extends Unit {
   }
   die(src) {
     this.alive = false;
+    Game._minionDeaths = (Game._minionDeaths || 0) + 1;   // invalidates per-frame wave caches
     Game.fx.spark(this.x, this.y, TEAM_COLORS[this.team], 5);
     const opening = !Game.isDuel() && Game.time < BALANCE.laneBonusEnd;
     if (src instanceof Hero && src.team !== this.team) {
@@ -2467,18 +2515,20 @@ class Tower extends Unit {
     }
     if (defender) t = defender;
     if (!t) {
+      // squared distances: the nearest unit in reach, without a sqrt per candidate
       let bd = Infinity;
+      const reach = this.range + this.radius;
       for (const m of Game.minions) {
         if (m.team === this.team || !m.alive) continue;
-        const d = this.distTo(m);
-        if (d <= this.range + this.radius + m.radius && d < bd) { bd = d; t = m; }
+        const dx = m.x - this.x, dy = m.y - this.y, d2 = dx * dx + dy * dy, r = reach + m.radius;
+        if (d2 <= r * r && d2 < bd) { bd = d2; t = m; }
       }
       if (!t) {
         bd = Infinity;
         for (const h of Game.heroes) {
           if (h.team === this.team || !h.alive) continue;
-          const d = this.distTo(h);
-          if (d <= this.range + this.radius + h.radius && d < bd) { bd = d; t = h; }
+          const dx = h.x - this.x, dy = h.y - this.y, d2 = dx * dx + dy * dy, r = reach + h.radius;
+          if (d2 <= r * r && d2 < bd) { bd = d2; t = h; }
         }
       }
     }

@@ -11,7 +11,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const CORE_SCRIPTS = [
@@ -95,52 +94,84 @@ function readScript(relativePath) {
   return fs.readFileSync(path.join(PROJECT_ROOT, relativePath), 'utf8');
 }
 
-function loadGameRuntime(onWarning) {
-  const sandbox = {
-    console: {
-      log() {},
-      info() {},
-      warn: (...args) => onWarning(args.join(' ')),
-      error: (...args) => onWarning(args.join(' ')),
-    },
-    // Timers are visual/UI conveniences in the game. A headless match should
-    // never leave background work behind after the deterministic loop exits.
-    setTimeout() { return 0; },
-    clearTimeout() {},
-    performance: { now: () => 0 },
-  };
-  const context = vm.createContext(sandbox, { name: 'legends-arena-headless' });
-  vm.runInContext(BROWSER_STUBS, context, { filename: 'headless/browser-stubs.js' });
+/* The game's scripts are compiled once into a single function whose body is
+   the concatenation of every simulation script, and each simulator instance
+   is a fresh call of that function.
 
+   Why not vm.createContext? A contextified sandbox routes every global
+   lookup (Math, Infinity, Uint8Array, ...) through Node's property
+   interceptors, which defeat V8's inline caches: the same code ran 18-36x
+   slower there than in the main realm, and most of the simulation is that
+   kind of code. Inside one function the scripts' top-level constants become
+   closure variables, and globals are the real ones.
+
+   Isolation is kept where it matters: `Math` is a per-instance shadow object
+   (RNG.seed swaps its `random`, so two simulators in one thread never share
+   a random stream), and the browser-only globals are parameters. */
+let gameFactory = null;
+let gameFactorySource = null;
+function buildGameFactory() {
+  if (gameFactory) return gameFactory;
+  const parts = ["'use strict';", BROWSER_STUBS];
   for (const relativePath of CORE_SCRIPTS) {
-    vm.runInContext(readScript(relativePath), context, { filename: relativePath });
+    parts.push(`/* ==== ${relativePath} ==== */`, readScript(relativePath));
   }
-
   const mainSource = readScript('js/main.js').split(String.fromCharCode(13)).join('');   // the sources are CRLF on Windows; the marker is LF
   const marker = mainSource.indexOf(MAIN_RENDER_MARKER);
   if (marker < 0) throw new Error('Could not isolate the simulation portion of js/main.js');
-  vm.runInContext(mainSource.slice(0, marker), context, { filename: 'js/main.js' });
-
-  vm.runInContext(String.raw`
+  parts.push('/* ==== js/main.js (simulation) ==== */', mainSource.slice(0, marker));
+  parts.push(String.raw`
     // All Game.fx methods are presentation-only. Disabling them prevents
     // particle allocations (and visual-only random draws) during long runs.
     for (const key of Object.keys(Game.fx)) Game.fx[key] = function () {};
     Game.updateEffects = function () {};
-    globalThis.__headlessRuntime = {
+    return {
       Game,
       HEROES,
       HERO_BY_ID,
       RNG,
       NeuralRuntime,
       defaultBotParams,
+      ItemAI,
+      ITEM_DEFS,
+      BALANCE,
       TEAM_BLUE,
       TEAM_RED,
       TEAM_NEUTRAL,
+      WORLD,
+      Hero,
       events: __headlessEvents,
+      Math,
     };
-  `, context, { filename: 'headless/expose-runtime.js' });
+  `);
+  gameFactorySource = parts.join('\n');
+  gameFactory = new Function('Math', 'console', 'setTimeout', 'clearTimeout', 'performance', gameFactorySource);
+  return gameFactory;
+}
 
-  return context.__headlessRuntime;
+function shadowMath() {
+  const M = {};
+  for (const name of Object.getOwnPropertyNames(Math)) {
+    const desc = Object.getOwnPropertyDescriptor(Math, name);
+    if ('value' in desc) M[name] = desc.value;
+  }
+  return M;
+}
+
+function loadGameRuntime(onWarning) {
+  const factory = buildGameFactory();
+  const console = {
+    log() {},
+    info() {},
+    warn: (...args) => onWarning(args.join(' ')),
+    error: (...args) => onWarning(args.join(' ')),
+  };
+  // Timers are visual/UI conveniences in the game. A headless match should
+  // never leave background work behind after the deterministic loop exits.
+  const setTimeout = () => 0;
+  const clearTimeout = () => {};
+  const performance = { now: () => 0 };
+  return factory(shadowMath(), console, setTimeout, clearTimeout, performance);
 }
 
 function numberOption(value, fallback, name, minimum) {
@@ -529,4 +560,7 @@ module.exports = {
   HeadlessSimulator,
   STATE_SCHEMA,
   createSimulator: options => new HeadlessSimulator(options),
+  /* The assembled source of the game function, for mapping profiler line
+     numbers back to code (new Function puts the body on line 3). */
+  assembledSource: () => { buildGameFactory(); return gameFactorySource; },
 };
