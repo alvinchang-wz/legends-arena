@@ -1773,10 +1773,9 @@ const UI = {
       g.strokeStyle = rgba(def.color, 0.7); g.lineWidth = 2;
       g.beginPath(); g.arc(mx(s.x), my(s.y), 5 + ((Game.time * 1.4) % 1) * 7, 0, TAU); g.stroke();
     }
-    // heroes
-    for (const h of Game.heroes) {
+    // heroes: exactly what our side has eyes on (core rule, Game.minimapHeroes)
+    for (const h of Game.spectate ? Game.heroes : Game.minimapHeroes(TEAM_BLUE)) {
       if (!h.alive) continue;
-      if (!Game.spectate && h.team !== TEAM_BLUE && !Game.canSee(TEAM_BLUE, h)) continue;
       g.beginPath();
       g.arc(mx(h.x), my(h.y), h.isPlayer ? 5 : 4, 0, TAU);
       g.fillStyle = TEAM_COLORS[h.team];

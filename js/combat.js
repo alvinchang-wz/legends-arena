@@ -186,6 +186,18 @@ function bushHides(team, u) {
   return true;
 }
 
+/* The other half of the rule: acting gives your position away. Every hit a
+   hero lands passes through resolveDamage below, so that is where the reveal
+   is stamped — one place instead of one per kit, which is how basics used to
+   reveal a Sand-Veiled hero but never a hero standing in a bush. Casting is
+   the second trigger and lives in Hero.castSkill (a cast with no victim
+   still has to show). Lingering damage (dots, reflects — everything flagged
+   `noPassive`) does not re-reveal: you are hidden again once you stop. */
+function revealForActing(u) {
+  if (!u || u.type !== 'hero') return;
+  u.revealT = Math.max(u.revealT || 0, BUSH_REVEAL_T);
+}
+
 /* ============================================================
    Damage pipeline
    ============================================================
@@ -292,6 +304,8 @@ function resolveDamage(src, target, packet) {
 
   /* --- bookkeeping --- */
   if (src instanceof Hero && src !== target) {
+    // dealing damage breaks bush concealment (core rule, see revealForActing)
+    if (!packet.noPassive && target.team !== src.team) revealForActing(src);
     if (target.type === 'hero') src.stats.dmgHero += dmg;
     else if (target.isStructure) src.stats.dmgStruct += dmg;
     else src.stats.dmgOther += dmg;

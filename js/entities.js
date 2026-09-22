@@ -18,6 +18,11 @@ const LANE_WAVE_LANES = new Set(Object.keys(LANE_WAVE_INDEX));
 const MOVE_SAFE = { avoidTowers: true };
 const MOVE_RETREAT = { retreat: true, avoidTowers: true };
 
+/* How long a bot keeps walking at the spot where a hero vanished into a
+   bush before it goes back to its job. Short on purpose: checking the
+   thicket is fair, camping the exact pixel the hero stands on is not. */
+const LOST_TARGET_HUNT = 1.8;
+
 /* ============================================================
    Macro layer — one TeamBrain per team, 1 Hz (docs/design/bot-ai.md §4)
    ============================================================
@@ -1073,6 +1078,7 @@ class Hero extends Unit {
     this.recallT = 0; this.respawnT = 0;
     this.recentDmg = [];      // [{h, t}] recent hero damagers for assists
     this.aiTimer = rand(0, 0.3); this.aiState = 'push'; this.aiTarget = null;
+    this.lostTarget = null; this.lostTargetT = -Infinity;   // last hero that vanished into a bush on us
     /* Macro hand-off (docs/design/bot-ai.md §3.1). `role` is the position the
        draft gave this hero ('gold' | 'exp' | 'mid' | 'jungle' | 'roam');
        def0.role stays the archetype. `goal` is written once per second by
@@ -1393,7 +1399,7 @@ class Hero extends Unit {
     return d;
   }
   onBasicLanded(target, dmg, pkt) {
-    if (this.concealT > 0) this.revealT = Math.max(this.revealT, 1.6);
+    revealForActing(this);   // a landed basic gives your bush (or your Sand Veil) away
     this.fire('onBasicHit', target, dmg, pkt);
     if (this.resource === 'energy') this.gainEnergy((this.def0.energy && this.def0.energy.perBasic) || 0);
     else if (this.resource === 'heat') this.gainHeat(target, 'Basic');
@@ -1409,7 +1415,7 @@ class Hero extends Unit {
     this.emblemOnHeroDamage(target, dmg);
   }
   onSkillLanded(target, dmg, s) {
-    if (this.concealT > 0 && dmg) this.revealT = Math.max(this.revealT, 1.6);
+    if (dmg) revealForActing(this);   // same rule as a basic; resolveDamage covers the paths that skip this hook
     this.fire('onSkillHit', target, dmg, s);
     if (this.resource === 'heat') this.gainHeat(target, 'Skill');
     if (this.emblem && this.emblem.id === 'fighter') this.heal(dmg * 0.06);
@@ -1902,7 +1908,7 @@ class Hero extends Unit {
     this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null; this.basicMod = null; this.recast = null; this.buffState = null;
     this.cc.clear(); this.shields = []; this.dots = []; this.marks = {};
     this.runes = {};
-    this.curTarget = null; this.aiTarget = null;
+    this.curTarget = null; this.aiTarget = null; this.lostTarget = null;
     this.fleeT = 0;
     this.adapt.caution = Math.min(0.2, this.adapt.caution + 0.05);
     this.respawnT = BALANCE.respawnTime(this.level, Game.time);
@@ -2037,7 +2043,7 @@ class Hero extends Unit {
     this.cc.clear();
     const b = Game.fountain(this.team);
     this.x = b.x + rand(-70, 70); this.y = b.y + rand(-70, 70);
-    this.wpIdx = 0; this.aiState = 'push'; this.aiTarget = null; this.curTarget = null;
+    this.wpIdx = 0; this.aiState = 'push'; this.aiTarget = null; this.curTarget = null; this.lostTarget = null;
     this.nav.path.length = 0; this.nav.index = 0; this.nav.gx = this.nav.gy = NaN;
     this.nav.repath = 0; this.nav.stalled = 0; this.nav.lastD = Infinity;
     this.combatSide *= -1; this.combatPoint = null; this.combatPointT = 0;
@@ -2364,6 +2370,11 @@ class Hero extends Unit {
       if (!(this.skillRecharge[i] > 0)) this.skillRecharge[i] = this.rechargeFor(s0, rank);
       this.skillCd[i] = (s0.castDelay || 0) * (1 - this.cdr());
     } else this.skillCd[i] = this.cooldownFor(s0, rank);
+    /* Bush concealment (core rule): a cast gives your position away even
+       when nothing is hit — the one exception is a skill whose whole job is
+       to hide you (F19 Shade Step, F13 Sand Veil), which would otherwise
+       un-hide the hero the instant it landed. */
+    if (!(s.untargetable || s.conceal || (s.linger && s.linger.conceal))) revealForActing(this);
     Game.fx.skillCast(this, s, castAt);
     if (this.isPlayer) {
       if (i === 2) SFX.ult(); else SFX.skill();
@@ -2685,13 +2696,24 @@ class Hero extends Unit {
     if (this.goalSeq !== this.goal.seq) {
       // a real macro decision: drop the committed target and the stale route
       this.goalSeq = this.goal.seq;
-      this.aiTarget = null;
+      this.aiTarget = null; this.lostTarget = null;
       this.combatPoint = null; this.combatPointT = 0;
       this.nav.gx = this.nav.gy = NaN;
     }
     this.micro.holdFire = false;
     if (this.microGate()) return;
+    const prev = this.aiTarget;
     const best = this.microTarget();
+    /* Bush concealment (core rule): the hero it was fighting just went out
+       of sight. The target is dropped here (microTarget already refused to
+       return it) and remembered for a moment, so the bot walks to where it
+       last saw them instead of standing in the lane as if nothing happened —
+       and never to where they actually are. */
+    if (!best && prev && prev.type === 'hero' && prev.alive && !Game.canSee(this.team, prev)) {
+      this.lostTarget = prev; this.lostTargetT = Game.time;
+    } else if (best || (this.lostTarget && Game.canSee(this.team, this.lostTarget))) {
+      this.lostTarget = null;
+    }
     this.aiTarget = best;
     this.microMove(best);
     if (best) this.botCast(best);
@@ -4886,6 +4908,18 @@ class Hero extends Unit {
       return;
     }
 
+    /* Lost them into a bush a moment ago: walk to the last sighting the
+       macro brain recorded (§4.2 memory, never the live position) and give
+       up on it after LOST_TARGET_HUNT seconds. */
+    if (this.lostTarget && Game.time - this.lostTargetT < LOST_TARGET_HUNT) {
+      const brain = Game.brains && Game.brains[this.team];
+      const seen = brain && brain.seen(this.lostTarget);
+      if (seen && Game.time - seen.t < 4) {
+        const d = hyp(seen.x - this.x, seen.y - this.y);
+        if (d > 80 && d < 900) { m.movePoint = { x: seen.x, y: seen.y }; return; }
+      }
+    }
+
     /* No target: walk the goal. */
     switch (goal.kind) {
       case 'rally':
@@ -5147,6 +5181,12 @@ class Minion extends Unit {
       } else if (u.isStructure) {
         score += nearbyMinion ? 170 : (siege ? -50 : 55);
       } else if (u.type === 'hero') {
+        /* A hero in a bush is not there as far as a minion is concerned
+           (core rule, js/combat.js). Without this the wave kept swinging at
+           a hidden hero, every hit re-stamped revealT, and the whole team
+           could see them again — the single loudest reason bushes did not
+           feel like they hid anything. */
+        if (!Game.canSee(this.team, u)) continue;
         if (!siege && nearbyMinion) score += 250;
         else score += siege ? 35 : 95;
         if (this.minionPathDist(u) > pathLeash) continue;
@@ -5201,6 +5241,8 @@ class Minion extends Unit {
     this.retargetT -= dt;
     let t = this.target;
     if (t && (!t.alive || this.distTo(t) > 480)) t = this.target = null;
+    // a hero that steps into a bush is dropped on the spot, not on the next retarget tick
+    if (t && t.type === 'hero' && !Game.canSee(this.team, t)) t = this.target = null;
     /* After hero-aggro expires, drop a chase that has left the road so the
        wave returns to the lane instead of wandering the jungle. */
     if (t && t.type === 'hero' && this.retargetT <= 0.45 && this.minionPathDist(this) > 400)
@@ -5365,6 +5407,10 @@ class Tower extends Unit {
     if (this.focusHits > 0 && Game.time - this.focusT > BALANCE.towerRampReset) this.focusHits = 0;
     let t = this.target;
     if (t && (!t.alive || this.distTo(t) > this.range + this.radius + t.radius + 30)) t = null;
+    /* A turret cannot shoot what its team cannot see (core rule,
+       js/combat.js): a hero who steps into a bush inside the ring drops off
+       the barrel immediately, and is not re-acquired below. */
+    if (t && t.type === 'hero' && !Game.canSee(this.team, t)) t = null;
     /* Protect allied heroes: if an enemy in range just hit one of ours, that
        attacker outranks a minion. This is the rule that makes diving a
        teammate under turret actually costly. */
@@ -5376,6 +5422,7 @@ class Tower extends Unit {
         if (Game.time - r.t > 2.8) continue;
         const foe = r.h;
         if (!foe || !foe.alive || foe.team === this.team) continue;
+        if (!Game.canSee(this.team, foe)) continue;   // the diver ducked into a bush: no free turret aggro
         if (this.distTo(foe) <= this.range + this.radius + foe.radius)
           defender = foe;
       }
@@ -5398,7 +5445,9 @@ class Tower extends Unit {
         for (const h of Game.heroes) {
           if (h.team === this.team || !h.alive || h.untargetable) continue;
           const dx = h.x - this.x, dy = h.y - this.y, d2 = dx * dx + dy * dy, r = reach + h.radius;
-          if (d2 <= r * r && d2 < bd) { bd = d2; t = h; }
+          if (d2 > r * r || d2 >= bd) continue;
+          if (!Game.canSee(this.team, h)) continue;   // a hero in a bush is not on this turret's list
+          bd = d2; t = h;
         }
       }
     }
@@ -5512,6 +5561,10 @@ class Projectile {
   static homing(src, target, packet) {
     return new Projectile({
       kind: 'homing', x: src.x, y: src.y, src, team: src.team, target, packet,
+      /* Where the shot is aimed. It tracks the target while the shooter's
+         team can see it and freezes on the last sighting when it cannot —
+         so it starts at the target's position the moment it was loosed. */
+      aimX: target.x, aimY: target.y,
       speed: src.isStructure ? 620 : 850, size: src.isStructure ? 9 : 5, color: src.projColor,
     });
   }
@@ -5664,17 +5717,31 @@ class Projectile {
     if (this.kind === 'homing') {
       const t = this.target;
       if (!t || !t.alive || t.untargetable) { this.dead = true; return; }
-      const d = dist(this, t);
+      /* Bush concealment (core rule): a shot only homes while its team can
+         see what it is chasing. Step into a bush mid-flight and the arrow
+         keeps going to where you were and falls there — the same thing the
+         reference game does, and the reason ducking into a thicket beats
+         an arrow already in the air. */
+      const gated = t.type === 'hero' && (this.team === TEAM_BLUE || this.team === TEAM_RED);
+      const seen = !gated || Game.canSee(this.team, t);
+      if (seen) { this.aimX = t.x; this.aimY = t.y; }
+      const ax = this.aimX, ay = this.aimY;
+      const d = hyp(ax - this.x, ay - this.y);
       const step = this.speed * dt;
-      if (Game.objects.length && Game.barrierBlocks(this.team, px, py, t.x, t.y, Math.min(d, step + t.radius))) { this.dead = true; return; }
-      if (d <= step + t.radius) {
+      if (Game.objects.length && Game.barrierBlocks(this.team, px, py, ax, ay, Math.min(d, step + t.radius))) { this.dead = true; return; }
+      if (d <= step + (seen ? t.radius : 0)) {
+        // lost shot: it lands on the remembered spot and only connects if the target is still standing there in the open
+        if (!seen && dist(t, { x: ax, y: ay }) > t.radius) {
+          this.dead = true; Game.fx.spark(ax, ay, this.color, 3);
+          return;
+        }
         const dealt = resolveDamage(this.src, t, this.packet);
         if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(t, dealt, this.packet);
         if (t.isPlayer) SFX.hit();
         this.dead = true;
         return;
       }
-      const dir = norm(t.x - this.x, t.y - this.y);
+      const dir = norm(ax - this.x, ay - this.y);
       this.x += dir.x * step; this.y += dir.y * step;
       return;
     }

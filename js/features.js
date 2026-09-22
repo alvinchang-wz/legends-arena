@@ -207,7 +207,16 @@ const Features = {
         h.dirHurt = h.dirHurt.filter(d => d.t > 0);
       }
       if (h.alive) {
-        this.lastSeen.set(h, { x: h.x, y: h.y, t: Game.time });
+        /* A *sighting*, not a position feed. This used to record every hero
+           every frame, so the minimap's memory dot sat on a hero hiding in a
+           bush and followed them around — a map hack wearing a ghost's
+           clothes, and the reason bushes felt like they did nothing. It also
+           meant "lane missing" could never fire, because nobody was ever
+           unseen for 12 s. */
+        const p = Game.player;
+        if (!p || h.team === p.team || Game.canSee(p.team, h)) {
+          this.lastSeen.set(h, { x: h.x, y: h.y, t: Game.time });
+        }
         if (h.combatT <= 0) {
           h.heal(h.maxHp * 0.004 * dt);
           h.gainMana(h.maxMana * 0.003 * dt);   // F3: never a heat gauge (Cinder would warm up standing still)
@@ -744,12 +753,17 @@ const Features = {
         g.fillText(Math.ceil(c.respawnT), mx(c.x), my(c.y) - 6);
       }
     }
+    /* The memory dot: where an enemy was last actually seen, fading out
+       fast. It is deliberately short — a ghost that lingers half a minute
+       over a thicket is just the hidden hero's icon with the opacity turned
+       down, which is the bug this fade exists to avoid. */
+    const GHOST_FADE = 6;
     if (!Game.spectate && Game.player) {
       for (const h of Game.heroes) {
         if (h.team === Game.player.team || h.alive && Game.canSee(Game.player.team, h)) continue;
         const seen = this.lastSeen.get(h);
-        if (!seen || Game.time - seen.t > 24) continue;
-        g.globalAlpha = clamp(1 - (Game.time - seen.t) / 24, 0.2, 0.7);
+        if (!seen || Game.time - seen.t > GHOST_FADE) continue;
+        g.globalAlpha = clamp(1 - (Game.time - seen.t) / GHOST_FADE, 0.15, 0.55);
         g.beginPath(); g.arc(mx(seen.x), my(seen.y), 3, 0, TAU);
         g.fillStyle = TEAM_COLORS[h.team]; g.fill();
         g.globalAlpha = 1;

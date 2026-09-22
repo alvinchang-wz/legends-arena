@@ -1179,6 +1179,25 @@ const Game = {
     if (bushHides(team, u)) return false;                             // core rule (combat.js), so headless sees it too
     return this.visible(team, u.x, u.y);
   },
+  /* Is this hero hidden from the other side right now? The one question the
+     renderer, the HUD and the tests all ask, so it is answered once here
+     rather than re-derived from `bush >= 0` (which is only half the rule:
+     an enemy sharing the thicket, or revealT from acting, un-hides you). */
+  heroHidden(h) {
+    return !!(h && h.alive && !this.canSee(1 - h.team, h));
+  },
+  /* Everything `team` is allowed to see on its minimap: its own side, plus
+     the enemies it actually has eyes on. A hero in a bush is in neither
+     list — the minimap is the easiest place to accidentally ship a map hack,
+     so the filter lives in core where a headless test can check it. */
+  minimapHeroes(team) {
+    const out = [];
+    for (const h of this.heroes) {
+      if (!h.alive) continue;
+      if (h.team === team || this.canSee(team, h)) out.push(h);
+    }
+    return out;
+  },
   /* F13 conceal (Ashara's Sand Veil): hidden like a bush from enemies beyond
      CONCEAL_REVEAL (250), unless revealed (dealing damage does that for
      1.6 s) or an enemy hero is inside that distance. */
@@ -2864,6 +2883,41 @@ function drawWallPiece(a, b, r) {
   line(-h - 2, r * 0.48, mixHex(top, '#ffffff', 0.16));
 }
 
+/* "They cannot see you." Drawn inside uprightAt, so (0,0) is the hero and
+   the y axis is unsquashed. A slashed eye plus the word, because the eye
+   alone reads as a ward at phone size — and a soft pulse so it is findable
+   in a fight without competing with the health bar. */
+function drawHiddenChip(h, top) {
+  const y = -(top + 50);
+  const label = 'HIDDEN';
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.font = `800 10px ${UI_FONT}`;
+  ctx.textAlign = 'left';
+  const tw = ctx.measureText(label).width;
+  const w = tw + 30, x0 = -w / 2;
+  const pulse = 0.72 + 0.16 * Math.sin(Game.time * 3.4);
+  ctx.fillStyle = `rgba(12,18,14,${pulse})`;
+  ctx.strokeStyle = rgba('#9fe08a', 0.85);
+  ctx.lineWidth = 1.2;
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x0, y - 9, w, 16, 8); ctx.fill(); ctx.stroke(); }
+  else { ctx.fillRect(x0, y - 9, w, 16); ctx.strokeRect(x0, y - 9, w, 16); }
+  // the eye: an almond with a pupil and a slash through it
+  const ex = x0 + 11;
+  ctx.strokeStyle = '#9fe08a'; ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(ex - 5.5, y - 1);
+  ctx.quadraticCurveTo(ex, y - 6, ex + 5.5, y - 1);
+  ctx.quadraticCurveTo(ex, y + 4, ex - 5.5, y - 1);
+  ctx.stroke();
+  ctx.fillStyle = '#9fe08a';
+  ctx.beginPath(); ctx.arc(ex, y - 1, 1.6, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(ex - 6, y + 4); ctx.lineTo(ex + 6, y - 6); ctx.stroke();
+  ctx.fillStyle = '#d7f5c8';
+  ctx.fillText(label, x0 + 22, y + 2.5);
+  ctx.restore();
+}
+
 /* Passive stacks sit on the health bar so Ember / Chill / plates are readable
    in a fight instead of living only in the combat log. */
 function drawStatusMarks(u, yOff) {
@@ -3222,6 +3276,13 @@ function render() {
     }
     // in a bush or a concealing patch (F13, Sand Veil) a hero is drawn translucent: allies see a ghost, an enemy close enough to see it too
     const alpha = (h.bush >= 0 || h.concealT > 0) ? (h.isPlayer ? 0.65 : 0.8) : 1;
+    /* Translucent on its own only says "in a thicket", never "and they
+       cannot see me" — which is the whole reason to stand there. The eye
+       chip below says it outright, and only while the rule is actually in
+       force: it blinks out the moment an enemy walks in or you attack.
+       Cover, not fog: standing unseen in the dark half of the map is not
+       what the chip is for, so it wants a bush (or a Sand Veil) as well. */
+    const concealed = (h.bush >= 0 || h.concealT > 0) && Game.heroHidden(h);
     ctx.globalAlpha = alpha;
     // player halo
     if (h.isPlayer) {
@@ -3285,6 +3346,7 @@ function render() {
         ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 3;
         ctx.strokeText(h.name, 0, -(top + 32));
         ctx.fillText(h.name, 0, -(top + 32));
+        if (concealed) drawHiddenChip(h, top);
       });
       ctx.globalAlpha = 1;
     });
