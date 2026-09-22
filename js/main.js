@@ -1101,13 +1101,15 @@ const Game = {
     if (typeof Mlbb !== 'undefined' && Mlbb.bushHiddenFrom(team, u)) return false;
     return this.visible(team, u.x, u.y);
   },
-  /* F13 conceal: hidden like a bush, unless revealed (dealing damage does
-     that for 1.6 s) or an enemy hero is right on top of the unit. */
+  /* F13 conceal (Ashara's Sand Veil): hidden like a bush from enemies beyond
+     CONCEAL_REVEAL (250), unless revealed (dealing damage does that for
+     1.6 s) or an enemy hero is inside that distance. */
+  CONCEAL_REVEAL: 250,
   concealedFrom(team, u) {
     if (u.revealT > 0) return false;
     for (const h of this.heroes) {
       if (h.team !== team || !h.alive) continue;
-      if (dist(h, u) < 72) return false;
+      if (dist(h, u) < this.CONCEAL_REVEAL) return false;
     }
     return true;
   },
@@ -3133,7 +3135,8 @@ function render() {
       }
       Features.lastBush.set(h, h.bush);
     }
-    const alpha = h.bush >= 0 ? (h.isPlayer ? 0.65 : 0.8) : 1;
+    // in a bush or a concealing patch (F13, Sand Veil) a hero is drawn translucent: allies see a ghost, an enemy close enough to see it too
+    const alpha = (h.bush >= 0 || h.concealT > 0) ? (h.isPlayer ? 0.65 : 0.8) : 1;
     ctx.globalAlpha = alpha;
     // player halo
     if (h.isPlayer) {

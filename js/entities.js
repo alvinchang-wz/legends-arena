@@ -2683,11 +2683,32 @@ class Hero extends Unit {
     if (role === 'Tank' || role === 'Fighter') return true;
     return Math.hypot(t.vx || 0, t.vy || 0) < 30 && this.inFight(t);
   }
-  /* F29 (Quill's hint): enemy heroes a zone centred on `t` would cover. */
+  /* F29 (Quill's hint): enemy heroes a zone centred on `t` would cover;
+     with botAttacking (Ashara's hint) only those not retreating from this
+     hero (moving away at over 60 u/s does not count). */
   zoneCrowd(s, t) {
     let n = 0;
-    for (const h of Game.heroes) if (h.team !== this.team && h.alive && h.distTo(t) < s.radius + h.radius) n++;
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive || h.distTo(t) >= s.radius + h.radius) continue;
+      if (s.botAttacking && this.retreatingFromMe(h)) continue;
+      n++;
+    }
     return n;
+  }
+  /* Is `u` walking away from this hero (its velocity away from here over 60 u/s)? */
+  retreatingFromMe(u) {
+    const dx = u.x - this.x, dy = u.y - this.y, d = Math.hypot(dx, dy) || 1;
+    return ((u.vx || 0) * dx + (u.vy || 0) * dy) / d > 60;
+  }
+  /* F29 (Ashara's hint): where a veil for the allied group goes: the
+     centroid of the allied heroes (this one included) within `r`. */
+  allyGroupPoint(r) {
+    let x = 0, y = 0, n = 0;
+    for (const h of Game.heroes) {
+      if (h.team !== this.team || !h.alive || this.distTo(h) > r) continue;
+      x += h.x; y += h.y; n++;
+    }
+    return n ? { x: x / n, y: y / n } : { x: this.x, y: this.y };
   }
   /* F29 (Vesper's hint): where a botClearLine dash should land so the
      first skill (a charge shot that stops on the first unit) has a clear
@@ -2883,6 +2904,13 @@ class Hero extends Unit {
           if (!isHero) return 0;
           if (this.zoneCrowd(s, t) >= 2) return 880;
           return this.crowdZoneSingleOk(s, t) ? 820 : 0;
+        }
+        // F29 (Ashara's hint): Sand Veil on herself with a melee enemy inside botVeil.melee, or on the allied
+        // group with an enemy hero inside botVeil.enemy (aimed by botFireSkill); never on creeps
+        if (s.botVeil) {
+          if (!isHero) return 0;
+          if (this.meleeThreat(s.botVeil.melee || 300)) return 850;
+          return this.enemyHeroWithin(s.botVeil.enemy || 600) ? 700 : 0;
         }
         // F29 (Mira's hint): Rime Field between her and a melee threat inside botBetween (aimed by botFireSkill),
         // or on the target once an ally has engaged it; otherwise a routine drop on a hero
@@ -3237,7 +3265,9 @@ class Hero extends Unit {
         const w = s.wallStun && s.knockback && t.type === 'hero' ? this.wallShoveDir(t, s.knockback + 10) : null;
         // F29 (Mira's hint): a botBetween patch goes between her and the melee threat
         const threat = s.botBetween ? this.meleeThreat(s.botBetween) : null;
-        this.castSkill(i, w ? { x: t.x - w.x * 100, y: t.y - w.y * 100 } : threat ? this.betweenPoint(s, threat) : Game.aimLeadPoint(this, t, 550));
+        // F29 (Ashara's hint): a veil goes on herself against a melee inside botVeil.melee, else on the allied group
+        const veil = s.botVeil ? (this.meleeThreat(s.botVeil.melee || 300) ? { x: this.x, y: this.y } : this.allyGroupPoint(s.botVeil.group || 400)) : null;
+        this.castSkill(i, w ? { x: t.x - w.x * 100, y: t.y - w.y * 100 } : threat ? this.betweenPoint(s, threat) : veil || Game.aimLeadPoint(this, t, 550));
         break;
       }
       case 'heal':

@@ -781,12 +781,16 @@ const PASSIVES = {
     },
   },
 
+  /* Ashara — the third skill damage instance on a target within 6 s silences
+     it 0.9 s, then that target is locked out for 8 s. Stepping into Sand
+     Veil or Burial fires onSkillLanded once per cast (F13
+     countsAsSkillHit), so it counts as one instance here. */
   drymouth: {
     onSkillHit(h, target) {
       if (!target.marks || !target.cc || target.isStructure) return;
       const m = target.marks;
       m.sand = (m.sandT > Game.time) ? m.sand + 1 : 1;
-      m.sandT = Game.time + 5;
+      m.sandT = Game.time + 6;
       if (m.sand < 3) return;
       if (m.sandSilence && m.sandSilence > Game.time) return;
       m.sand = 0;

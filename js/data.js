@@ -465,19 +465,34 @@ const HEROES = [
   },
   {
     id: 'ashara', name: 'Ashara', role: 'Mage', icon: '🏜️', color: '#d4a017', projColor: '#f5d76e',
-    desc: 'A sand seer who steals voices and buries the careless.',
-    difficulty: 2, damageStyle: 'magic',
-    hp: 495, hpLv: 64, mp: 280, mpLv: 30, atk: 47, atkLv: 4.2,
+    desc: 'An ambush and terrain mage: hides her team in sand, silences whoever pushes through it, and turns ground into quicksand.',
+    difficulty: 3, damageStyle: 'magic',
+    /* docs/design/heroes.md, Mages: Ashara. The roster's only stealth
+       outside bushes (F13 linger.conceal): allied heroes inside Sand Veil
+       are hidden from enemies beyond 250 and revealed 1.6 s by dealing
+       damage. Burial is the only progressive CC (a linger whose slow
+       ramps 20% -> 60%, then an endPayload that roots). Entering either
+       counts as one Dry Mouth hit per cast (countsAsSkillHit). No
+       mobility. Bot fields: botHold 305; botVeil drops Sand Veil on
+       herself with a melee enemy inside 300, or on the allied group with
+       an enemy hero inside 600; botCrowd + botAttacking hold Burial for
+       2+ heroes who are not retreating, or one already held. */
+    botHold: 305,
+    hp: 500, hpLv: 64, mp: 280, mpLv: 30, atk: 47, atkLv: 4.2,
     armor: 10, armorLv: 2.0, mr: 11, mrLv: 1.9,
-    range: 305, atkSpd: 0.92, speed: 256,
+    range: 305, atkSpd: 0.92, speed: 255,
     passive: {
       name: 'Dry Mouth', icon: '🌬️', id: 'drymouth',
-      desc: 'The third skill hit on a target silences them for 0.9s (8s per target).',
+      desc: 'The third skill damage instance on a target within 6s silences it for 0.9s (8s lockout per target). Entering Sand Veil or Burial counts as one skill hit.',
     },
     skills: [
-      { name: 'Glass Needle', icon: '↾', type: 'skillshot', cd: 6, mana: 45, dmgType: 'magic', dmg: 155, dmgLv: 18, scaleAp: 0.65, range: 660, speed: 880, radius: 22, slowPct: 0.25, slowDur: 1.2, desc: 'A shard of fused sand that damages and slows.' },
-      { name: 'Dune Wake', icon: '〜', type: 'nova', cd: 9, mana: 55, dmgType: 'magic', radius: 250, dmg: 145, dmgLv: 17, scaleAp: 0.55, slowPct: 0.4, slowDur: 1.6, desc: 'Kick up a scouring ring of sand.' },
-      { name: 'Burial', icon: '⏳', type: 'zone', cd: 41, mana: 110, dmgType: 'magic', range: 560, radius: 210, delay: 0.6, ticks: 4, interval: 0.5, dmg: 55, dmgLv: 7, scaleAp: 0.3, slowPct: 0.3, slowDur: 0.7, silence: 1.0, desc: 'A sandpit that chews four times and seals voices shut. The only mage ult with a silence.' },
+      { name: 'Glass Needle', icon: '↾', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 150, dmgLv: 18, scaleAp: 0.65, range: 660, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.2, desc: 'A shard of fused sand that stops on the first enemy: 150+18/rank (+65% MAGIC) and a 25% slow for 1.2s.' },
+      { name: 'Sand Veil', icon: '〜', type: 'zone', cd: 13, cdLv: -0.5, mana: 55, manaLv: 4, dmgType: 'magic', range: 500, radius: 180, delay: 0.2, ticks: 1, dmg: 70, dmgLv: 10, scaleAp: 0.35, linger: { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }, botVeil: { melee: 300, enemy: 600, group: 400 }, desc: 'A pulse of 70+10/rank (+35% MAGIC) in 180, then a sand patch for 4s: allied heroes inside are concealed like a bush (hidden beyond 250, revealed 1.6s by dealing damage); enemies inside are slowed 30% and count a Dry Mouth hit on entry.' },
+      { name: 'Burial', icon: '⏳', type: 'zone', cd: [42, 37, 32], mana: [105, 125, 145], dmgType: 'magic', range: 560, radius: 220, delay: 0.4, ticks: 0,
+        dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2,   // mirrored from the endPayload for tooltips and burst estimates (ticks: 0 never applies them)
+        linger: { dur: 4, enemySlowRamp: [0.20, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } },
+        botCrowd: true, botAttacking: true,
+        desc: 'Quicksand in 220 for 4s: the slow ramps from 20% to 60%, entering counts a Dry Mouth hit, and everyone still inside at the end takes 260/340/420 (+100% MAGIC) and is rooted 1.2s.' },
     ],
   },
   {

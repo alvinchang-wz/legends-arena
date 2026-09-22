@@ -575,4 +575,140 @@ T.test('Nadir bot: Implosion for 2+ heroes within 280 of the target or one under
   assert.equal(nadir.botHoldNow(), 310, 'holds 310');
 });
 
+/* ---------------- Ashara ---------------- */
+
+T.test('Ashara: base stats and skill numbers match the spec (the only conceal, the only progressive slow-to-root)', () => {
+  reset();
+  const d = ashara.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [500, 64, 280, 30, 47, 4.2, 10, 2.0, 11, 1.9, 305, 0.92, 255, 3]);
+  assert.equal(d.passive.id, 'drymouth');
+  const [s1, s2, s3] = ashara.skills;
+  assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.slowPct, s1.slowDur, s1.cd, s1.cdLv, s1.mana, s1.manaLv],
+    ['skillshot', 660, 900, 22, 150, 18, 0.65, 0.25, 1.2, 6, -0.3, 45, 4]);
+  assert.equal(rankVal(s1, 'dmg', 6), 240); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Needle cd at rank 6');
+  assert.deepEqual([s2.type, s2.range, s2.radius, s2.delay, s2.ticks, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.linger],
+    ['zone', 500, 180, 0.2, 1, 70, 10, 0.35, 13, -0.5, 55, 4, { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }]);
+  assert.equal(rankVal(s2, 'dmg', 6), 120); near(rankVal(s2, 'cd', 6), 10.5, 1e-9, 'Veil cd at rank 6');
+  assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.cd, s3.mana, s3.linger],
+    ['zone', 560, 220, 0.4, 0, [42, 37, 32], [105, 125, 145],
+      { dur: 4, enemySlowRamp: [0.20, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } }]);
+  assert.ok(!HEROES_ONLY_STEALTH(), 'Ashara is the only hero with a concealing skill');
+  for (const s of ashara.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+  function HEROES_ONLY_STEALTH() {
+    return sim.context.HEROES.some(h => h.id !== 'ashara' && h.skills.some(s => s.linger && s.linger.conceal));
+  }
+});
+
+T.test('Ashara: Sand Veil pulses, then for 4 s conceals allied heroes inside from enemies beyond 250 (revealed 1.6 s by dealing damage), slows enemies inside 30% and counts one Dry Mouth hit per cast on entry', () => {
+  reset();
+  T.place(ashara, open.x, open.y); T.place(nadir, open.x + 150, open.y);         // red, will stand in the veil (centre open.x + 300)
+  T.place(grom, open.x + 450, open.y); T.place(zephyr, open.x + 800, open.y);      // blue: one in the veil 300 from Nadir, one 650 away
+  grom.attrs.bonus.tenacity = 0;
+  G.update(1 / 60);
+  assert.ok(ashara.castSkill(1, { x: open.x + 300, y: open.y }));
+  T.seconds(G, 0.5);
+  const z = G.zones[G.zones.length - 1];
+  assert.ok(grom.stats.dmgTaken > 0 && z.lingerT > 3, 'the pulse landed and the patch stays');
+  assert.equal(grom.marks.sand, 2, 'the pulse and the entry: two Dry Mouth instances');
+  near(grom.cc.slowPct, 0.30, 1e-9, 'an enemy inside is slowed 30%');
+  assert.ok(nadir.concealT > 0, 'the ally inside is concealed');
+  assert.equal(G.canSee(0, nadir), false, 'hidden from an enemy 500 away');
+  assert.equal(G.canSee(1, nadir), true, 'his own team sees him');
+  T.place(zephyr, open.x + 350, open.y);
+  assert.equal(G.canSee(0, nadir), true, 'an enemy inside 250 sees him');
+  T.place(zephyr, open.x + 800, open.y);
+  assert.equal(G.canSee(0, nadir), false);
+  nadir.onSkillLanded(grom, 10, nadir.skills[0]);
+  assert.ok(nadir.revealT >= 1.5, 'dealing damage reveals 1.6 s');
+  assert.equal(G.canSee(0, nadir), true);
+  // entry counts once per cast: leave and come back
+  T.place(grom, open.x + 900, open.y);
+  T.seconds(G, 0.3);
+  T.place(grom, open.x + 450, open.y);
+  T.seconds(G, 0.3);
+  assert.equal(grom.marks.sand, 2, 'a second entry into the same veil is not another instance');
+  T.place(nadir, open.x + 900, open.y);
+  T.seconds(G, 3.2);
+  assert.ok(z.dead, 'gone after 4 s');
+  assert.ok(nadir.concealT <= 0, 'conceal lapses outside');
+});
+
+T.test('Ashara: Burial has no opening hit, its slow ramps 20% -> 60% over 4 s, entering counts a Dry Mouth hit, and at the end everyone still inside takes 260/340/420 (+100% MAGIC) and is rooted 1.2 s; Dry Mouth silences on the third instance within 6 s, once per 8 s', () => {
+  reset();
+  T.place(ashara, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 300, open.y + 150);
+  grom.attrs.bonus.tenacity = 0; zephyr.attrs.bonus.tenacity = 0;
+  assert.ok(ashara.castSkill(2, { x: open.x + 300, y: open.y }));
+  const z = G.zones[G.zones.length - 1];
+  T.seconds(G, 0.5);   // 0.1 s into the linger
+  assert.equal(grom.stats.dmgTaken, 0, 'no opening damage');
+  assert.ok(z.lingerT > 3.8, 'lingering');
+  assert.equal(grom.marks.sand, 1, 'entering is one Dry Mouth instance');
+  near(grom.cc.slowPct, 0.21, 0.02, 'the slow starts near 20%');
+  T.seconds(G, 3.0);   // 3.1 s in
+  near(grom.cc.slowPct, 0.51, 0.02, 'ramping toward 60%');
+  T.place(zephyr, open.x + 800, open.y + 150);   // walks out before the end
+  const before = grom.stats.dmgTaken;
+  T.seconds(G, 1.0);
+  assert.ok(z.dead, 'over after 4 s');
+  assert.ok(grom.stats.dmgTaken > before, 'the one still inside is buried');
+  near(grom.cc.t.immobilize, 1.2 * (1 - Math.min(0.6, grom.attrs.get('tenacity'))) - 0.05, 0.03, 'rooted 1.2 s (less tenacity)');
+  assert.equal(zephyr.stats.dmgTaken, 0, 'the one who left takes nothing');
+  assert.ok(!zephyr.cc.has('immobilize'));
+  const p = z.linger.endPayload;
+  near(ashara.skillDmg(Object.assign({ dmgType: 'magic' }, p), 3, grom), 420 + ashara.magicPower() * 1.0, 1e-6, '420 +100% MAGIC at rank 3');
+  // Dry Mouth: the third instance within 6 s silences 0.9 s; then 8 s of lockout
+  reset();
+  T.place(ashara, open.x, open.y); T.place(grom, open.x + 300, open.y);
+  grom.attrs.bonus.tenacity = 0;
+  ashara.fire('onSkillHit', grom, 10, ashara.skills[0]);
+  ashara.fire('onSkillHit', grom, 10, ashara.skills[0]);
+  assert.ok(!grom.cc.has('silence'), 'two instances: nothing');
+  T.seconds(G, 5.5);
+  ashara.fire('onSkillHit', grom, 10, ashara.skills[0]);
+  near(grom.cc.t.silence, 0.9 * (1 - Math.min(0.6, grom.attrs.get('tenacity'))), 1e-9, 'the third within 6 s silences 0.9 s (less tenacity)');
+  T.seconds(G, 1.0);
+  for (let k = 0; k < 3; k++) ashara.fire('onSkillHit', grom, 10, ashara.skills[0]);
+  assert.ok(!grom.cc.has('silence'), 'locked out for 8 s');
+  T.seconds(G, 7.5);
+  for (let k = 0; k < 3; k++) ashara.fire('onSkillHit', grom, 10, ashara.skills[0]);
+  assert.ok(grom.cc.has('silence'), 'lockout over: silenced again');
+});
+
+T.test('Ashara bot: Sand Veil on herself with a melee inside 300, on the allied group with an enemy hero inside 600, otherwise held; Burial for 2+ heroes who are not retreating or one already slowed; holds 305', () => {
+  reset();
+  T.place(ashara, open.x, open.y); T.place(zephyr, open.x + 700, open.y);
+  G.update(1 / 60);
+  assert.equal(ashara.botSkillUrgency(1, zephyr, 700, true, false), 0, 'nobody inside 600: the veil is held');
+  T.place(zephyr, open.x + 480, open.y); T.place(hexa, open.x - 200, open.y + 100);
+  G.update(1 / 60);
+  assert.equal(ashara.botSkillUrgency(1, zephyr, 480, true, false), 700, 'an enemy hero inside 600: veil the group');
+  ashara.botFireSkill(1, zephyr, 480, true, false);
+  let z = G.zones[G.zones.length - 1];
+  const gp = ashara.allyGroupPoint(400);
+  near(Math.hypot(z.x - gp.x, z.y - gp.y), 0, 1e-6, 'cast on the allied group\'s centre');
+  near(gp.x, open.x - 100, 1e-6, 'the centroid of Ashara and Hexa');
+  ashara.skillCd[1] = 0; G.zones.length = 0;
+  T.place(grom, open.x + 250, open.y);
+  G.update(1 / 60);
+  assert.equal(ashara.botSkillUrgency(1, grom, 250, true, false), 850, 'a melee inside 300: veil herself');
+  ashara.botFireSkill(1, grom, 250, true, false);
+  z = G.zones[G.zones.length - 1];
+  near(Math.hypot(z.x - ashara.x, z.y - ashara.y), 0, 1e-6, 'cast under her own feet');
+  // Burial
+  G.zones.length = 0; T.place(grom, FAR.x, FAR.y);
+  T.place(zephyr, open.x + 450, open.y); T.place(mira, open.x + 450, open.y + 150);
+  G.update(1 / 60);
+  zephyr.vx = zephyr.vy = mira.vx = mira.vy = 0;
+  assert.equal(ashara.botSkillUrgency(2, zephyr, 450, true, false), 880, 'two heroes standing their ground');
+  zephyr.vx = 200; mira.vx = 200;
+  assert.equal(ashara.botSkillUrgency(2, zephyr, 450, true, false), 0, 'both retreating: held');
+  mira.vx = 0;
+  assert.equal(ashara.botSkillUrgency(2, zephyr, 450, true, false), 0, 'one attacking, one retreating: not a crowd, target healthy and free');
+  zephyr.cc.applySlow(0.3, 2, 0);
+  assert.equal(ashara.botSkillUrgency(2, zephyr, 450, true, false), 820, 'a hero already slowed');
+  zephyr.cc.clear(); zephyr.vx = 0;
+  assert.equal(ashara.botHoldNow(), 305, 'holds 305');
+});
+
 T.done();
