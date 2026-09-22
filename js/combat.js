@@ -304,7 +304,8 @@ function rankVal(s, key, rank) {
 
 /* Apply every CC a skill definition carries, in one call. `rank` resolves
    per-rank arrays (F1); `over` may carry a `slowPct` computed by the caller
-   (a zone tick's slowPctLv ramp, F28). */
+   (a zone tick's slowPctLv ramp, F28; a boomerang's return pass, F10, which
+   also sets `slowDur`). */
 function applySkillCC(src, target, s, rank, over) {
   if (!s || !target.cc) return;
   const r = rank || (src && src.skillRankOf ? src.skillRankOf(s) : 1);
@@ -314,7 +315,8 @@ function applySkillCC(src, target, s, rank, over) {
     if (s[type]) target.cc.apply(type, rankVal(s, type, r), ten);
   }
   const slowPct = (over && over.slowPct !== undefined) ? over.slowPct : rankVal(s, 'slowPct', r);
-  if (slowPct) target.cc.applySlow(slowPct, rankVal(s, 'slowDur', r) || 1.5, ten);
+  const slowDur = (over && over.slowDur !== undefined) ? over.slowDur : rankVal(s, 'slowDur', r);
+  if (slowPct) target.cc.applySlow(slowPct, slowDur || 1.5, ten);
   if (s.taunt) applyTaunt(src, target, rankVal(s, 'taunt', r), ten);
   if (s.knockback) applyKnockback(src, target, rankVal(s, 'knockback', r), s, r, over && over.from);
   if (s.pullTo) applyPullTo(src, target, s, r, over);

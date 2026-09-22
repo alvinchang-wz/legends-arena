@@ -1209,6 +1209,7 @@ const Game = {
     const reach = (s.range || s.dist || 500) + 150;
     let best = null, bd = Infinity;
     for (const u of this.enemyUnits(hero.team, { neutral: true })) {
+      if (s && s.heroOnly && u.type !== 'hero') continue;   // F20: creeps are not targets
       const d = dist(hero, u);
       if (d > reach || !this.canSee(hero.team, u)) continue;
       const score = d - (u.type === 'hero' ? 250 : 0) - (u.type === 'hero' && u.hpPct < 0.35 ? 80 : 0);
@@ -1593,6 +1594,9 @@ const Game = {
           this.range({ unit: h, r: s.dist, color: c, dur: 0.7, dash: true, lw: 2.5 });
           if (s.endNova && at) this.range({ x: at.x, y: at.y, r: s.endNova.radius, color: c, dur: 0.8, fill: true });
           break;
+        case 'cone':   // F11: the fan itself is drawn by doCone; show its reach
+          this.range({ unit: h, r: s.length || 400, color: c, dur: 0.5, dash: true, lw: 2 });
+          break;
         default:   // skillshot / zone / blinkstrike — show the cast range
           this.range({ unit: h, r: s.range || 400, color: c, dur: 0.7, dash: true, lw: 2.5 });
           if (s.type === 'zone' && at) this.range({ x: at.x, y: at.y, r: s.radius, color: c, dur: 0.9 });
@@ -1607,6 +1611,8 @@ const Game = {
       });
     },
     ring(x, y, r, color, dur = 0.4) { this.push({ kind: 'ring', x, y, r, color, dur, age: 0 }); },
+    /* F11: the sector a cone just covered, shown for 0.2 s. */
+    fan(x, y, ang, half, r, color, dur = 0.2) { this.push({ kind: 'fan', x, y, ang, half, r, color, dur, age: 0 }); },
     slash(x, y, ang, team) {
       this.push({ kind: 'slash', x, y, ang, dur: 0.18, age: 0, color: team === undefined ? '#fff' : TEAM_COLORS[team] });
     },
@@ -1656,6 +1662,10 @@ const Game = {
         case 'skillshot':
           this.spark(ox, oy, col, s.explodeR ? 8 : 4);
           if (s.explodeR) this.flash(ox, oy, 28, col);
+          break;
+        case 'cone':
+          this.spark(ox, oy, col, 6);
+          this.flash(ox, oy, 30, col);
           break;
         case 'dash':
           this.ghost(h);
@@ -3336,6 +3346,13 @@ function render() {
       ctx.arc(sz * 0.4, 0, sz * 0.9, -0.9, 0.9);
       ctx.strokeStyle = col; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
       ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.stroke();
+    } else if (p.style === 'disc') {
+      // a boomerang (F10): a spinning crescent, tighter on the way back
+      ctx.rotate(Game.time * (p.returning ? 26 : 18));
+      ctx.beginPath();
+      ctx.arc(0, 0, sz * 1.1, 0.3, 2.9);
+      ctx.strokeStyle = col; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+      ctx.shadowColor = col; ctx.shadowBlur = 12; ctx.stroke();
     } else {
       ctx.beginPath(); ctx.arc(0, 0, sz, 0, TAU);
       ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 14; ctx.fill();
@@ -3413,6 +3430,13 @@ function render() {
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (0.4 + 0.6 * t), 0, TAU);
       ctx.strokeStyle = e.color; ctx.globalAlpha = 1 - t; ctx.lineWidth = 5;
       ctx.stroke(); ctx.globalAlpha = 1;
+    } else if (e.kind === 'fan') {
+      // a cone (F11): the sector fills out from the apex and fades
+      const r = e.r * (0.55 + 0.45 * Math.min(1, t * 2.5));
+      ctx.beginPath(); ctx.moveTo(e.x, e.y);
+      ctx.arc(e.x, e.y, r, e.ang - e.half, e.ang + e.half); ctx.closePath();
+      ctx.fillStyle = rgba(e.color, (1 - t) * 0.32); ctx.fill();
+      ctx.strokeStyle = rgba(e.color, (1 - t) * 0.9); ctx.lineWidth = 3; ctx.stroke();
     } else if (e.kind === 'slash') {
       ctx.save();
       ctx.translate(e.x, e.y - 18); ctx.rotate(e.ang);

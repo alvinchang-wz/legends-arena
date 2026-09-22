@@ -1137,6 +1137,28 @@ class Hero extends Unit {
       if (dist(this, u) <= s.radius + u.radius) this.skillHit(u, s, r, o);
     }
   }
+  /* Cone (F11): instant; every enemy unit whose circle meets the sector
+     (apex = caster, `angle` degrees wide, `length` long, along `dir`) is
+     hit once. The unit's disc widens the angular test by asin(r/d), so a
+     body straddling the edge is inside. Drawn as a fan for 0.2 s. */
+  doCone(s, rank, dir) {
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    const aim = Math.atan2(dir.y, dir.x);
+    const half = ((s.angle || 60) / 2) * Math.PI / 180, len = s.length || 400;
+    let n = 0;
+    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+      const dx = u.x - this.x, dy = u.y - this.y, d = Math.sqrt(dx * dx + dy * dy);
+      if (d - u.radius > len) continue;
+      let diff = Math.abs(Math.atan2(dy, dx) - aim) % TAU;
+      if (diff > Math.PI) diff = TAU - diff;
+      const reach = half + (d > u.radius ? Math.asin(u.radius / d) : Math.PI);
+      if (diff > reach) continue;
+      this.skillHit(u, s, r);
+      n++;
+    }
+    if (Game.fx.fan) Game.fx.fan(this.x, this.y, aim, half, len, this.color);
+    return n;
+  }
 
   castSkill(i, point) {
     const s0 = this.skills[i];
@@ -1252,6 +1274,10 @@ class Hero extends Unit {
       }
       case 'nova':
         this.doNova(s);
+        break;
+      case 'cone':       // F11: an instant sector along the aim
+        this.doCone(s, rank, dir);
+        castAt = { x: this.x + dir.x * (s.length || 400), y: this.y + dir.y * (s.length || 400) };
         break;
       case 'dash': {
         if (s.buff) { this.buffAsMult = s.buff.asMult || 1; this.buffAsT = s.buff.dur || 3; }
@@ -2249,9 +2275,15 @@ class Hero extends Unit {
     switch (s.type) {
       case 'skillshot':
         if (d >= s.range * 0.95 || !(isHero || farmOk)) return 0;
+        if (s.heroOnly && !isHero) return 0;   // F20: it flies straight through creeps
         if (locked && !cc) return 860;
         if (cc && isHero && !locked) return 820;
         return isHero ? 500 : 220;
+      case 'cone':       // F11: instant, so it wants the target well inside its length
+        if (d >= (s.length || 400) - 20 || !(isHero || farmOk)) return 0;
+        if (locked && !cc) return 850;
+        if (cc && isHero && !locked) return 815;
+        return isHero ? 510 : 220;
       case 'nova': {
         if (d >= s.radius + t.radius) return 0;
         if (!isHero && !farmOk) return 0;
@@ -2328,6 +2360,9 @@ class Hero extends Unit {
         this.castSkill(i, Game.aimLeadPoint(this, t, s.speed));
         break;
       case 'nova':
+        this.castSkill(i, t);
+        break;
+      case 'cone':
         this.castSkill(i, t);
         break;
       case 'dash':
@@ -3323,6 +3358,16 @@ class Projectile {
       speed: src.isStructure ? 620 : 850, size: src.isStructure ? 9 : 5, color: src.projColor,
     });
   }
+  /* A skillshot and its variants (docs/design/heroes.md):
+       bounce    (F14) {count, range, decay}: after a hit the shot re-aims at
+                 the nearest un-hit enemy unit within range (heroes count as
+                 150 closer, structures never) with its damage x decay,
+                 `count` times.
+       boomerang (F10): at max range, or on its first hit, the shot turns and
+                 homes back to the caster; hitSet is cleared for the return
+                 pass, where returnSlowPct / returnSlowDur apply; one hit per
+                 pass when non-pierce; gone when it reaches the caster.
+       heroOnly  (F20): minions, monsters and structures are not hit at all. */
   static skillshot(src, s, dir) {
     const idx = src.skills ? src.skills.indexOf(s._base || s) : -1;
     const rank = src.skillRankOf ? src.skillRankOf(s) : 1;
@@ -3333,9 +3378,61 @@ class Projectile {
       hook: !!s.hook, hitSet: new Set(), size: s.explodeR ? 13 : s.hook ? 9 : 10,
       color: src.color, icon: s.icon,
       skillKey: (src.def0 && idx >= 0) ? `skill:${src.def0.id}:${idx}` : null,
-      style: s.hook ? 'hook' : s.explodeR ? 'orb' : s.pierce ? 'bolt' : 'shard',
+      style: s.hook ? 'hook' : s.explodeR ? 'orb' : s.boomerang ? 'disc' : s.pierce ? 'bolt' : 'shard',
       dmgType: s.dmgType || 'physical',
+      bounce: s.bounce || null, bounceLeft: s.bounce ? (s.bounce.count || 0) : 0, bounceMult: 1, bounceTarget: null,
+      boomerang: !!s.boomerang, returning: false, spent: false,
+      heroOnly: !!s.heroOnly,
     });
+  }
+  /* One victim of a skillshot pass (per-victim damage, CC, marks, hooks). */
+  landOn(u) {
+    let o = null;
+    if (this.bounceMult !== 1) o = { mult: this.bounceMult };
+    if (this.returning && this.s.returnSlowPct) {
+      o = o || {};
+      o.slowPct = this.s.returnSlowPct; o.slowDur = this.s.returnSlowDur || 1.2;
+    }
+    if (this.src.skillHit) this.src.skillHit(u, this.s, this.rank, o);
+    else {
+      const dealt = resolveDamage(this.src, u, { amount: this.dmg * (o && o.mult || 1), type: this.dmgType, skill: this.s });
+      applySkillCC(this.src, u, this.s, this.rank, o);
+      if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
+    }
+    if (this.hook && u.type === 'hero' && !(u.dashS && u.dashS.unhookable)) {
+      u.forced = { mode: 'hook', src: this.src, t: 0.6, prev: u.forced && u.forced.mode === 'taunt' ? u.forced : null };
+      u.marks.hookedAt = Game.time;
+    }
+  }
+  /* F10: the turn. */
+  turnBack() {
+    this.returning = true;
+    this.hitSet.clear();
+    this.traveled = 0; this.maxDist = Infinity;
+    Game.fx.spark(this.x, this.y, this.color, 3);
+  }
+  /* F14: re-aim at the next victim after hitting `from`. False when nothing
+     is in range (the shot dies) or the bounces are spent. */
+  rebound(from) {
+    const b = this.bounce;
+    if (!b || this.bounceLeft <= 0) return false;
+    let best = null, bd = Infinity;
+    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+      if (this.hitSet.has(u) || u.isStructure) continue;
+      const d = Math.hypot(u.x - from.x, u.y - from.y);
+      if (d > (b.range || 300)) continue;
+      const score = d - (u.type === 'hero' ? 150 : 0);
+      if (score < bd) { bd = score; best = u; }
+    }
+    if (!best) return false;
+    this.bounceLeft--;
+    this.bounceMult *= b.decay !== undefined ? b.decay : 1;
+    this.bounceTarget = best;
+    const dir = norm(best.x - this.x, best.y - this.y);
+    this.dx = dir.x; this.dy = dir.y;
+    this.traveled = 0; this.maxDist = (b.range || 300) + best.radius + 80;
+    Game.fx.spark(this.x, this.y, this.color, 3);
+    return true;
   }
   explode(cx, cy) {
     const o = { mult: 0.8, noCC: true };
@@ -3368,34 +3465,51 @@ class Projectile {
       this.x += dir.x * step; this.y += dir.y * step;
       return;
     }
-    // skillshot
+    // skillshot (and its bounce / boomerang / hero-only variants)
     const step = this.speed * dt;
+    if (this.returning) {
+      // F10: home to wherever the caster is now; gone on arrival or when the caster dies
+      const src = this.src;
+      if (!src || !src.alive) { this.dead = true; return; }
+      const d = dist(this, src);
+      if (d <= step + src.radius) { this.dead = true; return; }
+      const dir = norm(src.x - this.x, src.y - this.y);
+      this.dx = dir.x; this.dy = dir.y;
+    } else if (this.bounceTarget) {
+      // F14: keep the re-aim on the unit it bounced toward while it lives
+      const bt = this.bounceTarget;
+      if (bt.alive && !bt.untargetable) { const dir = norm(bt.x - this.x, bt.y - this.y); this.dx = dir.x; this.dy = dir.y; }
+      else this.bounceTarget = null;
+    }
     this.x += this.dx * step; this.y += this.dy * step;
     this.traveled += step;
     if (Game.objects.length && Game.barrierBlocks(this.team, px, py, this.x, this.y)) {
       this.dead = true; Game.fx.spark(this.x, this.y, this.color, 4); return;
     }
-    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
-      if (this.hitSet.has(u)) continue;
-      if (Math.hypot(u.x - this.x, u.y - this.y) <= this.radius + u.radius) {
+    if (!this.spent) {
+      for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+        if (this.hitSet.has(u)) continue;
+        if (this.heroOnly && u.type !== 'hero') continue;   // F20
+        if (Math.hypot(u.x - this.x, u.y - this.y) > this.radius + u.radius) continue;
         this.hitSet.add(u);
-        if (this.src.skillHit) this.src.skillHit(u, this.s, this.rank);
-        else {
-          const dealt = resolveDamage(this.src, u, { amount: this.dmg, type: this.dmgType, skill: this.s });
-          applySkillCC(this.src, u, this.s, this.rank);
-          if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
-        }
-        if (this.hook && u.type === 'hero') {
-          u.forced = { mode: 'hook', src: this.src, t: 0.6, prev: u.forced && u.forced.mode === 'taunt' ? u.forced : null };
-          u.marks.hookedAt = Game.time;
-        }
+        this.landOn(u);
         if (this.explodeR) this.explode(this.x, this.y);
-        if (!this.pierce) { this.dead = true; Game.fx.spark(this.x, this.y, this.color, 6); return; }
+        if (this.pierce) continue;
+        if (this.boomerang) {
+          if (!this.returning) this.turnBack();
+          else this.spent = true;   // one hit per pass: it still flies home
+          return;
+        }
+        if (this.rebound(u)) return;
+        this.dead = true; Game.fx.spark(this.x, this.y, this.color, 6);
+        return;
       }
     }
+    if (this.returning) return;
     const bounds = Game.mapBounds();
     if (this.traveled >= this.maxDist || this.x < bounds.minX || this.y < bounds.minY ||
         this.x > bounds.maxX || this.y > bounds.maxY) {
+      if (this.boomerang) { this.turnBack(); return; }
       if (this.explodeR) this.explode(this.x, this.y);
       this.dead = true;
     }
