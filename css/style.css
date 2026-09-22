@@ -761,12 +761,16 @@ kbd {
 }
 .infoName { font-size: var(--fs-lg); font-weight: 800; }
 .infoRole { color: var(--text-dim); font-size: var(--fs-sm); }
-.infoDesc { color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.4; }
+/* Two lines of flavour; the skills below it are what the panel is for. */
+.infoDesc {
+  color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.4; margin: 6px 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 
-.statBars { margin: 10px 0 12px; }
+.statBars { margin: 8px 0 6px; }
 .sbRow {
   display: grid; grid-template-columns: 72px 1fr 40px; gap: 7px; align-items: center;
-  font-size: var(--fs-xs); color: var(--text-faint); margin-bottom: 3px;
+  font-size: var(--fs-xs); color: var(--text-faint); margin-bottom: 1px;
 }
 .sbTrack { height: 6px; background: rgba(255,255,255,0.08); border-radius: var(--r1); overflow: hidden; }
 .sbFill { display: block; height: 100%; border-radius: var(--r1); }
@@ -777,6 +781,48 @@ kbd {
   padding-top: 9px; border-top: 1px solid var(--line-soft);
 }
 .infoSkill.passiveRow { border-top-color: color-mix(in srgb, var(--gold) 30%, transparent); }
+
+/* ---- skill deck: four chips, one body (UI.skillDeckHTML) ----
+   Radio inputs drive it, so the panel is pure markup: no listener to bind
+   when the panel is rebuilt for another hero, and the tabs are reachable
+   from the keyboard. The inputs are kept in the layout (not display:none)
+   so focus still lands on them. */
+.skillDeck { margin-top: 8px; }
+.sdRadio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* Sticky so the four chips stay in reach while a long ultimate is read. */
+.sdTabs {
+  display: flex; gap: 6px; position: sticky; top: 0; z-index: 2;
+  background: var(--panel); padding-bottom: 4px;
+}
+.sdTab {
+  position: relative; flex: 1 1 0; min-width: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 4px 0;
+  background: linear-gradient(180deg, var(--surface2), var(--surface1));
+  border: 1px solid var(--line); border-radius: var(--r2);
+  transition: border-color var(--dur-quick) var(--ease-out), transform var(--dur-quick) var(--ease-out);
+}
+.sdTab:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
+.sdTab .siIcon { width: 34px; height: 34px; border: 0; background: none; border-radius: 0; }
+.sdTab i {
+  position: absolute; right: 4px; bottom: 2px; font-style: normal;
+  font-size: 10px; font-weight: 800; color: var(--text-faint);
+}
+.sdTab.passive i { color: var(--gold); }
+.sdPane { display: none; border-top: 0; padding-top: 10px; margin-bottom: 0; }
+.sdPanes { border-top: 1px solid var(--line-soft); margin-top: 8px; }
+.sdPane.passiveRow { border-top: 0; }
+#hsk-0:checked ~ .sdPanes .sdPane[data-i="0"],
+#hsk-1:checked ~ .sdPanes .sdPane[data-i="1"],
+#hsk-2:checked ~ .sdPanes .sdPane[data-i="2"],
+#hsk-3:checked ~ .sdPanes .sdPane[data-i="3"] { display: flex; }
+#hsk-0:checked ~ .sdTabs .sdTab:nth-child(1),
+#hsk-1:checked ~ .sdTabs .sdTab:nth-child(2),
+#hsk-2:checked ~ .sdTabs .sdTab:nth-child(3),
+#hsk-3:checked ~ .sdTabs .sdTab:nth-child(4) {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 16%, var(--surface1));
+}
+.sdRadio:focus-visible ~ .sdTabs .sdTab { outline: 1px solid color-mix(in srgb, var(--gold) 60%, transparent); }
 .infoSkill small { color: var(--text-dim); line-height: 1.35; }
 .siBody { flex: 1; min-width: 0; }
 .siType { color: var(--text-faint); font-size: var(--fs-xs); margin: 1px 0 3px; }

@@ -442,16 +442,18 @@
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: calc(var(--r2) * var(--ms));
 }
 .pickHint { color: var(--text-faint); text-align: center; padding-top: calc(40px * var(--ms)); font-size: calc(14px * var(--ms)); }
+/* Kept compact on purpose: every pixel here is one the skill deck above
+   does not get, and at 1280x720 the column is only 564 px tall. */
 #loadout {
-  display: flex; flex-direction: column; gap: calc(6px * var(--ms)); flex: none;
+  display: flex; flex-direction: column; gap: calc(4px * var(--ms)); flex: none;
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: calc(var(--r2) * var(--ms));
-  padding: calc(8px * var(--ms)) calc(12px * var(--ms));
+  padding: calc(6px * var(--ms)) calc(10px * var(--ms));
 }
 .loRow { display: flex; align-items: center; gap: calc(8px * var(--ms)); }
 .loLabel { font-family: var(--menu-font); font-weight: 700; font-size: calc(11px * var(--ms)); letter-spacing: 2px; color: var(--text-faint); width: calc(52px * var(--ms)); flex: none; text-transform: uppercase; }
 .loRow > div { display: flex; gap: calc(4px * var(--ms)); flex-wrap: wrap; }
 .loChip {
-  width: calc(34px * var(--ms)); height: calc(34px * var(--ms)); border-radius: calc(var(--r1) * var(--ms));
+  width: calc(30px * var(--ms)); height: calc(30px * var(--ms)); border-radius: calc(var(--r1) * var(--ms));
   display: inline-flex; align-items: center; justify-content: center;
   background: linear-gradient(180deg, var(--surface2), var(--surface1)); border: 1px solid var(--line);
   font-size: calc(15px * var(--ms)); cursor: pointer; font-family: inherit; padding: 0;
@@ -460,7 +462,11 @@
 .loChip img { width: 74%; height: 74%; pointer-events: none; }
 .loChip:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--gold) 45%, var(--line)); }
 .loChip.sel { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 18%, transparent); }
-.loDesc { font-size: calc(11px * var(--ms)); color: var(--text-dim); line-height: 1.35; min-height: calc(30px * var(--ms)); border-top: 1px solid var(--line-soft); padding-top: calc(5px * var(--ms)); }
+.loDesc {
+  font-size: calc(11px * var(--ms)); color: var(--text-dim); line-height: 1.35;
+  border-top: 1px solid var(--line-soft); padding-top: calc(4px * var(--ms));
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
 .loDesc b { color: var(--text); font-size: calc(12px * var(--ms)); }
 .loCd { color: var(--gold); font-size: calc(11px * var(--ms)); }
 .loKey { color: var(--gold); margin-top: 3px; }
@@ -545,6 +551,21 @@
 @media (max-height: 460px) {
   .lobbySide { display: none; }
   .titleFoot span:last-child { display: none; }
+  /* A phone in landscape leaves the hero panel about 200 px. The skill deck
+     is what the screen is for, so the flavour line goes and the portrait and
+     the loadout shrink; the stat bars keep their place under the deck and
+     stay reachable by scrolling, with the four chips sticky above them. */
+  #heroInfo { padding: calc(8px * var(--ms)) calc(10px * var(--ms)); }
+  #heroInfo .infoDesc { display: none; }
+  #heroInfo .infoHead { margin-bottom: 4px; }
+  #heroInfo .infoIcon { width: 42px; height: 42px; font-size: 22px; }
+  #heroInfo .infoName { font-size: 15px; }
+  #heroInfo .infoRole { font-size: 10px; line-height: 1.25; }
+  #heroInfo .sdTab .siIcon { width: 28px; height: 28px; }
+  .showcaseCol { gap: calc(5px * var(--ms)); }
+  #loadout { padding: calc(4px * var(--ms)) calc(8px * var(--ms)); gap: calc(3px * var(--ms)); }
+  .loDesc { -webkit-line-clamp: 2; }
+  .loLabel { width: calc(42px * var(--ms)); }
 }
 @media (max-width: 700px) {
   .showcaseCol { display: none; }

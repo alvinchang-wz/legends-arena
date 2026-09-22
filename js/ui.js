@@ -416,8 +416,10 @@ const UI = {
         : s.endNova ? s.endNova.radius : 0;
     if (rad) rows.push([s.explodeR ? 'Blast radius' : 'Radius', rad]);
     if (s.type === 'heal') {
+      // per-rank heals are arrays and a flat heal has no /lv: both printed
+      // "140,190,240 +undefinedv" in the select panel before this
       rows.push(['Heal', hero ? Math.round(hero.skillHeal(s))
-        : `${s.heal} +${s.healLv}/lv${s.scaleAp ? ` +${Math.round(s.scaleAp * 100)}% MAGIC` : ''}`]);
+        : `${fmt(s.heal)}${s.healLv ? ` +${s.healLv}/lv` : ''}${s.scaleAp ? ` +${Math.round(s.scaleAp * 100)}% MAGIC` : ''}`]);
     } else if (s.dmg) {
       rows.push([this.dmgLabel(s), hero ? Math.round(hero.skillDmg(s)) : this.scalingText(s)]);
     } else if (s.endNova) {
@@ -540,28 +542,51 @@ const UI = {
           <span style="color:${DMG_COLORS[h.damageStyle]}">${h.damageStyle} damage</span> ·
           ${'★'.repeat(h.difficulty)}${'☆'.repeat(Math.max(0, 4 - h.difficulty))}</div></div></div>
       <p class="infoDesc">${h.desc}</p>
+      ${this.skillDeckHTML(h)}
       ${this.heroStatBars(h)}
-      ${h.passive ? `<div class="infoSkill passiveRow">
-          <span class="siIcon">${this.icon('passive:' + h.id, 34, h.passive.icon)}</span>
-          <div class="siBody"><b>${h.passive.name}</b>
-            <span class="siKey">PASSIVE</span>
-            <div class="siType">Always active</div>
-            <small>${h.passive.desc}</small></div>
-        </div>` : ''}
-      <div class="infoSkills">${h.skills.map((s, i) => `
-        <div class="infoSkill">
-          <span class="siIcon">${this.icon(`skill:${h.id}:${i}`, 34, s.icon)}</span>
-          <div class="siBody">
-            <b>${s.name}</b>${i === 2 ? ' <span class="ultTag">ULT</span>' : ''}
-            <span class="siKey">${i + 1}</span>
-            <div class="siType">${this.SKILL_TYPE[s.type] || s.type}</div>
-            <small>${s.desc}</small>
-            <div class="infoMeta">${this.skillStats(s).map(([k, v]) => `<span class="metaChip">${k} <b>${v}</b></span>`).join('')}</div>
-            ${this.skillTags(s).length ? `<div class="tagList">${this.skillTags(s).map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
-          </div>
-        </div>`).join('')}
-      </div>
       ${this.recommendedPathHTML(h)}`;
+  },
+
+  /* The passive and the three skills as one deck: a row of four chips and
+     the body of whichever is selected. Laid out end to end they were 614 px
+     of content in a 351 px box at 1280x720, so three of the four were below
+     the fold and the loadout panel cut the fourth in half; on a phone in
+     landscape there is less room still. The tabs are radio inputs, so the
+     deck needs no script and holds no state that could go stale when the
+     panel is rebuilt for the next hero. */
+  skillDeckHTML(h) {
+    const entries = [];
+    if (h.passive) {
+      entries.push({
+        key: 'P', label: 'PASSIVE', name: h.passive.name, type: 'Always active',
+        icon: this.icon('passive:' + h.id, 30, h.passive.icon), desc: h.passive.desc,
+        meta: '', tags: '', passive: true,
+      });
+    }
+    h.skills.forEach((s, i) => entries.push({
+      key: String(i + 1), label: String(i + 1), name: s.name + (i === 2 ? ' <span class="ultTag">ULT</span>' : ''),
+      type: this.SKILL_TYPE[s.type] || s.type,
+      icon: this.icon(`skill:${h.id}:${i}`, 30, s.icon), desc: s.desc,
+      meta: `<div class="infoMeta">${this.skillStats(s).map(([k, v]) => `<span class="metaChip">${k} <b>${v}</b></span>`).join('')}</div>`,
+      tags: this.skillTags(s).length ? `<div class="tagList">${this.skillTags(s).map(t => `<span class="tag">${t}</span>`).join('')}</div>` : '',
+    }));
+    if (!entries.length) return '';
+    return `<div class="skillDeck">
+      ${entries.map((e, i) => `<input class="sdRadio" type="radio" name="heroSkillTab" id="hsk-${i}"${i === 0 ? ' checked' : ''}>`).join('')}
+      <div class="sdTabs">${entries.map((e, i) =>
+        `<label class="sdTab${e.passive ? ' passive' : ''}" for="hsk-${i}" title="${e.name.replace(/<[^>]*>/g, '')}">
+          <span class="siIcon">${e.icon}</span><i>${e.key}</i></label>`).join('')}</div>
+      <div class="sdPanes">${entries.map((e, i) => `
+        <div class="sdPane infoSkill${e.passive ? ' passiveRow' : ''}" data-i="${i}">
+          <div class="siBody">
+            <b>${e.name}</b>
+            <span class="siKey">${e.label}</span>
+            <div class="siType">${e.type}</div>
+            <small>${e.desc}</small>
+            ${e.meta}${e.tags}
+          </div>
+        </div>`).join('')}</div>
+    </div>`;
   },
 
   recommendedPathHTML(h) {
