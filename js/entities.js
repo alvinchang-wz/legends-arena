@@ -47,7 +47,7 @@ class Unit {
     return this.cc.canMove ? s * (1 - this.cc.slowPct) : 0;
   }
 
-  distTo(u) { return Math.hypot(u.x - this.x, u.y - this.y); }
+  distTo(u) { const dx = u.x - this.x, dy = u.y - this.y; return Math.sqrt(dx * dx + dy * dy); }
   inAttackRange(u) { return this.distTo(u) <= this.range + this.radius + u.radius; }
 
   moveToward(tx, ty, dt) {
@@ -1156,18 +1156,28 @@ class Hero extends Unit {
 
   alliedTowerInTrouble() {
     if (Game.isDuel()) return null;
+    /* the pressure on every structure is the same for all ten bots: measured
+       once per frame, not once per bot */
+    if (Game._heatT !== Game.time) {
+      Game._heatT = Game.time; Game._heat = Game._heat || new Map(); Game._heat.clear();
+      for (const s of Game.structures()) {
+        if (!s.alive) continue;
+        let heat = 0;
+        for (const h of Game.heroes) {
+          if (h.team === s.team || !h.alive) continue;
+          if (dist(h, s) < (s.range || 400) + 90) heat += 3;
+        }
+        for (const m of Game.minions) {
+          if (m.team === s.team || !m.alive) continue;
+          if (dist(m, s) < 280) heat++;
+        }
+        Game._heat.set(s, heat);
+      }
+    }
     let best = null, bd = Infinity;
     for (const s of Game.structures()) {
       if (!s.alive || s.team !== this.team) continue;
-      let heat = 0;
-      for (const h of Game.heroes) {
-        if (h.team === this.team || !h.alive) continue;
-        if (dist(h, s) < (s.range || 400) + 90) heat += 3;
-      }
-      for (const m of Game.minions) {
-        if (m.team === this.team || !m.alive) continue;
-        if (dist(m, s) < 280) heat++;
-      }
+      const heat = Game._heat.get(s) || 0;
       if (heat < 2 && s.hpPct > 0.72) continue;
       if (heat < 1) continue;
       const d = dist(this, s);
@@ -2312,10 +2322,16 @@ class Minion extends Unit {
     const path = this.path;
     if (!path || !path.length) return;
     let bi = 0, bd = Infinity;
-    for (let k = 0; k < path.length; k++) {
+    /* the nearest waypoint is almost always next to the last one; a full
+       search every 1.5 s catches knock-backs and respawns */
+    const prev = this.wpIdx | 0;
+    const full = this._wpFullT === undefined || Game.time - this._wpFullT > 1.5 || prev >= path.length;
+    const k0 = full ? 0 : Math.max(0, prev - 4), k1 = full ? path.length - 1 : Math.min(path.length - 1, prev + 10);
+    for (let k = k0; k <= k1; k++) {
       const d = this.distTo(path[k]);
       if (d < bd) { bd = d; bi = k; }
     }
+    if (full) this._wpFullT = Game.time;
     let i = Math.min(bi + 1, path.length - 1);
     while (i < path.length - 1 && this.distTo(path[i]) < 80) i++;
     this.wpIdx = i;

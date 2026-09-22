@@ -40,7 +40,7 @@ test('snapshot exposes heroes, objectives, structures, and entity counts', () =>
   // 18 lane turrets + 2 bases + 6 inhibitors.
   assert.equal(snapshot.structures.length, 26);
   assert.equal(snapshot.entityCounts.heroes, 10);
-  assert.equal(snapshot.entityCounts.monsters, 12); // six camps per team
+  assert.equal(snapshot.entityCounts.monsters, 14); // seven camps per team on the surveyed map
   assert.deepEqual(snapshot.objectives.map(objective => objective.id), ['lord', 'turtle']);
   for (const hero of snapshot.heroes) {
     assert.match(hero.id, /^(blue|red)-[0-4]$/);

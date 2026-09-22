@@ -38,6 +38,11 @@ function polyClosest(poly, x, y) {
 /* Closest point on a wall: for a polygon wall its outline (plus whether the
    point is inside); for a capsule chain its spine, with the radius there. */
 function wallClosest(w, x, y) {
+  if (w.circle) {                                   // a structure: round obstacle
+    const s = w.circle, dx = x - s.x, dy = y - s.y, d = Math.sqrt(dx * dx + dy * dy);
+    if (d < 1e-6) return { x: s.x + s.radius, y: s.y, r: 0, t: 0, inside: true };
+    return { x: s.x + dx / d * s.radius, y: s.y + dy / d * s.radius, r: 0, t: 0, inside: d < s.radius };
+  }
   if (w.poly) return polyClosest(w.poly, x, y);
   let best = null, bestD = Infinity, bi = 1;
   for (let i = 1; i < w.pts.length; i++) {
@@ -54,6 +59,7 @@ function wallClosest(w, x, y) {
 
 /* Would a body of radius `pad` centred at (x, y) overlap this wall? */
 function wallBlocks(w, x, y, pad) {
+  if (w.circle) { const s = w.circle, rr = s.radius + pad, dx = x - s.x, dy = y - s.y; return dx * dx + dy * dy < rr * rr; }
   if (w.minX !== undefined && (x < w.minX - pad || x > w.maxX + pad || y < w.minY - pad || y > w.maxY + pad)) return false;
   const c = wallClosest(w, x, y);
   if (c.inside) return true;
@@ -289,6 +295,74 @@ const MAP_WALLS = MAP_DATA.walls.map(w => {
 /* ---- bushes ----
    A bush is a circle {x, y, r} or a capsule {x, y, r, ax, ay, bx, by}: the
    concealing area is every point within r of the segment a-b. */
+/* Distance field over the 5v5 board: for every cell, the distance to the
+   nearest rock. Movement, pathing and vision ask "is there rock within pad
+   of (x, y)" thousands of times a frame; the field answers "no" in O(1) and
+   the exact polygon test runs only for points near rock. Built once from
+   the polygons: scanline rasterisation, then an exact Euclidean distance
+   transform (Felzenszwalb & Huttenlocher). */
+const WALL_DIST = (() => {
+  const CELL = 6, N = Math.ceil(WORLD / CELL) + 1;
+  const inside = new Uint8Array(N * N);
+  for (const w of MAP_WALLS) {
+    const poly = w.poly || w.pts; if (!poly || poly.length < 3) continue;
+    let minY = Infinity, maxY = -Infinity;
+    for (const p of poly) { if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+    const r0 = Math.max(0, Math.floor(minY / CELL)), r1 = Math.min(N - 1, Math.ceil(maxY / CELL));
+    const xs = [];
+    for (let r = r0; r <= r1; r++) {
+      const y = r * CELL; xs.length = 0;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[j], b = poly[i];
+        if ((a.y > y) !== (b.y > y)) xs.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
+      }
+      xs.sort((p, q) => p - q);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const c0 = Math.max(0, Math.ceil(xs[k] / CELL)), c1 = Math.min(N - 1, Math.floor(xs[k + 1] / CELL));
+        for (let c = c0; c <= c1; c++) inside[r * N + c] = 1;
+      }
+    }
+  }
+  // squared distance transform, separable
+  const INF = 1e20;
+  const f = new Float64Array(N * N);
+  for (let i = 0; i < N * N; i++) f[i] = inside[i] ? 0 : INF;
+  const d = new Float64Array(N), v = new Int32Array(N), z = new Float64Array(N + 1), tmp = new Float64Array(N);
+  const edt1d = (get, set) => {
+    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < N; q++) {
+      const fq = get(q);
+      let s;
+      while (true) {
+        const vk = v[k];
+        s = ((fq + q * q) - (get(vk) + vk * vk)) / (2 * q - 2 * vk);
+        if (s <= z[k] && k > 0) k--; else break;
+      }
+      k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < N; q++) {
+      while (z[k + 1] < q) k++;
+      const vk = v[k]; tmp[q] = (q - vk) * (q - vk) + get(vk);
+    }
+    for (let q = 0; q < N; q++) set(q, tmp[q]);
+  };
+  for (let r = 0; r < N; r++) edt1d(c => f[r * N + c], (c, val) => { f[r * N + c] = val; });
+  for (let c = 0; c < N; c++) edt1d(r => f[r * N + c], (r, val) => { f[r * N + c] = val; });
+  const dist = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) dist[i] = Math.sqrt(f[i]) * CELL;
+  const SLACK = CELL * 1.5;               // a point can be this far from its cell centre
+  return {
+    cell: CELL, n: N, dist,
+    at(x, y) {
+      const c = Math.max(0, Math.min(N - 1, Math.round(x / CELL))), r = Math.max(0, Math.min(N - 1, Math.round(y / CELL)));
+      return dist[r * N + c];
+    },
+    /* true when no rock can be within pad of (x, y) */
+    clear(x, y, pad) { return this.at(x, y) > pad + SLACK; },
+  };
+})();
+
 /* The cut-off corners beyond the lane chamfers are void: nothing there, and
    a hidden wall keeps units out. The painter shows them as open water. */
 const MAP_VOID = (MAP_DATA.void || []).map(poly => mpxs(poly));

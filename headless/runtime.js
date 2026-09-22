@@ -116,7 +116,7 @@ function loadGameRuntime(onWarning) {
     vm.runInContext(readScript(relativePath), context, { filename: relativePath });
   }
 
-  const mainSource = readScript('js/main.js');
+  const mainSource = readScript('js/main.js').split(String.fromCharCode(13)).join('');   // the sources are CRLF on Windows; the marker is LF
   const marker = mainSource.indexOf(MAIN_RENDER_MARKER);
   if (marker < 0) throw new Error('Could not isolate the simulation portion of js/main.js');
   vm.runInContext(mainSource.slice(0, marker), context, { filename: 'js/main.js' });

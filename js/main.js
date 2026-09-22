@@ -353,7 +353,16 @@ const Game = {
     return MAP_WALLS;
   },
   wallAt(x, y, pad) {
-    for (const w of this.walls()) if (wallBlocks(w, x, y, pad)) return w;
+    if (this.isDuel() || this.isTen() || !WALL_DIST.clear(x, y, pad)) {
+      for (const w of this.walls()) if (wallBlocks(w, x, y, pad)) return w;
+    }
+    /* standing structures are round obstacles: minions and heroes slide
+       around a turret the way they slide along rock */
+    for (const s of this.structures()) {
+      if (!s.alive) continue;
+      const rr = s.radius + pad, dx = x - s.x, dy = y - s.y;
+      if (dx * dx + dy * dy < rr * rr) return s._wall || (s._wall = { circle: s, r: 0, pts: [] });
+    }
     return null;
   },
 
@@ -1145,28 +1154,22 @@ const Game = {
     for (const h of this.heroes) if (h.alive && !h.dashS && !h.forced) mob.push(h);
     for (const m of this.minions) if (m.alive) mob.push(m);
     for (const mo of this.monsters) if (mo.alive) mob.push(mo);
+    /* Units never block each other (heroes walk through minions, monsters and
+       other heroes, as in the reference game); only structures and terrain
+       push them out. */
     for (let i = 0; i < mob.length; i++) {
       const a = mob[i];
-      for (let j = i + 1; j < mob.length; j++) {
-        const b = mob[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.hypot(dx, dy);
-        const min = a.radius + b.radius - 4;
-        if (d > 0.01 && d < min) {
-          const push = (min - d) / 2;
-          const ux = dx / d, uy = dy / d;
-          a.x -= ux * push; a.y -= uy * push;
-          b.x += ux * push; b.y += uy * push;
-        }
-      }
       // immovable structures push mobiles out
       for (const s of this.structures()) {
         if (!s.alive) continue;
         const dx = a.x - s.x, dy = a.y - s.y;
-        const d = Math.hypot(dx, dy);
         const min = a.radius + s.radius - 2;
-        if (d > 0.01 && d < min) { a.x = s.x + dx / d * min; a.y = s.y + dy / d * min; }
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= min * min || d2 < 1e-4) continue;
+        const d = Math.sqrt(d2);
+        a.x = s.x + dx / d * min; a.y = s.y + dy / d * min;
       }
+      if (!this.isDuel() && !this.isTen() && WALL_DIST.clear(a.x, a.y, a.radius)) { a.clampWorld(); continue; }
       /* Walls do the same. Movement already slides along them, so this is the
          backstop for everything that does not go through moveToward — a dash
          that ends inside a rock, a knock-back, two units squeezing a third. */
@@ -1180,6 +1183,7 @@ const Game = {
         if (!c.inside && d >= min) continue;
         if (c.inside) { dx = -dx; dy = -dy; }   // inside a polygon: leave through the nearest edge
         if (d < 0.01) {           // dead centre: leave along the nearest segment's normal
+          if (w.circle) { a.x = c.x + min; a.y = c.y; continue; }
           const p0 = w.pts[0], p1 = w.pts[w.pts.length - 1];
           dx = -(p1.y - p0.y); dy = p1.x - p0.x;
           const n = Math.hypot(dx, dy) || 1;
