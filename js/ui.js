@@ -453,6 +453,28 @@ const UI = {
     if (s.pierce) t.push('Pierces all');
     if (s.hook) t.push('Drags target to you');
     if (s.explodeR) t.push('Explodes on hit');
+    /* the mages' fields (docs/design/heroes.md F12-F16, F28) */
+    if (s.bounce) t.push(`Bounces ${s.bounce.count}x within ${s.bounce.range} (${Math.round(s.bounce.decay * 100)}% each)`);
+    if (s.slowPctLv) t.push(`Slow +${Math.round(s.slowPctLv * 100)}% per hit`);
+    if (s.applyMark) t.push(`Marks: ${s.applyMark.tag} ${s.applyMark.centreStacks ? `x${s.applyMark.centreStacks.stacks} at the centre, x${s.applyMark.stacks || 1} on the rim` : `x${s.applyMark.stacks || 1}`} (max ${s.applyMark.max}, ${s.applyMark.dur}s)`);
+    if (s.consumeMark) t.push(`Consumes ${s.consumeMark.tag}: +${s.consumeMark.dmg} (+${Math.round(s.consumeMark.scaleAp * 100)}% MAGIC) each${s.consumeMark.stunAtStacks ? `, ${CC_TYPES.stun.icon} Stun ${s.consumeMark.stunDur}s at ${s.consumeMark.stunAtStacks}` : ''}`);
+    if (s.pullTo) t.push(`Drags ${s.pullTo.dist} toward ${s.pullTo.target === 'point' ? 'the point' : 'you'}`);
+    if (s.pullSpeed) t.push(`Pulls heroes to the centre at ${s.pullSpeed}/s while it arms`);
+    if (s.linger) {
+      const L = s.linger;
+      if (L.conceal) t.push(`Conceals allies inside ${L.dur}s`);
+      if (L.enemySlowRamp) t.push(`${CC_TYPES.slow.icon} Slow ${Math.round(L.enemySlowRamp[0] * 100)}% -> ${Math.round(L.enemySlowRamp[1] * 100)}% over ${L.dur}s`);
+      else if (L.enemySlowPct) t.push(`${CC_TYPES.slow.icon} Slow ${Math.round(L.enemySlowPct * 100)}% inside for ${L.dur}s`);
+      if (L.allySpeedAdd) t.push(`Allies inside +${L.allySpeedAdd} move speed`);
+      if (L.chillPerSec) t.push(`Chills inside after ${L.chillDelay || 0}s`);
+      // an endPayload's CC is mirrored on the skill itself (Burial), so the CC loop above already shows it
+    }
+    if (s.tether && !s.tether.multi) {
+      const T = s.tether;
+      t.push(`Tether ${T.dur}s, breaks past ${T.breakRange}`);
+      if (T.healPct) t.push(`Heals you ${Math.round(T.healPct * 100)}% of each tick`);
+      if (T.payload && T.payload.spreadMark) t.push(`Spreads ${T.payload.spreadMark.stacks} ${T.payload.spreadMark.tag} within ${T.payload.spreadMark.radius}`);
+    }
     if (s.stopOnHero) t.push('Stops on first hero');
     if (s.endNova) t.push('Slams on landing');
     if (s.buff && s.buff.asMult) t.push(`+${Math.round((s.buff.asMult - 1) * 100)}% attack speed`);
