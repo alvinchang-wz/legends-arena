@@ -819,19 +819,31 @@ const HEROES = [
   },
   {
     id: 'wick', name: 'Wick', role: 'Support', icon: '🕯️', color: '#fcd34d', projColor: '#fde68a',
-    desc: 'A lantern bearer who turns heals into hard light.',
+    desc: 'The lantern guardian: plant a lantern, stand next to it, shield whoever fights around it, and see everything that tries to hide from it. No CC, no mobility, the most durable support.',
     difficulty: 1, damageStyle: 'magic',
-    hp: 525, hpLv: 68, mp: 310, mpLv: 35, atk: 50, atkLv: 4.6,
-    armor: 13, armorLv: 2.5, mr: 15, mrLv: 2.5,
-    range: 300, atkSpd: 0.98, speed: 253,
+    /* docs/design/heroes.md, Supports: Wick. Lantern is the roster's only
+       pulse object (F9): five one-second pulses of a lantern-tagged shield
+       on allied heroes within 300 (refreshed, never stacked) and a reveal of
+       every enemy hero within 300 for the rest of its life (bush stealth and
+       Sand Veil broken), Wick's basics on a revealed enemy dealing +15% (the
+       passive reads marks.lanternRevealed). Untargetable, out with its
+       owner, no slow. The only skill-based vision. Bot fields: the lantern
+       goes under the allied frontliner when 2+ enemy heroes are within 500
+       of an ally (Hero.lanternSpot) and she then stands within botStand
+       (250) of it (chooseCombatPoint); Warding Glow when an ally within 320
+       is under 45% (botHealHp) or three allies are fighting in its radius
+       (botHealCrowd). */
+    hp: 575, hpLv: 76, mp: 310, mpLv: 34, atk: 48, atkLv: 4.4,
+    armor: 15, armorLv: 2.7, mr: 15, mrLv: 2.4,
+    range: 290, atkSpd: 0.95, speed: 244,
     passive: {
       name: 'Lampglass', icon: '◇', id: 'lampglass',
-      desc: 'Healing an ally also shields them for 40% of the heal for 2.5s.',
+      desc: 'Whenever Wick heals an ally, that ally also gains a shield for 40% of the heal for 2.5s. Her basic attacks on an enemy revealed by her Lantern deal +15%.',
     },
     skills: [
-      { name: 'Spark', icon: '·', type: 'skillshot', cd: 6, mana: 40, dmgType: 'magic', dmg: 130, dmgLv: 15, scaleAp: 0.5, range: 640, speed: 900, radius: 22, desc: 'A lantern spark that stings the first enemy.' },
-      { name: 'Warding Glow', icon: '✦', type: 'heal', cd: 11, mana: 70, heal: 140, healLv: 22, scaleAp: 0.55, radius: 300, shieldPct: 0.04, desc: 'Flood nearby allies with light and a thin shield.' },
-      { name: 'Beacon', icon: '◉', type: 'zone', cd: 41, mana: 110, dmgType: 'magic', range: 520, radius: 240, delay: 0.5, ticks: 4, interval: 0.55, dmg: 55, dmgLv: 8, scaleAp: 0.25, slowPct: 0.25, slowDur: 0.8, desc: 'Plant a beacon that burns and slows four times.' },
+      { name: 'Spark', icon: '·', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 40, manaLv: 4, dmgType: 'magic', dmg: 125, dmgLv: 15, scaleAp: 0.5, range: 640, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.0, desc: 'A lantern spark (640 range at 900) that stings the first enemy hit for 125+15/rank (+50% MAGIC) and slows it 25% for 1s.' },
+      { name: 'Lantern', icon: '🏮', type: 'object', cd: 13, cdLv: -0.6, mana: 60, manaLv: 4, range: 480, dur: 5, tick: 1.0, allyRadius: 300, shield: 45, shieldLv: 7, shieldScaleAp: 0.2, shieldDur: 2.0, revealRadius: 300, revealBasicBonus: 0.15, botStand: 250, desc: 'Plant a lantern up to 480 away for 5s: each second allied heroes within 300 gain a refreshing 2s shield of 45+7/rank (+20% MAGIC); enemy heroes within 300 are revealed for the whole duration (bush stealth and veils broken) and Wick\'s basics on them deal +15%. Untargetable; goes out if Wick dies.' },
+      { name: 'Warding Glow', icon: '✦', type: 'heal', cd: [48, 42, 36], mana: [110, 140, 170], heal: [170, 230, 290], scaleAp: 0.55, radius: 320, shieldPct: 0.08, botHealHp: 0.45, botHealCrowd: 3, desc: 'Flood allied heroes within 320 with hard light: 170/230/290 (+55% MAGIC) healing, a shield of 8% max HP for 3s, and the Lampglass shield on top.' },
     ],
   },
   {

@@ -2825,6 +2825,11 @@ class Hero extends Unit {
     }
     return best;
   }
+  /* F29 (Wick's hint): this hero's live pulse object (her lantern), or null. */
+  ownPulseObject() {
+    for (const o of Game.objects) if (!o.dead && o.owner === this && o.mode === 'pulse') return o;
+    return null;
+  }
   /* F29 (Sylva's hint): allied heroes (this one included) within `r` under `hp`. */
   alliesBelow(r, hp) {
     let n = 0;
@@ -3752,6 +3757,8 @@ class Hero extends Unit {
     let best = null, bestScore = -Infinity;
     const offsets = [0, this.combatSide * 0.42, -this.combatSide * 0.42,
       this.combatSide * 0.82, -this.combatSide * 0.82, Math.PI];
+    // F29 (Wick's hint): with her lantern down she stands within its botStand (250) of it
+    const lamp = this.ownPulseObject();
     for (const off of offsets) {
       const a = baseA + off;
       const x = target.x + Math.cos(a) * desired, y = target.y + Math.sin(a) * desired;
@@ -3759,6 +3766,7 @@ class Hero extends Unit {
       if (!Game.navSegmentClear(this, this, { x, y }, { avoidTowers: true })) continue;
       let score = -Math.abs(Math.hypot(x - target.x, y - target.y) - desired) * 2;
       score -= Game.navRisk(this, x, y, { avoidTowers: true }) * 110;
+      if (lamp) score -= Math.max(0, Math.hypot(x - lamp.x, y - lamp.y) - (lamp.s.botStand || 250)) * 0.6;
       /* Space from allies and additional enemies keeps teamfights from becoming
          one rigid pile and gives area skills a reason to matter. */
       for (const h of Game.heroes) {

@@ -997,9 +997,17 @@ const PASSIVES = {
     },
   },
 
+  /* Wick — every heal she lands also shields the ally for 40% of it 2.5 s;
+     her basics on an enemy her Lantern has revealed (marks.lanternRevealed,
+     stamped by the pulse object, F9) deal the lantern's revealBasicBonus. */
   lampglass: {
     onHealAlly(h, ally, amount) {
       if (amount > 0) ally.addShield(amount * 0.4, 2.5);
+    },
+    onDealDamage(h, target, amount, pkt) {
+      if (!pkt || !pkt.isBasic || !target.marks || !(target.marks.lanternRevealed > Game.time)) return amount;
+      const lantern = h.skills.find(s => s.type === 'object' && s.revealBasicBonus);
+      return amount * (1 + (lantern ? lantern.revealBasicBonus : 0.15));
     },
   },
 

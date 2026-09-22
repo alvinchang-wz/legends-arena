@@ -541,4 +541,111 @@ T.test('Rook bot: Dive only with an ally within 400, at the lowest ranged hero i
   assert.ok(rook.dashS && rook.dashS.unhookable && rook.recast === null, 'the escape pressed the Return');
 });
 
+/* ---------------- Wick ---------------- */
+
+T.test('Wick: base stats and skill numbers match the spec (the only pulse object and the only skill-based vision; the most durable support)', () => {
+  reset();
+  const d = wick.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [575, 76, 310, 34, 48, 4.4, 15, 2.7, 15, 2.4, 290, 0.95, 244, 1]);
+  assert.equal(d.passive.id, 'lampglass');
+  const [s1, s2, s3] = wick.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.slowPct, s1.slowDur],
+    ['skillshot', 6, -0.3, 40, 4, 125, 15, 0.5, 640, 900, 22, 0.25, 1.0]);
+  assert.equal(rankVal(s1, 'dmg', 6), 200); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Spark cd at rank 6');
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.range, s2.dur, s2.tick, s2.allyRadius, s2.shield, s2.shieldLv, s2.shieldScaleAp, s2.shieldDur, s2.revealRadius, s2.revealBasicBonus, s2.slowPct],
+    ['object', 13, -0.6, 60, 4, 480, 5, 1.0, 300, 45, 7, 0.2, 2.0, 300, 0.15, undefined]);
+  near(rankVal(s2, 'cd', 6), 10, 1e-9, 'Lantern cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 80);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius, s3.shieldPct], ['heal', [48, 42, 36], [110, 140, 170], [170, 230, 290], 0.55, 320, 0.08]);
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'object')).length, 1, 'the only pulse object');
+  assert.ok(sim.context.HEROES.filter(h => h.role === 'Support').every(h => h.hp <= d.hp && h.armor <= d.armor), 'the most durable support');
+  for (const s of wick.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Wick: the Lantern pulses a refreshing lantern-tagged shield on allies within 300 every second for 5 s, reveals enemy heroes within 300 for the whole duration, and her basics on a revealed enemy deal +15%', () => {
+  reset();
+  T.place(wick, open.x, open.y);
+  T.place(rook, open.x + 100, open.y);
+  T.place(bastion, open.x + 200, open.y);
+  T.place(wraith, open.x + 700, open.y);
+  const mana0 = wick.mana;
+  assert.ok(wick.castSkill(1, { x: wick.x, y: wick.y }));
+  assert.equal(G.objects.length, 1); assert.equal(G.objects[0].mode, 'pulse');
+  near(wick.mana, mana0 - 80, 1e-9, '60 +4/rank mana');
+  G.update(1 / 60);
+  const expect = 45 + 7 * 5 + wick.magicPower() * 0.2;
+  for (const a of [rook, wick]) {
+    const sh = a.shields.filter(x => x.tag === 'lantern');
+    assert.equal(sh.length, 1, `${a.name} shielded on the first pulse`);
+    near(sh[0].amount, expect, 1e-6, 'the shield at rank 6');
+    near(sh[0].t, 2.0, 1e-6, 'for 2 s');
+  }
+  assert.ok(bastion.revealT > 4.5 && bastion.marks.lanternRevealed > G.time + 4.5, 'the enemy inside 300 is revealed for the rest of the lantern');
+  assert.equal(wraith.revealT, 0, 'outside 300: not revealed');
+  T.frames(G, 62);   // the second pulse
+  assert.equal(rook.shields.filter(x => x.tag === 'lantern').length, 1, 'refreshed, never stacked');
+  assert.ok(rook.shields.find(x => x.tag === 'lantern').t > 1.5, 'the timer refreshed');
+  // +15% basics on the revealed enemy (the attacker-side modifier, before mitigation and rounding)
+  near(wick.onDealDamage(bastion, 100, { isBasic: true }), 115, 1e-9, 'a basic on the revealed enemy: +15%');
+  near(wick.onDealDamage(bastion, 100, { skill: {} }), 100, 1e-9, 'a skill: unchanged');
+  near(wick.onDealDamage(wraith, 100, { isBasic: true }), 100, 1e-9, 'an unrevealed enemy: unchanged');
+  T.place(wick, bastion.x - 200, bastion.y);
+  const before = bastion.stats.dmgTaken;
+  basic(wick, bastion);
+  assert.ok(bastion.stats.dmgTaken > before, 'the swing landed');
+  T.seconds(G, 5);
+  assert.equal(G.objects.length, 0, 'gone after 5 s');
+});
+
+T.test('Wick: Warding Glow heals allies within 320 for 170/230/290 (+55% MAGIC) with an 8% max-HP shield for 3 s, plus the Lampglass shield of 40% of the heal', () => {
+  reset();
+  T.place(wick, open.x, open.y);
+  T.place(rook, open.x + 200, open.y);
+  T.place(grom, open.x + 400, open.y);   // past 320
+  rook.hp = rook.maxHp * 0.5; grom.hp = grom.maxHp * 0.5;
+  const mana0 = wick.mana;
+  assert.ok(wick.castSkill(2, null));
+  near(wick.mana, mana0 - 170, 1e-9, '170 mana at rank 3');
+  const heal = 290 + wick.magicPower() * 0.55;
+  near(rook.hp, rook.maxHp * 0.5 + heal, 1e-6, 'healed 290 (+55% MAGIC)');
+  assert.equal(grom.hp, grom.maxHp * 0.5, 'past 320: nothing');
+  const pct = rook.shields.find(x => Math.abs(x.amount - rook.maxHp * 0.08) < 1e-6);
+  assert.ok(pct && Math.abs(pct.t - 3) < 1e-6, 'an 8% max-HP shield for 3 s');
+  const lamp = rook.shields.find(x => Math.abs(x.amount - heal * 0.4) < 1e-6);
+  assert.ok(lamp && Math.abs(lamp.t - 2.5) < 1e-6, 'and Lampglass: 40% of the heal for 2.5 s');
+});
+
+T.test('Wick bot: the Lantern goes under the allied frontliner when 2+ enemy heroes are within 500 of an ally, then she stands within 250 of it; Warding Glow when an ally within 320 is under 45% or three allies are fighting in range', () => {
+  reset();
+  const s2 = wick.skills[1];
+  T.place(wick, open.x, open.y);
+  T.place(rook, open.x + 250, open.y);
+  T.place(grom, open.x + 300, open.y + 60);
+  T.place(bastion, open.x + 600, open.y);
+  wick.aiTarget = bastion;
+  assert.equal(wick.botSkillUrgency(1, bastion, 600, true, false), 0, 'one enemy, nobody fighting: held');
+  wick.lastDmgT = G.time;   // she is in the fight: a routine drop under the ally nearest the enemy
+  assert.equal(wick.botSkillUrgency(1, bastion, 600, true, false), 350);
+  assert.equal(wick.lanternSpot(s2, false), grom, 'the ally nearest the enemy');
+  T.place(sable, open.x + 650, open.y + 100);
+  assert.equal(wick.botSkillUrgency(1, bastion, 600, true, false), 720, 'two enemy heroes within 500 of an ally: the lantern goes down');
+  assert.equal(wick.lanternSpot(s2, true), grom, 'under the frontliner (the Tank) rather than the assassin');
+  wick.botFireSkill(1, bastion, 600, true, false);
+  const lamp = G.objects[0];
+  assert.ok(lamp && Math.hypot(lamp.x - grom.x, lamp.y - grom.y) < 5, 'planted under him');
+  const cp = wick.chooseCombatPoint(bastion);
+  assert.ok(Math.hypot(cp.x - lamp.x, cp.y - lamp.y) <= 250 + 60, `she fights within 250 of it: ${Math.hypot(cp.x - lamp.x, cp.y - lamp.y)}`);
+  // Warding Glow
+  G.objects.length = 0;
+  assert.equal(wick.botSkillUrgency(2, bastion, 600, true, false), 0, 'everyone healthy: held');
+  rook.hp = rook.maxHp * 0.5;
+  assert.equal(wick.botSkillUrgency(2, bastion, 600, true, false), 0, 'an ally at 50%: still held (45%)');
+  rook.hp = rook.maxHp * 0.35;
+  assert.equal(wick.botSkillUrgency(2, bastion, 600, true, false), 980, 'an ally under 45% within 320: the Glow');
+  rook.hp = rook.maxHp;
+  for (const a of [wick, rook, grom]) a.lastDmgT = G.time;
+  assert.equal(wick.botSkillUrgency(2, bastion, 600, true, false), 900, 'three allies fighting in range: the Glow');
+  assert.equal(wick.botSkillUrgency(2, creep(1, open.x + 500, open.y), 500, false, true), 900, 'a heal ultimate needs no hero target');
+});
+
 T.done();
