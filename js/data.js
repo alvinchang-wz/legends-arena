@@ -878,19 +878,34 @@ const HEROES = [
   },
   {
     id: 'pact', name: 'Pact', role: 'Support', icon: '🫀', color: '#9f1239', projColor: '#fb7185',
-    desc: 'A blood liturgist who spends her own life to rewrite someone else\'s.',
+    desc: 'The blood liturgist: she lashes with mana, but her one true gift, Offering, is paid in her own health and given to a single ally. Her damage to heroes tithes back to whoever is lowest.',
     difficulty: 3, damageStyle: 'magic',
-    hp: 545, hpLv: 72, mp: 280, mpLv: 30, atk: 52, atkLv: 4.8,
-    armor: 14, armorLv: 2.6, mr: 12, mrLv: 2.0,
-    range: 270, atkSpd: 0.91, speed: 247,
+    /* docs/design/heroes.md, Supports: Pact. The hybrid resource (F3/F6):
+       Let and Covenant draw on the mana bar, Offering alone costs 12% of
+       her max HP, is refused under 25% (hpFloor) and is the roster's only
+       single-ally heal (F17 allyTarget): the target is healed for 200% of
+       the HP she paid (healFromCost) +20/rank (+45% MAGIC), the cost taken
+       after the effect and never as a damage event. Covenant is a
+       telegraphed true-damage root and silence (both purifiable), the
+       suppression gone. No mobility, no shield. Bot fields: Offering for
+       the lowest ally within 520 under 55% (botHealHp) while she is above
+       40% (botMinHp), never as an escape (it cannot land on her); Let rates
+       700 at enemy heroes while an ally within 520 is under 60%
+       (botAllyHurt: Tithe feeds them); Covenant is a botCrowd zone whose
+       lone-target case is the enemy whose target is an ally under 35%
+       (botGuardLow). */
+    resource: 'hp', hpFloor: 0.25,
+    hp: 600, hpLv: 80, mp: 280, mpLv: 30, atk: 52, atkLv: 4.8,
+    armor: 14, armorLv: 2.6, mr: 15, mrLv: 2.2,
+    range: 270, atkSpd: 0.92, speed: 246,
     passive: {
       name: 'Tithe', icon: '✝', id: 'tithe',
-      desc: '15% of skill damage you deal to heroes returns as healing to the lowest-HP allied hero within 520 range (including you).',
+      desc: '15% of the skill damage Pact deals to heroes heals the lowest-HP allied hero within 520 (herself included).',
     },
     skills: [
-      { name: 'Let', icon: '╱', type: 'skillshot', cd: 6, mana: 45, dmgType: 'magic', dmg: 145, dmgLv: 17, scaleAp: 0.55, range: 600, speed: 860, radius: 24, desc: 'A blood lash. Your tithe drinks from it.' },
-      { name: 'Offering', icon: '♥', type: 'heal', cd: 12, mana: 70, heal: 100, healLv: 16, scaleAp: 0.4, radius: 260, desc: 'A costly hymn that heals allies in a tighter radius.' },
-      { name: 'Covenant', icon: '⛓', type: 'zone', cd: 43, mana: 115, dmgType: 'true', range: 480, radius: 200, delay: 0.6, dmg: 180, dmgLv: 20, scaleAp: 0.4, suppress: 0.7, desc: 'Bind an area in true damage and a brief suppression.' },
+      { name: 'Let', icon: '╱', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 140, dmgLv: 17, scaleAp: 0.6, range: 600, speed: 860, radius: 24, botAllyHurt: { range: 520, hp: 0.6 }, desc: 'A lash of blood (600 range at 860, radius 24) at the first enemy hit: 140+17/rank (+60% MAGIC). No CC. Tithe drinks from it.' },
+      { name: 'Offering', icon: '♥', type: 'heal', cd: 11, cdLv: -0.6, hpCost: 0.12, allyTarget: { range: 520, self: false }, heal: 0, healLv: 20, healFromCost: 2.0, scaleAp: 0.45, botHealHp: 0.55, botMinHp: 0.4, desc: 'Pay 12% of her max HP and heal the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim) for 200% of the HP paid +20/rank (+45% MAGIC). Refused below 25% HP; no ally in reach, no cost.' },
+      { name: 'Covenant', icon: '⛓', type: 'zone', cd: [50, 44, 38], mana: [100, 120, 140], dmgType: 'true', range: 480, radius: 200, delay: 0.6, ticks: 1, dmg: [190, 250, 310], scaleAp: 0.4, immobilize: 1.0, silence: 1.0, botCrowd: true, botGuardLow: 0.35, desc: 'After 0.6s everyone within 200 of a point up to 480 away takes 190/250/310 (+40% MAGIC) true damage and is rooted and silenced for 1s (both purifiable).' },
     ],
   },
 ];

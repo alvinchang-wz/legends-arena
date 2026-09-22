@@ -558,7 +558,7 @@ T.test('Wick: base stats and skill numbers match the spec (the only pulse object
   near(rankVal(s2, 'cd', 6), 10, 1e-9, 'Lantern cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 80);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius, s3.shieldPct], ['heal', [48, 42, 36], [110, 140, 170], [170, 230, 290], 0.55, 320, 0.08]);
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'object')).length, 1, 'the only pulse object');
-  assert.ok(sim.context.HEROES.filter(h => h.role === 'Support').every(h => h.hp <= d.hp && h.armor <= d.armor), 'the most durable support');
+  assert.ok(sim.context.HEROES.filter(h => h.role === 'Support').every(h => h.armor <= d.armor && h.mr <= d.mr), 'the toughest support (Pact carries more HP, Wick the most armor)');
   for (const s of wick.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
 });
 
@@ -886,6 +886,136 @@ T.test('Sylva bot: she stands 350 behind the ally nearest her target; Vine Link 
   assert.equal(sylva.botSkillUrgency(2, grom, 400, true, false), 920, 'two allies within 420 under 55%: Canopy');
   wraith.hp = wraith.maxHp; pact.hp = pact.maxHp * 0.3;
   assert.equal(sylva.botSkillUrgency(2, grom, 400, true, false), 980, 'one ally under 35%: a lifeline is still a lifeline');
+});
+
+/* ---------------- Pact ---------------- */
+
+T.test('Pact: base stats and skill numbers match the spec (the hybrid resource: mana for Let and Covenant, HP for Offering, the only single-ally heal)', () => {
+  reset();
+  const d = pact.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [600, 80, 280, 30, 52, 4.8, 14, 2.6, 15, 2.2, 270, 0.92, 246, 3]);
+  assert.deepEqual([d.resource, d.hpFloor, d.passive.id], ['hp', 0.25, 'tithe']);
+  const [s1, s2, s3] = pact.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.hpCost],
+    ['skillshot', 6, -0.3, 45, 4, 140, 17, 0.6, 600, 860, 24, undefined]);
+  assert.equal(rankVal(s1, 'dmg', 6), 225); assert.equal(pact.costOf(s1, 6), 65);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.hpCost, s2.allyTarget, s2.heal, s2.healLv, s2.healFromCost, s2.scaleAp, s2.mana],
+    ['heal', 11, -0.6, 0.12, { range: 520, self: false }, 0, 20, 2.0, 0.45, undefined]);
+  near(rankVal(s2, 'cd', 6), 8, 1e-9, 'Offering cd at rank 6'); assert.equal(pact.costOf(s2, 6), 0, 'no mana');
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.dmgType, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.immobilize, s3.silence, s3.suppress],
+    ['zone', [50, 44, 38], [100, 120, 140], 'true', 480, 200, 0.6, 1, [190, 250, 310], 0.4, 1.0, 1.0, undefined]);
+  assert.equal(pact.usesMana(), true, 'the mana bar is live');
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.hpCost && s.allyTarget)).length, 1, 'the only blood transfusion');
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'heal' && s.allyTarget)).length, 1, 'the only single-ally heal');
+  for (const s of pact.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Pact: Offering pays 12% of her max HP after the effect (never lethal, no mana, no damage event) and heals one ally for 200% of it +20/rank (+45% MAGIC); refused under 25% HP; no ally in reach, no cost', () => {
+  reset();
+  T.place(pact, open.x, open.y);
+  T.place(sylva, open.x + 200, open.y);
+  T.place(wraith, open.x + 250, open.y + 60);
+  sylva.hp = sylva.maxHp * 0.4; wraith.hp = wraith.maxHp * 0.5;
+  const mana0 = pact.mana, paid = Math.floor(pact.maxHp * 0.12);
+  assert.ok(pact.castSkill(1, null), 'no aim: the lowest ally');
+  const heal = paid * 2 + 20 * 5 + pact.magicPower() * 0.45;
+  near(sylva.hp, sylva.maxHp * 0.4 + heal, 1e-6, `healed 200% of ${paid} +100 (+45% MAGIC)`);
+  assert.equal(wraith.hp, wraith.maxHp * 0.5, 'one ally only');
+  assert.equal(pact.hp, pact.maxHp - paid, 'the blood was paid');
+  assert.equal(pact.mana, mana0, 'no mana');
+  assert.equal(pact.lastHurtT, -99, 'not a damage event');
+  assert.equal(pact.recentDmg.length, 0);
+  // the aim picks the ally nearest the point
+  pact.skillCd[1] = 0; pact.hp = pact.maxHp; wraith.hp = wraith.maxHp * 0.3;
+  assert.ok(pact.castSkill(1, { x: wraith.x, y: wraith.y }));
+  near(wraith.hp, Math.min(wraith.maxHp, wraith.maxHp * 0.3 + heal), 1e-6, 'the aimed ally');
+  // the floor: refused under 25%
+  pact.skillCd[1] = 0; pact.hp = pact.maxHp * 0.2; sylva.hp = sylva.maxHp * 0.4;
+  assert.equal(pact.canAfford(pact.skills[1], 6), false);
+  assert.equal(pact.castSkill(1, null), false, 'refused under 25% HP');
+  assert.equal(sylva.hp, sylva.maxHp * 0.4);
+  // just above it: allowed, and never lethal
+  pact.hp = pact.maxHp * 0.26;
+  assert.ok(pact.castSkill(1, null));
+  assert.ok(pact.alive && pact.hp >= 1, 'never lethal');
+  // nobody in reach: no cast, no cost
+  T.place(sylva, FAR.x, FAR.y); T.place(wraith, FAR.x, FAR.y);
+  pact.skillCd[1] = 0; pact.hp = pact.maxHp;
+  assert.equal(pact.castSkill(1, null), false);
+  assert.equal(pact.hp, pact.maxHp, 'no cost without a target');
+  assert.equal(pact.skillCd[1], 0);
+});
+
+T.test('Pact: Let and Covenant draw on mana; Tithe heals the lowest ally within 520 for 15% of skill damage to heroes; Covenant lands after 0.6 s with true damage, a 1 s root and a 1 s silence', () => {
+  reset();
+  T.place(pact, open.x, open.y);
+  T.place(sylva, open.x - 100, open.y);
+  T.place(grom, open.x + 300, open.y);
+  sylva.hp = sylva.maxHp * 0.5;
+  const mana0 = pact.mana;
+  assert.ok(pact.castSkill(0, grom));
+  near(pact.mana, mana0 - 65, 1e-6, 'Let: 45 +4/rank mana');
+  T.frames(G, 30);
+  const dealt = grom.stats.dmgTaken;
+  assert.ok(dealt > 0, 'Let landed');
+  near(sylva.hp, sylva.maxHp * 0.5 + dealt * 0.15, 8, 'Tithe: 15% of it to the lowest ally (half a second of regen aside)');
+  assert.ok(!grom.cc.has('slow'), 'no CC');
+  grom.marks = {};   // the support emblem's Focusing Mark from the Let would add 6% to the next hit
+  const mana1 = pact.mana, hp1 = pact.hp;
+  assert.ok(pact.castSkill(2, grom));
+  near(pact.mana, mana1 - 140, 1e-6, 'Covenant: 140 mana at rank 3');
+  assert.equal(pact.hp, hp1, 'no blood for it');
+  assert.equal(G.zones.length, 1);
+  T.frames(G, 30);
+  assert.equal(grom.stats.dmgTaken, dealt, 'nothing before the 0.6 s telegraph');
+  T.frames(G, 12);
+  const cov = grom.stats.dmgTaken - dealt;
+  near(cov, Math.round((310 + pact.magicPower() * 0.4) * 0.88), 1.5, 'true damage: unmitigated, the skill multiplier only');
+  assert.ok(grom.cc.has('immobilize') && grom.cc.has('silence'), 'rooted and silenced');
+  assert.ok(grom.cc.t.immobilize > 0.7 && grom.cc.t.silence > 0.7, `for 1 s each (landed ~0.55 s in, tenacity aside): ${grom.cc.t.immobilize} / ${grom.cc.t.silence}`);
+  assert.ok(!grom.cc.has('suppress'), 'no suppression');
+  near(sylva.hp, sylva.maxHp * 0.5 + (dealt + cov) * 0.15, 20, 'Tithe drinks from the Covenant too (regen aside)');
+});
+
+T.test('Pact bot: Offering for the lowest ally within 520 under 55% while she is above 40%, never as an escape; Let at heroes while an ally within 520 is under 60%; Covenant on 2+ heroes or the enemy about to kill an ally', () => {
+  reset();
+  T.place(pact, open.x, open.y);
+  T.place(sylva, open.x + 200, open.y);
+  T.place(wraith, open.x + 250, open.y + 60);
+  T.place(grom, open.x + 400, open.y);
+  pact.aiTarget = grom;
+  assert.equal(pact.botSkillUrgency(1, grom, 400, true, false), 0, 'everyone healthy: no Offering');
+  sylva.hp = sylva.maxHp * 0.5;
+  assert.equal(pact.botSkillUrgency(1, grom, 400, true, false), 900, 'an ally at 50%: Offering');
+  sylva.hp = sylva.maxHp * 0.35;
+  assert.equal(pact.botSkillUrgency(1, grom, 400, true, false), 980, 'an ally at 35%: Offering now');
+  pact.hp = pact.maxHp * 0.35;
+  assert.equal(pact.botSkillUrgency(1, grom, 400, true, false), 0, 'Pact under 40%: she keeps her blood');
+  pact.hp = pact.maxHp * 0.6;
+  const shp = sylva.hp, php = pact.hp, spell = pact.spell;
+  pact.spell = null;   // her battle spell (Revitalize) would heal the ally on its own; the question is the blood
+  pact.botEscapeCast();
+  assert.equal(sylva.hp, shp, 'retreating, she does not pay blood for someone else');
+  assert.equal(pact.hp, php);
+  pact.spell = spell; pact.hp = pact.maxHp;
+  // Let
+  sylva.hp = sylva.maxHp;
+  assert.equal(pact.botSkillUrgency(0, grom, 400, true, false), 500, 'allies healthy: a poke');
+  sylva.hp = sylva.maxHp * 0.5;
+  assert.equal(pact.botSkillUrgency(0, grom, 400, true, false), 700, 'an ally under 60% within 520: Let, for the Tithe');
+  sylva.hp = sylva.maxHp;
+  // Covenant
+  assert.equal(pact.botSkillUrgency(2, grom, 400, true, false), 0, 'a lone healthy hero: held');
+  grom.curTarget = sylva; sylva.hp = sylva.maxHp * 0.3;
+  assert.equal(pact.botSkillUrgency(2, grom, 400, true, false), 820, 'the enemy about to kill an ally: Covenant');
+  grom.curTarget = null; sylva.hp = sylva.maxHp;
+  T.place(nyx, open.x + 480, open.y + 100);
+  assert.equal(pact.botSkillUrgency(2, grom, 400, true, false), 880, 'two heroes inside 200 of the target: Covenant');
+  // the ult mana reserve never blocks the blood skill
+  pact.mana = 140; pact.skillCd[2] = 0; sylva.hp = sylva.maxHp * 0.5;
+  pact.botCast(grom);
+  assert.ok(sylva.hp > sylva.maxHp * 0.5, 'Offering cast with Covenant ready and the bar at its reserve');
 });
 
 T.done();
