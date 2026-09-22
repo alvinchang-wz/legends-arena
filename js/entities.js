@@ -773,6 +773,95 @@ class Hero extends Unit {
     if (dealt) this.onSkillLanded(u, dealt, s);
     return dealt;
   }
+  /* ---------- tethers (docs/design/heroes.md F16) ----------
+     A hostile tether (Anchor's chain, Hexa's drain, Karn's Gaol) from this
+     hero to `target`: each frame the slow lerps slowStart -> slowEnd, every
+     `interval` the tick damage lands (healPct of it back to the caster), at
+     the end `payload` lands, and crossing breakRange snaps it (breakPayload).
+     One per caster unless the skill is `multi`. */
+  tetherTo(target, s, rank) {
+    const tt = s.tether;
+    if (!tt || !target || !target.alive) return null;
+    if (!tt.multi) for (const t of Game.tethers) if (!t.dead && t.hostile && t.src === this && !t.multi) t.dead = true;
+    const h = this, r = rank || this.skillRankOf(s);
+    const dmgType = s.dmgType || 'magic';
+    const tickDmg = tt.tickDmg || tt.tickScaleAp
+      ? (rankVal(tt, 'tickDmg', r) || 0) + this.magicPower() * (tt.tickScaleAp || 0) : 0;
+    const t = Game.addTether({
+      src: h, target, hostile: true, s, rank: r, t: tt.dur || 2, breakRange: tt.breakRange || Infinity,
+      interval: tt.interval || 0, anchored: !!tt.anchored, multi: !!tt.multi, drawColor: h.color,
+      onFrame(tr, dt) {
+        if (tt.slowStart === undefined && tt.slowEnd === undefined) return;
+        let pct = lerp(tt.slowStart || 0, tt.slowEnd !== undefined ? tt.slowEnd : (tt.slowStart || 0), Math.min(1, tr.elapsed / tr.dur));
+        if (h.state && h.state.t > 0 && h.state.s.tetherSlowMult) pct *= h.state.s.tetherSlowMult;
+        if (pct > 0) target.cc.applySlow(Math.min(0.95, pct), 0.2, target.attrs ? target.attrs.get('tenacity') : 0);
+      },
+      onTick() {
+        if (!tickDmg) return;
+        const dealt = resolveDamage(h, target, { amount: tickDmg, type: dmgType, skill: s });
+        if (dealt) {
+          h.onSkillLanded(target, dealt, s);
+          if (tt.healPct) { h.heal(dealt * tt.healPct); Game.fx.drainFx(h, Math.round(dealt * tt.healPct)); }
+        }
+      },
+      onComplete() {
+        if (!tt.payload || !target.alive) return;
+        const p = Object.assign({ dmgType }, tt.payload);
+        h.skillHit(target, p, r);
+        if (p.spreadMark) {
+          const sm = p.spreadMark;
+          for (const u of Game.enemyUnits(h.team, { neutral: true })) {
+            if (dist(u, target) <= (sm.radius || 0) + u.radius) applyMark(h, u, { applyMark: sm }, r);
+          }
+        }
+      },
+      onBreak() {
+        if (!tt.breakPayload || !target.alive) return;
+        h.skillHit(target, Object.assign({ dmgType }, tt.breakPayload), r);
+      },
+    });
+    return t;
+  }
+  /* A friendly link (Sylva's Vine Link and Canopy) from this hero to an
+     ally: every `interval` the ally is healed (no passive triggers) and
+     hastened, the caster gains armour / magic resist. Only one link per
+     caster unless `all`; on the same ally the larger tick wins. */
+  linkTo(ally, s, rank) {
+    const lk = s.link;
+    if (!lk || !ally || !ally.alive || ally === this) return null;
+    const h = this, r = rank || this.skillRankOf(s);
+    const tickHeal = (rankVal(lk, 'tickHeal', r) || 0) + this.magicPower() * (lk.tickScaleAp || 0);
+    for (const t of Game.tethers) {
+      if (t.dead || t.hostile || t.src !== this) continue;
+      if (t.target === ally) { if (t.tickHeal >= tickHeal) return t; t.dead = true; }
+      else if (!lk.all && !t.all) t.dead = true;
+    }
+    const hold = (lk.interval || 0.5) + 0.15;
+    return Game.addTether({
+      src: h, target: ally, hostile: false, s, rank: r, t: lk.dur || 4, breakRange: lk.breakRange || Infinity,
+      interval: lk.interval || 0.5, all: !!lk.all, tickHeal, drawColor: THEME.heal,
+      onTick() {
+        if (tickHeal > 0) { const healed = ally.heal(tickHeal); h.stats.healDone += healed; }
+        if (lk.targetSpeedAdd) ally.addTimedBuff('speed', lk.targetSpeedAdd, hold);
+        if (lk.casterArmorAdd) h.addTimedBuff('armor', lk.casterArmorAdd, hold);
+        if (lk.casterMrAdd) h.addTimedBuff('mr', lk.casterMrAdd, hold);
+      },
+    });
+  }
+  /* F17: the allied hero a cast lands on. The one nearest the aim point
+     within range; with no aim (bots, an untouched joystick) the lowest-HP
+     ally in range. `self: false` excludes the caster. */
+  pickAllyTarget(s, point) {
+    const a = s.allyTarget;
+    let best = null, bd = Infinity;
+    for (const h of Game.heroes) {
+      if (h.team !== this.team || !h.alive || (h === this && !a.self)) continue;
+      if (dist(this, h) > (a.range || 500)) continue;
+      const score = point ? Math.hypot(h.x - point.x, h.y - point.y) : h.hpPct;
+      if (score < bd) { bd = score; best = h; }
+    }
+    return best;
+  }
   /* F28: the CC state calls back when a timer starts. An airborne drops a
      dash in progress; a channel (F18) breaks on any hard CC. */
   onCC(type) {
@@ -1002,11 +1091,56 @@ class Hero extends Unit {
     else dir = { x: Math.cos(this.facing), y: Math.sin(this.facing) };
     this.facing = Math.atan2(dir.y, dir.x);
     let castAt = null;
+    /* F17: an ally-targeted skill needs someone to land on, or it is not cast */
+    let ally = null;
+    if (s.allyTarget) {
+      ally = this.pickAllyTarget(s, point);
+      if (!ally) return false;
+      castAt = { x: ally.x, y: ally.y };
+    }
 
     switch (s.type) {
       case 'skillshot':
         Game.projectiles.push(Projectile.skillshot(this, s, dir));
         break;
+      case 'tether': {   // F16 hostile: one hero in the aim cone, or every hero around (multi)
+        const tt = s.tether || {};
+        const victims = [];
+        if (tt.multi) {
+          for (const e of Game.heroes) {
+            if (e.team !== this.team && e.alive && !e.untargetable && dist(this, e) <= tt.multi.radius) victims.push(e);
+          }
+        } else {
+          const reach = s.targetRange || s.range || 500;
+          const half = ((s.targetCone || 360) / 2) * Math.PI / 180;
+          let best = null, bd = Infinity;
+          for (const e of Game.heroes) {
+            if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+            const d = dist(this, e);
+            if (d > reach) continue;
+            const ang = Math.atan2(e.y - this.y, e.x - this.x);
+            let diff = Math.abs(ang - this.facing) % TAU;
+            if (diff > Math.PI) diff = TAU - diff;
+            if (diff > half) continue;
+            if (d < bd) { bd = d; best = e; }
+          }
+          if (best) victims.push(best);
+        }
+        if (!victims.length) return false;   // nothing to chain: no cost
+        for (const v of victims) this.tetherTo(v, s, rank);
+        castAt = { x: victims[0].x, y: victims[0].y };
+        break;
+      }
+      case 'link': {     // F16 friendly: heal the ally once, then keep a link on them
+        if (s.heal || s.healLv) {
+          const healed = ally.heal(this.skillHeal(s, rank));
+          this.stats.healDone += healed;
+          Game.fx.healFx(ally, Math.round(healed));
+          this.fire('onHealAlly', ally, healed);
+        }
+        this.linkTo(ally, s, rank);
+        break;
+      }
       case 'nova':
         this.doNova(s);
         break;
@@ -1031,15 +1165,16 @@ class Hero extends Unit {
         break;
       }
       case 'heal': {
-        const amt = this.skillHeal(s);
+        let amt = this.skillHeal(s, rank);
+        if (s.healFromCost && s.hpCost) amt += Math.floor(this.maxHp * s.hpCost) * s.healFromCost;   // Pact's Offering
         for (const h of Game.heroes) {
-          if (h.team === this.team && h.alive && dist(this, h) <= s.radius) {
-            const healed = h.heal(amt);
-            this.stats.healDone += healed;
-            if (s.shieldPct) h.addShield(h.maxHp * s.shieldPct, 3);
-            Game.fx.healFx(h, Math.round(amt));
-            this.fire('onHealAlly', h, healed);
-          }
+          if (ally ? h !== ally : !(h.team === this.team && h.alive && dist(this, h) <= s.radius)) continue;
+          const healed = h.heal(amt);
+          this.stats.healDone += healed;
+          if (s.shieldPct) h.addShield(h.maxHp * s.shieldPct, 3);
+          Game.fx.healFx(h, Math.round(amt));
+          this.fire('onHealAlly', h, healed);
+          if (s.link && s.link.all && h !== this) this.linkTo(h, s, rank);   // Sylva's Canopy
         }
         Game.fx.ring(this.x, this.y, s.radius, THEME.heal, 0.5);
         break;
@@ -1258,10 +1393,10 @@ class Hero extends Unit {
       if (!s) continue;
       let point = null;
       if (c.dir) {
-        const maxR = s.range || s.dist || 500;
+        const maxR = s.range || s.dist || (s.allyTarget && s.allyTarget.range) || 500;
         const fr = c.dist ? clamp((c.dist - 20) / 70, 0.3, 1) : 1;
         point = { x: this.x + c.dir.x * maxR * (s.type === 'zone' ? fr : 1), y: this.y + c.dir.y * maxR * (s.type === 'zone' ? fr : 1) };
-      } else {
+      } else if (!s.allyTarget) {
         point = Game.autoAimPoint(this, s);
       }
       this.castSkill(c.skill, point);
@@ -2011,7 +2146,7 @@ class Hero extends Unit {
         if (cc && isHero && !locked) return 810;
         return isHero ? 520 : 210;
       case 'heal': {
-        const patient = this.lowestHealTarget(s.radius || 360);
+        const patient = s.allyTarget ? this.pickAllyTarget(s, null) : this.lowestHealTarget(s.radius || 360);
         if (!patient || patient.hpPct >= (this.advancedAI ? p.healAllyHp : 0.65)) return 0;
         return patient.hpPct < 0.4 ? 980 : 900;
       }
@@ -2022,6 +2157,18 @@ class Hero extends Unit {
       case 'buff':
         if (!isHero || d >= 300) return 0;
         return 420;
+      case 'tether': {   // F16: chain a hero in reach
+        if (!isHero) return 0;
+        const tt = s.tether || {};
+        const reach = tt.multi ? tt.multi.radius : (s.targetRange || s.range || 500);
+        if (d >= reach) return 0;
+        return locked ? 500 : 640;
+      }
+      case 'link': {     // F16/F17: link the ally who needs it
+        const patient = this.pickAllyTarget(s, null);
+        if (!patient || patient.hpPct >= 0.8) return 0;
+        return patient.hpPct < 0.45 ? 900 : 620;
+      }
     }
     return 0;
   }
@@ -2048,6 +2195,12 @@ class Hero extends Unit {
         this.castSkill(i, t);
         break;
       case 'buff':
+        this.castSkill(i, null);
+        break;
+      case 'tether':
+        this.castSkill(i, t);
+        break;
+      case 'link':
         this.castSkill(i, null);
         break;
     }
@@ -3077,6 +3230,50 @@ class Projectile {
         this.x > bounds.maxX || this.y > bounds.maxY) {
       if (this.explodeR) this.explode(this.x, this.y);
       this.dead = true;
+    }
+  }
+}
+
+/* ================= Tether (docs/design/heroes.md F16) =================
+   A line between two units that lives `t` seconds, ticks every `interval`
+   (onTick; onFrame runs every frame) and ends with onComplete, or snaps
+   with onBreak when the units part beyond breakRange, when the target
+   Purifies, or, for a hostile tether that is not `anchored`, when the
+   source is stunned, airborne, suppressed or taunted. Either unit dying
+   removes it quietly. */
+class Tether {
+  constructor(o) {
+    this.src = null; this.target = null; this.hostile = true; this.anchored = false;
+    this.t = 2; this.dur = 0; this.elapsed = 0; this.breakRange = Infinity;
+    this.interval = 0; this.tickT = 0; this.dead = false; this.drawColor = null;
+    this.onTick = null; this.onFrame = null; this.onBreak = null; this.onComplete = null;
+    Object.assign(this, o);
+    this.dur = this.t;
+    this.tickT = this.interval;
+  }
+  snap() {
+    if (this.dead) return;
+    this.dead = true;
+    if (this.onBreak) this.onBreak(this);
+  }
+  update(dt) {
+    if (this.dead) return;
+    const a = this.src, b = this.target;
+    if (!a || !b || !a.alive || !b.alive) { this.dead = true; return; }
+    if (dist(a, b) > this.breakRange) { this.snap(); return; }
+    if (this.hostile && !this.anchored) {
+      const c = a.cc;
+      if (c && (c.has('stun') || c.has('airborne') || c.has('suppress') || c.has('taunt'))) { this.snap(); return; }
+    }
+    this.elapsed += dt; this.t -= dt;
+    if (this.onFrame) this.onFrame(this, dt);
+    if (this.interval > 0 && this.onTick) {
+      this.tickT -= dt;
+      if (this.tickT <= 0) { this.tickT += this.interval; this.onTick(this); }
+    }
+    if (this.t <= 0 && !this.dead) {
+      this.dead = true;
+      if (this.onComplete) this.onComplete(this);
     }
   }
 }

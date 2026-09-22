@@ -8,6 +8,8 @@ const Game = {
   time: 0, waveT: 3, waveN: 0,
   heroes: [], minions: [], monsters: [], towers: [], bases: [], inhibitors: [],
   projectiles: [], zones: [], effects: [], floaters: [], indicators: [],
+  tethers: [],            // F16 tether entities
+  objects: [],            // F9 placed objects (traps, lanterns, barriers)
   camps: [],
   /* Epic objectives share one slot each: `next` is the spawn clock, `unit` is
      the live monster if there is one. Turtle is replaced by Lord at LORD_AT. */
@@ -127,6 +129,7 @@ const Game = {
     this.kills = [0, 0]; this.firstBlood = false; this.firstTurret = false;
     this.heroes = []; this.minions = []; this.monsters = [];
     this.projectiles = []; this.zones = []; this.effects = []; this.floaters = []; this.indicators = [];
+    this.tethers = []; this.objects = [];
 
     const towerSpots = this.isDuel() ? [] : this.isTen() ? TEN_MAP.towers : TOWER_SPOTS;
     const basePts = this.isDuel() ? [] : this.isTen() ? TEN_MAP.bases : BASES;
@@ -1156,6 +1159,12 @@ const Game = {
     }
     return best;
   },
+  /* F16: register a tether (see the Tether class). */
+  addTether(spec) {
+    const t = new Tether(spec);
+    this.tethers.push(t);
+    return t;
+  },
   /* Lead a moving target for skillshots / delayed zones. */
   aimLeadPoint(from, target, projSpeed) {
     if (!target) return { x: from.x, y: from.y };
@@ -1360,6 +1369,14 @@ const Game = {
     for (const b of this.bases) b.update(dt);
     for (const p of this.projectiles) p.update(dt);
     for (const z of this.zones) z.update(dt);
+    if (this.tethers.length) {
+      for (const t of this.tethers) t.update(dt);
+      this.tethers = this.tethers.filter(t => !t.dead);
+    }
+    if (this.objects.length) {
+      for (const o of this.objects) o.update(dt);
+      this.objects = this.objects.filter(o => !o.dead);
+    }
 
     this.minions = this.minions.filter(m => m.alive);
     this.monsters = this.monsters.filter(m => m.alive);
@@ -3158,6 +3175,21 @@ function render() {
 
   // projectiles: a comet — motion streak behind a glowing core. The streak
   // uses last frame's position so it needs no per-projectile bookkeeping
+  // tethers (F16): a line between the two units, pulsing as it nears its end
+  for (const t of Game.tethers) {
+    if (t.dead || !t.src || !t.target) continue;
+    if (!inView(t.src.x, t.src.y, 40) && !inView(t.target.x, t.target.y, 40)) continue;
+    const col = t.drawColor || (t.src.color || TEAM_COLORS[t.src.team]);
+    const k = t.dur > 0 ? clamp(t.t / t.dur, 0, 1) : 1;
+    ctx.strokeStyle = rgba(col, 0.55 + 0.35 * Math.sin(Game.time * (t.hostile ? 14 : 6)) * (1 - k));
+    ctx.lineWidth = t.hostile ? 3.5 : 3;
+    ctx.lineCap = 'round';
+    ctx.setLineDash(t.hostile ? [10, 6] : [4, 8]);
+    ctx.lineDashOffset = -Game.time * 60;
+    ctx.beginPath(); ctx.moveTo(t.src.x, t.src.y - 18); ctx.lineTo(t.target.x, t.target.y - 18); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  }
+
   // beyond two numbers, and it makes speed readable in a way a dot never was.
   // They fly at chest height: the body rides above the ground plane while a
   // small shadow tracks the true position beneath it.

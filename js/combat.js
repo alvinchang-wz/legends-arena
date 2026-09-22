@@ -100,6 +100,12 @@ class CCState {
   purify(immuneFor = 0) {
     this.clear();
     this.immuneT = Math.max(this.immuneT, immuneFor);
+    // F16: a hostile tether on the purified unit snaps; F23: a taunt walk ends
+    const o = this.owner;
+    if (o) {
+      if (o.forced && o.forced.mode === 'taunt') o.forced = null;
+      if (Game.tethers) for (const t of Game.tethers) if (!t.dead && t.hostile && t.target === o) t.snap();
+    }
   }
   update(dt) {
     if (this.active > 0) {
