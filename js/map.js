@@ -269,7 +269,25 @@ const TOWER_TIERS = [
   { frac: 0.27, sidePos: 0.23, midPos: 0.195 },
   { frac: 0.40, sidePos: 0.33, midPos: 0.28 },
 ];
-const TOWER_SPOTS = MAP_DATA.towers.map(t => ({ ...mpx(t.x, t.y), team: t.team, lane: t.lane, frac: t.frac, posFrac: t.posFrac }));
+/* The survey labels red turrets from red's own seat (its "top" sits on the
+   physical bot polyline). Everything that keys structures by lane — the
+   turret shielding chain, Lord-minion lane choice, kill feed — wants the
+   physical lane, so relabel each turret by the polyline it stands on. */
+function physicalLane(p) {
+  let best = 'mid', bestD = Infinity;
+  for (const lane of ['top', 'mid', 'bot']) {
+    const path = LANES[lane];
+    for (let i = 1; i < path.length; i++) {
+      const d = segDist2(p.x, p.y, path[i - 1].x, path[i - 1].y, path[i].x, path[i].y);
+      if (d < bestD) { bestD = d; best = lane; }
+    }
+  }
+  return best;
+}
+const TOWER_SPOTS = MAP_DATA.towers.map(t => {
+  const p = mpx(t.x, t.y);
+  return { ...p, team: t.team, lane: physicalLane(p), frac: t.frac, posFrac: t.posFrac };
+});
 
 /* ---- river and pits ----
    One river on the other diagonal, Lord's pit toward the top-left, Turtle's
