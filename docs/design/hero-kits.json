@@ -1,0 +1,476 @@
+{
+  "meta": {
+    "title": "Legends Arena hero kits (final design)",
+    "companion": "docs/design/heroes.md",
+    "conventions": {
+      "existingFields": "id, name, role, difficulty, damageStyle, hp, hpLv, mp, mpLv, atk, atkLv, armor, armorLv, mr, mrLv, range, atkSpd, speed, passive{name,id,desc}, skills[]{name,type,cd,mana,dmgType,dmg,dmgLv,scaleAd,scaleAp,range,speed,radius,pierce,explodeR,hook,dist,stopOnHero,endNova,buff,heal,healLv,shieldPct,delay,ticks,interval,physPenPct,stun,immobilize,silence,airborne,suppress,slowPct,slowDur,knockback,desc} follow js/data.js exactly.",
+      "newFields": "Every hero and skill carries a `_newFields` array naming the fields that do not exist in js/data.js today. Each maps to a feature id in `engineFeatures`.",
+      "rankArrays": "Ult cd, mana/energy and CC values may be 3-element arrays indexed by ult rank (feature F1). cdLv and manaLv are per-rank deltas for S1/S2 (feature F1).",
+      "resource": "Hero field `resource` (F3): mana | energy | heat | hp | none. Default mana.",
+      "icon_color": "icon, color, projColor are unchanged from js/data.js and omitted here."
+    }
+  },
+  "engineFeatures": [
+    { "id": "F1", "name": "Per-rank cooldown, cost and CC scaling", "fields": ["cdLv", "manaLv", "rechargeLv", "asAddLv", "array-by-rank cd/mana/energy/CC"], "users": ["all"], "behaviour": "rankVal(s,key,rank): arrays index by rank-1; scalars add Lv*(rank-1). skillCd=rankVal(cd)*(1-cdr), min 1.0; applySkillCC resolves arrays before applying." },
+    { "id": "F2", "name": "Target-aware skill damage", "fields": ["skillDmg(s,rank,target)", "bonusVsMark", "selfMissingBonus"], "users": ["ignis", "sable", "nyx", "torren", "karn", "marrow"], "behaviour": "nova/zone/dash/blinkstrike/cone loops compute damage per victim; adds consumeMark, pctMaxHp, missingPct, bonusVsMark, selfMissingBonus and bank terms before mitigation; caps vs non-heroes; structures excluded from %/missing terms." },
+    { "id": "F3", "name": "Hero resource framework", "fields": ["resource"], "users": ["lumen", "wraith", "cinder", "marrow", "pact", "torren"], "behaviour": "castSkill routes cost to s.mana / s.energy / free+overheat / s.hpCost (or s.mana if present) / free. HUD colour per type. Mana items, blue rune manaRegen, mana burn and mana refunds skipped for non-mana heroes." },
+    { "id": "F4", "name": "Energy pool", "fields": ["energy{max,regen,perBasic,stillRegen,stillDelay}", "skill.energy"], "users": ["lumen", "wraith"], "behaviour": "maxMana flat energy.max; regen*dt per frame; perBasic on onBasicHit; stillRegen while no movement input for stillDelay (bots: not pathing). Clamp 0-100." },
+    { "id": "F5", "name": "Heat gauge with overheat", "fields": ["heat{gainBasicHero,gainBasic,gainSkillHero,gainSkill,burnPerSec,decay,decayDelay}", "skill.overheat{...}", "dmgMult"], "users": ["cinder"], "behaviour": "gauge 0-100 in mp; gains once per hit (dot ticks excluded) and burnPerSec while an enemy hero carries the burn; decays after decayDelay without dealing/taking damage; at >=100 cast uses Object.assign({},s,s.overheat) and resets to 0; HUD flashes at 100." },
+    { "id": "F6", "name": "HP-cost casting", "fields": ["hpCost", "hpFloor", "bank"], "users": ["marrow", "pact"], "behaviour": "skip mana check when hpCost set; effect first, then hp=max(1,hp-floor(maxHp*hpCost)); refuse if hp/maxHp<hpFloor; not damage for any other system; Marrow pushes paid HP into pv.bank[{amt,t}] read by Catacomb (100% of last 6 s, cap 20% maxHp)." },
+    { "id": "F7", "name": "Basic-attack replacement state", "fields": ["type:basicMod", "dur", "lineRange", "radius", "bonusDmg", "bonusDmgLv", "bonusScaleAd", "asMult[]"], "users": ["zephyr"], "behaviour": "h.basicMod while set makes Unit.basicAttack spawn a piercing isBasic projectile; primary hit = full basic (crit rolled once, lifesteal, onBasicHit, one Slipstream stack); secondary hits = 100% AD + bonus, same crit result, 40% lifesteal, no onBasicHit. asMult is max() with buffAsMult, never multiplied." },
+    { "id": "F8", "name": "Charge skills", "fields": ["charges", "recharge", "rechargeLv", "castDelay"], "users": ["vesper"], "behaviour": "skillCharges[i], skillRecharge[i]; one charge recharges at a time, ignores cdr; castDelay uses skillCd and respects cdr; refuse at 0; charges start at 0 when learned; refundRecharge(h,i,sec) helper; HUD pips." },
+    { "id": "F9", "name": "Placed objects (trap / pulse / barrier)", "fields": ["type:trap|object|barrier", "armDelay", "lifetime", "triggerRadius", "maxActive", "heroOnly", "revealDur", "enemyVisibleWithin", "dur", "tick", "allyRadius", "shield", "shieldLv", "shieldScaleAp", "shieldDur", "revealRadius", "revealBasicBonus", "length", "offset"], "users": ["quill", "wick", "bastion"], "behaviour": "Game.objects list, untargetable, expire at t<=0, maxActive per owner. Trap: hero-only trigger -> damage + CC + reveal + onSkillLanded, then remove; visible to enemies within 120 or after trigger; persists through owner death. Pulse: each tick lantern-tagged refreshing shield on allies in allyRadius, enemies in revealRadius revealed for the remaining duration; expires on owner death. Barrier: fixed segment that deletes enemy projectiles (skillshot, bounce, boomerang, volley, ranged basic) crossing it; no HP; units/dashes/novas/zones/cones/melee unaffected." },
+    { "id": "F10", "name": "Return projectile", "fields": ["boomerang", "returnSlowPct", "returnSlowDur"], "users": ["quill"], "behaviour": "at range (or first hit if non-pierce) reverse and home to the caster; hitSet cleared on the turn; return-pass slow only; removed on reaching caster or caster death." },
+    { "id": "F11", "name": "Cone hitbox", "fields": ["type:cone", "angle", "length"], "users": ["ignis"], "behaviour": "instant sector from caster along aim; per-victim damage, CC, applyMark; onSkillLanded; drawn 0.2 s." },
+    { "id": "F12", "name": "Skill-owned marks", "fields": ["applyMark{tag,max,dur,stacks,centreStacks{within,stacks},dot{base,scaleAp,pctMaxHp,pctPerMp,dur,capNonHero}}", "consumeMark{tag,dmg,dmgLv,scaleAp,stunAtStacks,stunDur,stunLock}", "refreshMark{tag}"], "users": ["ignis", "sable"], "behaviour": "stack on hit, refresh timer, optional per-stack dot via addDot with tag; consume adds stacks*(dmg+dmgLv*(rank-1)+scaleAp*MP) per victim, stuns at threshold unless marks.stunLockT, then deletes mark and dot; refreshMark resets timer without consuming; pips on HP bar." },
+    { "id": "F13", "name": "Zone linger", "fields": ["linger{dur,enemySlowPct,enemySlowRamp,allySpeedAdd,chillPerSec,chillDelay,conceal,countsAsSkillHit,endPayload{dmg,dmgLv,scaleAp,immobilize}}"], "users": ["mira", "ashara"], "behaviour": "Zone stays alive dur seconds after its ticks; per frame applySlow(pct,0.2) on enemies inside (lerped if ramp), speed buff on allies inside, chill mark per second after chillDelay, bush-style conceal for allies inside; first entry counts as a skill hit once per cast; endPayload hits all enemies inside at t=0." },
+    { "id": "F14", "name": "Projectile bounce", "fields": ["bounce{count,range,decay}"], "users": ["volt"], "behaviour": "on hit retarget nearest un-hit non-structure enemy within range (hero bias -150), re-aim, damage*=decay; dies when no target or count exhausted." },
+    { "id": "F15", "name": "Displacement tween with wall collision", "fields": ["knockback (now tweened)", "pullTo{target,dist,speed}", "pullSpeed", "wallDmg", "wallScaleAp", "wallStun", "noWallCC"], "users": ["nadir", "tide", "grom", "bastion", "karn"], "behaviour": "u.forced {mode:slide|point,...} moved in Hero.update/minions before input; Game.wallAt checked per step: stop, wallDmg, wallStun. Ignores tenacity, refused by immuneT, does not clear dashS, sets marks.heavyUntil for Nadir. Zone pullSpeed drags heroes toward centre during delay. Slide default 0.25 s, Grom pull 0.3 s. Structures immune." },
+    { "id": "F16", "name": "Tether entity (hostile and friendly)", "fields": ["tether{dur,breakRange,slowStart,slowEnd,tickDmg,tickDmgLv,tickScaleAp,interval,healPct,payload{...},breakPayload{...},multi{radius},anchored}", "link{dur,interval,tickHeal,tickHealLv,tickScaleAp,targetSpeedAdd,casterArmorAdd,casterMrAdd,breakRange,all}", "targetCone"], "users": ["anchor", "hexa", "karn", "sylva"], "behaviour": "Game.tethers; break on death or dist>breakRange (firing breakPayload if set); hostile also breaks on src stun/airborne/suppress/taunt unless anchored, and on target Purify; hostile tick = damage + ramping slow + healPct to src; friendly tick = heal(noPassive) + target speed + caster armor/mr; payload on completion; one per caster except all/multi; Canopy vs Vine Link on the same ally: larger tick wins; drawn as a line." },
+    { "id": "F17", "name": "Ally targeting", "fields": ["allyTarget{range,self}"], "users": ["sylva", "pact"], "behaviour": "pick allied hero nearest the aim point within range (exclude self if self:false); untouched joystick/bots use lowest-HP ally; no target = no cast, no cost." },
+    { "id": "F18", "name": "Channel skill", "fields": ["type:channel", "channel", "payload", "interruptRefund"], "users": ["grom"], "behaviour": "h.channelS; caster rooted, no basics/casts, input ignored, bar drawn; stun/silence/airborne/suppress/taunt cancel: mana kept, cd=fullCd*interruptRefund; slow/immobilize do not; Flicker/Purify cancel; at t<=0 doNova(payload,rank)." },
+    { "id": "F19", "name": "Self states (control immunity, untargetable)", "fields": ["type:selfState", "dur", "ccImmune[]", "selfRoot", "armorAdd", "mrAdd", "tetherSlowMult", "untargetable", "speedPct", "noAttack", "recastCancel"], "users": ["anchor", "nyx"], "behaviour": "h.state; ccImmune kinds make applySlow/forced displacement no-ops; selfRoot blocks movement; untargetable removes the hero from targeting, projectile hit tests, nova/zone/cone victim lists and blinkstrike picks (dots continue); noAttack blocks basics/casts." },
+    { "id": "F20", "name": "Hero-only projectile and %-max-HP damage", "fields": ["heroOnly", "pctMaxHp", "pctMaxHpCap"], "users": ["sable"], "behaviour": "heroOnly projectiles ignore minions/monsters/structures; pctMaxHp adds target.maxHp*pct per victim before mitigation, capped vs non-heroes." },
+    { "id": "F21", "name": "Missing-HP scaling", "fields": ["missingPct", "missingPctLv", "missingCap", "selfMissingPct[]", "selfMissingCap", "selfMissingBonus{perPct,per,max}"], "users": ["nyx", "torren"], "behaviour": "target term per victim (F2); self term computed once at cast from caster (maxHp-hp) and added to every victim; selfMissingBonus multiplies S1 damage by 1+min(max, floor(missing%/per)*perPct)." },
+    { "id": "F22", "name": "Dash-to-point, dash-back, recast return", "fields": ["dashToPoint", "dashBack", "energyRefund", "recast{window,speed,label}"], "users": ["rook", "torren", "lumen"], "behaviour": "dashToPoint: dist=min(dist, aim distance); dashBack inverts direction; recast stores h.recast{x,y,until,skillIdx}, relabels button, pressing sets dashS to the point (no damage, unhookable, Flicker wall back-off); cd starts on first cast." },
+    { "id": "F23", "name": "Taunt CC", "fields": ["CC_TYPES.taunt", "skill.taunt"], "users": ["brass"], "behaviour": "u.forced{mode:taunt,src,t}: ignore movement/skill/spell input, path to src, basic-attack it; bots skip botThink; ends if src dies; tenacity shortens; Purify/immuneT refuse." },
+    { "id": "F24", "name": "Conditional cooldown reset", "fields": ["resetOnKill", "resetOnAssist"], "users": ["omen"], "behaviour": "Hero.fire onKill/onAssist reduces skillCd[i] by fraction*fullCd for every skill carrying the field." },
+    { "id": "F25", "name": "Basic-range state", "fields": ["type:basicRange", "rangeSet", "count", "dur", "bonusDmg", "bonusDmgLv", "bonusScaleAd"], "users": ["wraith"], "behaviour": "h.basicRangeState{count,t}; Stats.range reads rangeSet; basics use the ranged projectile path with bonus isBasic damage; count decrements per basic." },
+    { "id": "F26", "name": "Ally-radius buff", "fields": ["type:allybuff", "radius", "asAdd", "asAddLv", "spdAdd", "dur"], "users": ["bell"], "behaviour": "loop allied heroes within radius incl. self: addTimedBuff atkSpd (max against dash/basicMod asMult, not added) and speed; buff icon." },
+    { "id": "F27", "name": "Self shield / self resist fields", "fields": ["selfShieldPct", "selfShieldDur", "armorAdd", "mrAdd", "buffDur"], "users": ["brass"], "behaviour": "after the effect addShield(maxHp*pct,dur) and addTimedBuff armor/mr on the caster." },
+    { "id": "F28", "name": "Airborne rework, CC locks, slowPctLv, canCrit", "fields": ["CC_TYPES.airborne.tenacity=false", "marks.chillImmuneT", "marks.stunLockT", "slowPctLv", "canCrit"], "users": ["grom", "marrow", "rook", "tide", "mira", "ignis", "volt", "omen"], "behaviour": "airborne ignores tenacity and clears dashS/channelS/basicRangeState; chillImmuneT and stunLockT read by applying hooks; slowPctLv adds per tick index on multi-tick zones; canCrit rolls the caster's crit once per cast on a nova." },
+    { "id": "F29", "name": "Bot support", "fields": ["botSkillUrgency handlers per new type"], "users": ["all"], "behaviour": "trap/object/barrier placement, tether kiting, channel safety, ally-target selection, charge banking, energy/heat thresholds, recast conditions, cone/boomerang/dash-to-point aim, selfState triggers, wall-vector check; each hero's botHint is the acceptance test." }
+  ],
+  "implementationOrder": [
+    "Phase 0: F1, F2, F28, F3+F4+F5+F6, F15",
+    "Phase 1: F16+F17, F9, F13, F12, F19+F18+F23",
+    "Phase 2: F14+F10+F11+F20, F7+F25+F8, F22+F24+F26+F27+F21",
+    "Phase 3 heroes: Tanks (grom, bastion, anchor, marrow); Fighters (torren, brass, omen, karn, tide, cinder); Marksmen (zephyr, vesper, quill, lumen); Mages (ignis, volt, mira, nadir, ashara, hexa); Assassins (rook, nyx, wraith, sable); Supports (wick, bell, sylva, pact)",
+    "Phase 4: F29 bots, HUD (pips, bars, recast label, channel bar, tether lines, object visibility), balance pass"
+  ],
+  "heroes": [
+    {
+      "id": "zephyr", "name": "Zephyr", "role": "Marksman", "difficulty": 2, "damageStyle": "physical", "resource": "mana",
+      "hp": 520, "hpLv": 68, "mp": 200, "mpLv": 22, "atk": 60, "atkLv": 7.0, "armor": 12, "armorLv": 2.2, "mr": 10, "mrLv": 1.6, "range": 345, "atkSpd": 1.12, "speed": 248,
+      "identity": "Attack-speed hypercarry; weak for 3 s, then out-DPSes everything once Slipstream is stacked and Storm Volley makes her basics pierce.",
+      "signature": "basicMod: Storm Volley replaces her basic attack with a piercing line projectile (F7).",
+      "passive": { "name": "Slipstream", "id": "slipstream", "desc": "Each basic hit grants +6% move speed for 2s, stacking to 5. At 5 stacks basics deal +18 (+12% ATK) bonus physical damage. A Storm Volley volley counts as one basic." },
+      "skills": [
+        { "name": "Gale Shot", "type": "skillshot", "cd": 7, "cdLv": -0.3, "mana": 40, "manaLv": 4, "dmgType": "physical", "dmg": 110, "dmgLv": 16, "scaleAd": 0.75, "range": 700, "speed": 1000, "radius": 26, "pierce": true, "desc": "A razor gust that pierces every enemy in a line.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Updraft", "type": "dash", "cd": 11, "cdLv": -0.4, "mana": 50, "dist": 260, "speed": 1100, "buff": { "asMult": 1.5, "dur": 3.0 }, "desc": "Ride a gust 260 units and gain +50% attack speed for 3s (max with Storm Volley, not multiplied).", "_newFields": ["cdLv"] },
+        { "name": "Storm Volley", "type": "basicMod", "cd": [48, 42, 36], "mana": [100, 120, 140], "dur": 6, "lineRange": 420, "radius": 30, "pierce": true, "dmgType": "physical", "bonusDmg": 40, "bonusDmgLv": 25, "bonusScaleAd": 0.25, "asMult": [1.3, 1.4, 1.5], "desc": "For 6s every basic attack is a piercing wind arrow hitting everyone in a 420 line; +30/40/50% attack speed.", "_newFields": ["type:basicMod", "dur", "lineRange", "bonusDmg", "bonusDmgLv", "bonusScaleAd", "asMult[]", "cd[]", "mana[]"] }
+      ],
+      "counterplay": "No hard CC, one dash; dive once Updraft is spent; burst before 5 stacks; spread out during the visible 6 s volley.",
+      "botHint": "Kite at 300-345 on one target; Updraft toward an ally engage or away from a melee within 200; Storm Volley when 2+ enemy heroes are within 420 in a rough line, then keep attacking.",
+      "_newFields": []
+    },
+    {
+      "id": "vesper", "name": "Vesper", "role": "Marksman", "difficulty": 3, "damageStyle": "physical", "resource": "mana",
+      "hp": 535, "hpLv": 70, "mp": 190, "mpLv": 20, "atk": 66, "atkLv": 7.6, "armor": 12, "armorLv": 2.1, "mr": 10, "mrLv": 1.5, "range": 330, "atkSpd": 1.0, "speed": 252,
+      "identity": "Burst-crit skirmisher: three fanned shots, a sidestep, one Deadeye round.",
+      "signature": "Charge skill: Fan the Hammer holds 3 charges recharging one at a time, immune to CDR (F8).",
+      "passive": { "name": "Last Light", "id": "lastlight", "desc": "Basic attacks and Deadeye Round against heroes below 40% HP deal +20% damage. A critical basic on a hero refunds 1.0s of Fan the Hammer's recharge (once per 2.5s)." },
+      "skills": [
+        { "name": "Fan the Hammer", "type": "skillshot", "charges": 3, "recharge": 9, "rechargeLv": -0.4, "castDelay": 0.6, "mana": 30, "manaLv": 3, "dmgType": "physical", "dmg": 100, "dmgLv": 14, "scaleAd": 0.60, "range": 560, "speed": 1300, "radius": 22, "pierce": false, "desc": "One fast pistol round at the first enemy in a line; 3 rounds, each a separate cast.", "_newFields": ["charges", "recharge", "rechargeLv", "castDelay", "manaLv"] },
+        { "name": "Sidestep", "type": "dash", "cd": 10, "cdLv": -0.3, "mana": 45, "dist": 250, "speed": 1150, "endNova": { "radius": 170, "dmgType": "physical", "dmg": 70, "dmgLv": 10, "scaleAd": 0.45, "slowPct": 0.30, "slowDur": 1.0 }, "desc": "Slide 250 units and detonate a powder burst that slows.", "_newFields": ["cdLv"] },
+        { "name": "Deadeye Round", "type": "skillshot", "cd": [40, 35, 30], "mana": [100, 120, 140], "dmgType": "physical", "dmg": [280, 380, 480], "scaleAd": 1.10, "range": 820, "speed": 1500, "radius": 20, "pierce": false, "desc": "One long-range round that hits the first unit in its path.", "_newFields": ["cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Every shot stops on the first unit; engage at 0-1 visible charges; keep allies above 40%; one dash.",
+      "botHint": "Poke one charge at a time keeping 2 banked; Sidestep for a clear line then dump charges; Deadeye only on a hero below 45% with no minion between; Sidestep away from a melee within 220 with no charges.",
+      "_newFields": []
+    },
+    {
+      "id": "quill", "name": "Quill", "role": "Marksman", "difficulty": 3, "damageStyle": "physical", "resource": "mana",
+      "hp": 550, "hpLv": 72, "mp": 220, "mpLv": 24, "atk": 58, "atkLv": 6.6, "armor": 14, "armorLv": 2.4, "mr": 11, "mrLv": 1.7, "range": 320, "atkSpd": 1.02, "speed": 245,
+      "identity": "Trapper marksman: no dash, low burst, owns the ground with snares, a boomerang bola and Killbox.",
+      "signature": "Placed hostile trap objects (F9 trap) and the only return projectile (F10).",
+      "passive": { "name": "Quarry", "id": "quarry", "desc": "Enemies hit by Quill's skills or traps are marked for 4s. Basics on a marked target deal +12% damage and grant +8% move speed for 1.5s (stacks to 3)." },
+      "skills": [
+        { "name": "Snare", "type": "trap", "cd": 8, "cdLv": -0.4, "mana": 45, "manaLv": 4, "range": 540, "triggerRadius": 110, "armDelay": 0.7, "lifetime": 20, "maxActive": 3, "heroOnly": true, "enemyVisibleWithin": 120, "revealDur": 2, "dmgType": "physical", "dmg": 110, "dmgLv": 15, "scaleAd": 0.50, "immobilize": 1.0, "desc": "Plant a snare (up to 3, 20s). The first enemy hero to step on it is damaged, rooted 1s and revealed.", "_newFields": ["type:trap", "triggerRadius", "armDelay", "lifetime", "maxActive", "heroOnly", "enemyVisibleWithin", "revealDur", "cdLv", "manaLv"] },
+        { "name": "Bola", "type": "skillshot", "cd": 10, "cdLv": -0.3, "mana": 50, "boomerang": true, "dmgType": "physical", "dmg": 80, "dmgLv": 11, "scaleAd": 0.45, "range": 620, "speed": 850, "radius": 28, "pierce": false, "returnSlowPct": 0.40, "returnSlowDur": 1.2, "desc": "Throw a bola that flies out 620 and returns, hitting on both passes; slows 40% on the way back.", "_newFields": ["boomerang", "returnSlowPct", "returnSlowDur", "cdLv"] },
+        { "name": "Killbox", "type": "zone", "cd": [44, 38, 32], "mana": [100, 120, 140], "dmgType": "physical", "range": 580, "radius": 260, "delay": 0.6, "ticks": 3, "interval": 0.6, "dmg": [100, 130, 160], "scaleAd": 0.45, "slowPct": 0.40, "slowDur": 0.8, "desc": "A wide snare field that bites three times over 1.8s, slowing.", "_newFields": ["cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Traps trigger only on heroes and show within 120; no dash, 245 speed; Bola is slow and telegraphed twice; leave Killbox after tick one.",
+      "botHint": "Keep 2-3 Snares at the nearest bush mouth and behind himself when retreating; Bola heroes walking toward him so the return crosses them; Killbox on 2+ heroes or a rooted/slowed hero; never chase past traps.",
+      "_newFields": []
+    },
+    {
+      "id": "lumen", "name": "Lumen", "role": "Marksman", "difficulty": 4, "damageStyle": "physical", "resource": "energy",
+      "energy": { "max": 100, "regen": 0, "perBasic": 20, "stillRegen": 30, "stillDelay": 0.5 },
+      "hp": 485, "hpLv": 60, "mp": 0, "mpLv": 0, "atk": 72, "atkLv": 8.4, "armor": 9, "armorLv": 1.7, "mr": 8, "mrLv": 1.3, "range": 390, "atkSpd": 0.85, "speed": 240,
+      "identity": "Long-range sniper on a Focus battery: plants, shoots, hops back.",
+      "signature": "Battery energy: no passive regen; basics and standing still charge Focus (F4). Recoil is the only dash-back (F22).",
+      "passive": { "name": "Aperture", "id": "aperture", "desc": "Basic attacks deal up to +35% damage the farther the target is, ramping from 280 range to max range." },
+      "skills": [
+        { "name": "Railshot", "type": "skillshot", "cd": 6, "cdLv": -0.3, "energy": 30, "dmgType": "physical", "dmg": 140, "dmgLv": 20, "scaleAd": 0.70, "range": 900, "speed": 1500, "radius": 18, "pierce": true, "desc": "A hair-thin rail that pierces everything in a 900 line.", "_newFields": ["energy", "cdLv"] },
+        { "name": "Recoil", "type": "dash", "cd": 10, "energy": 0, "dashBack": true, "dist": 220, "speed": 1000, "energyRefund": 20, "desc": "Hop 220 units away from the aim direction and regain 20 Focus.", "_newFields": ["energy", "dashBack", "energyRefund"] },
+        { "name": "Overcharge", "type": "zone", "cd": [40, 34, 28], "energy": 50, "dmgType": "physical", "range": 950, "radius": 100, "delay": 1.0, "ticks": 1, "dmg": [380, 500, 620], "scaleAd": 1.20, "desc": "Charge 1s and detonate on a 100-radius spot up to 950 away. No CC.", "_newFields": ["energy", "cd[]", "dmg[]"] }
+      ],
+      "counterplay": "Inside 280 Aperture gives nothing; 485 HP, one hop; empty Focus after a volley until she stands still; Overcharge has a 1s delay and 100 radius.",
+      "botHint": "Hold 380+; stand still to charge when Focus < 30 and no enemy within 500; Railshot a clear line at Focus >= 60; Recoil from enemies within 250; Overcharge only on rooted/stunned/slowed/channelling or sub-40% heroes.",
+      "_newFields": ["resource", "energy{}"]
+    },
+    {
+      "id": "ignis", "name": "Ignis", "role": "Mage", "difficulty": 2, "damageStyle": "magic", "resource": "mana",
+      "hp": 500, "hpLv": 64, "mp": 300, "mpLv": 34, "atk": 46, "atkLv": 4.0, "armor": 10, "armorLv": 2.0, "mr": 12, "mrLv": 2.0, "range": 330, "atkSpd": 0.9, "speed": 250,
+      "identity": "Short-range burst combo mage: stack Embers, walk in, detonate.",
+      "signature": "Skill-owned mark-then-payoff (F12) with the only cone hitbox (F11).",
+      "passive": { "name": "Kindling", "id": "kindling", "desc": "Basic attacks against an Embered hero deal +25 (+20% MAGIC) bonus magic damage. Embers show as flame pips." },
+      "skills": [
+        { "name": "Flame Fan", "type": "cone", "cd": 6, "cdLv": -0.3, "mana": 45, "manaLv": 5, "angle": 60, "length": 480, "dmgType": "magic", "dmg": 150, "dmgLv": 20, "scaleAp": 0.75, "applyMark": { "tag": "ember", "max": 3, "dur": 4, "stacks": 1 }, "desc": "An instant 60-degree fan of flame; applies 1 Ember.", "_newFields": ["type:cone", "angle", "length", "applyMark", "cdLv", "manaLv"] },
+        { "name": "Flashburn", "type": "nova", "cd": 9, "cdLv": -0.4, "mana": 60, "manaLv": 5, "radius": 260, "dmgType": "magic", "dmg": 110, "dmgLv": 15, "scaleAp": 0.45, "consumeMark": { "tag": "ember", "dmg": 65, "dmgLv": 0, "scaleAp": 0.20, "stunAtStacks": 3, "stunDur": 0.6, "stunLock": 1.5 }, "desc": "A ring of flame that consumes Embers: +65 (+20% MAGIC) per Ember; 3 Embers stun 0.6s.", "_newFields": ["consumeMark", "cdLv", "manaLv"] },
+        { "name": "Pyroclasm", "type": "zone", "cd": [40, 35, 30], "mana": [110, 130, 150], "dmgType": "magic", "range": 640, "radius": 230, "delay": 0.9, "ticks": 1, "dmg": [280, 360, 440], "scaleAp": 1.0, "stun": 0.5, "applyMark": { "tag": "ember", "max": 3, "dur": 4, "stacks": 1, "centreStacks": { "within": 100, "stacks": 2 } }, "desc": "A meteor after 0.9s: stuns 0.5s, 2 Embers within 100 of the centre, 1 on the rim.", "_newFields": ["applyMark", "cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Ember pips expire in 4s; the stun needs Ignis within 260; Pyroclasm has a 0.9s tell and a rim hit gives one Ember.",
+      "botHint": "Flame Fan at 450; Pyroclasm centred on a target with >= 1 Ember; walk in and Flashburn only at 3 Embers within 240 or below 30% HP.",
+      "_newFields": []
+    },
+    {
+      "id": "mira", "name": "Mira", "role": "Mage", "difficulty": 2, "damageStyle": "magic", "resource": "mana",
+      "hp": 490, "hpLv": 62, "mp": 310, "mpLv": 35, "atk": 45, "atkLv": 3.8, "armor": 10, "armorLv": 2.0, "mr": 12, "mrLv": 2.0, "range": 335, "atkSpd": 0.9, "speed": 250,
+      "identity": "Area-control mage: lingering ice fields slow enemies, speed allies, stack Chill to a freeze.",
+      "signature": "Zone linger with ally effects (F13).",
+      "passive": { "name": "Frostbite", "id": "frostbite", "desc": "Mira's damage applies Chill (4s, max 4), 8% slow per stack (strongest slow wins). At 4 stacks the target is Frozen 0.8s, stacks are consumed and the target is Chill-immune for 2.5s." },
+      "skills": [
+        { "name": "Frost Shard", "type": "skillshot", "cd": 5.5, "cdLv": -0.3, "mana": 40, "manaLv": 5, "dmgType": "magic", "dmg": 150, "dmgLv": 20, "scaleAp": 0.7, "range": 700, "speed": 900, "radius": 24, "slowPct": 0.30, "slowDur": 1.5, "desc": "An icy shard that damages, slows and Chills the first enemy hit.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Rime Field", "type": "zone", "cd": 12, "cdLv": -0.4, "mana": 70, "manaLv": 5, "dmgType": "magic", "range": 600, "radius": 200, "delay": 0.3, "ticks": 1, "dmg": 90, "dmgLv": 12, "scaleAp": 0.4, "linger": { "dur": 4, "enemySlowPct": 0.35, "allySpeedAdd": 40, "chillPerSec": 1, "chillDelay": 1.0 }, "desc": "Freeze a patch of ground for 4s: enemies inside -35% speed and +1 Chill/s after 1s; allies +40 speed.", "_newFields": ["linger", "cdLv", "manaLv"] },
+        { "name": "Glacial Prison", "type": "zone", "cd": [42, 37, 32], "mana": [110, 130, 150], "dmgType": "magic", "range": 620, "radius": 200, "delay": 0.75, "ticks": 1, "dmg": [260, 340, 420], "scaleAp": 0.9, "stun": [1.0, 1.1, 1.2], "linger": { "dur": 4, "enemySlowPct": 0.35, "allySpeedAdd": 40, "chillPerSec": 1, "chillDelay": 1.0 }, "desc": "After 0.75s the area freezes solid (Frozen 1.0/1.1/1.2s) and leaves a Rime Field for 4s.", "_newFields": ["linger", "cd[]", "mana[]", "dmg[]", "stun[]"] }
+      ],
+      "counterplay": "Step out of the visible patch and the slow ends; a freeze grants 2.5s immunity; no dash, 250 speed; 0.75s ult tell.",
+      "botHint": "Rime Field between Mira and the nearest melee, or on the enemy carry when allies engage; Frost Shard into the field; Glacial Prison on 2+ heroes or one at 3 Chill.",
+      "_newFields": []
+    },
+    {
+      "id": "volt", "name": "Volt", "role": "Mage", "difficulty": 2, "damageStyle": "magic", "resource": "mana",
+      "hp": 505, "hpLv": 63, "mp": 290, "mpLv": 32, "atk": 44, "atkLv": 3.8, "armor": 9, "armorLv": 1.9, "mr": 13, "mrLv": 2.1, "range": 325, "atkSpd": 0.88, "speed": 250,
+      "identity": "Sustained anti-tank battle mage: bounces and shreds magic resist.",
+      "signature": "Chain-bounce projectile (F14).",
+      "passive": { "name": "Static", "id": "static", "desc": "Skill hits on enemy heroes apply a Static stack (4s, max 5); each stack is 8 flat magic penetration against that target. Non-heroes never gain stacks." },
+      "skills": [
+        { "name": "Chain Arc", "type": "skillshot", "cd": 5, "cdLv": -0.2, "mana": 45, "manaLv": 5, "dmgType": "magic", "dmg": 160, "dmgLv": 20, "scaleAp": 0.75, "range": 680, "speed": 1100, "radius": 22, "pierce": false, "bounce": { "count": 3, "range": 320, "decay": 0.75 }, "desc": "A bolt that arcs from the first enemy to up to three more within 320, at 75% per bounce.", "_newFields": ["bounce", "cdLv", "manaLv"] },
+        { "name": "Flashover", "type": "nova", "cd": 10, "cdLv": -0.4, "mana": 60, "manaLv": 4, "radius": 240, "dmgType": "magic", "dmg": 130, "dmgLv": 16, "scaleAp": 0.55, "stun": 0.5, "desc": "Discharge a shock around Volt that stuns 0.5s.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Thunderhead", "type": "zone", "cd": [40, 35, 30], "mana": [110, 130, 150], "dmgType": "magic", "range": 600, "radius": 240, "delay": 0.4, "ticks": 5, "interval": 0.45, "dmg": [70, 95, 120], "scaleAp": 0.3, "slowPct": 0.10, "slowPctLv": 0.08, "slowDur": 0.6, "desc": "A storm cloud striking five times over 2.2s; the slow builds from 10% to 42% per tick; each tick applies Static.", "_newFields": ["slowPctLv", "cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Spread out beyond 320; minions block the first hit; leave Thunderhead early while the slow is light; his only stun is 0.5s at 240.",
+      "botHint": "Chain Arc when two enemy units are within 320 of each other; Thunderhead on the frontliner or a stationary hero; Flashover for a melee reaching 240.",
+      "_newFields": []
+    },
+    {
+      "id": "nadir", "name": "Nadir", "role": "Mage", "difficulty": 3, "damageStyle": "magic", "resource": "mana",
+      "hp": 520, "hpLv": 68, "mp": 300, "mpLv": 33, "atk": 42, "atkLv": 3.6, "armor": 12, "armorLv": 2.2, "mr": 14, "mrLv": 2.2, "range": 310, "atkSpd": 0.86, "speed": 245,
+      "identity": "Teamfight-initiator mage whose ult drags enemies into its centre before detonating.",
+      "signature": "Tweened pull-to-point (F15).",
+      "passive": { "name": "Accretion", "id": "accretion", "desc": "Enemy heroes displaced by Nadir's skills become Heavy for 3s: -20% move speed and +12% damage taken from Nadir." },
+      "skills": [
+        { "name": "Singularity", "type": "skillshot", "cd": 7, "cdLv": -0.4, "mana": 50, "manaLv": 5, "dmgType": "magic", "dmg": 160, "dmgLv": 20, "scaleAp": 0.75, "range": 640, "speed": 720, "radius": 30, "explodeR": 140, "slowPct": 0.40, "slowDur": 1.2, "desc": "A collapsing star that bursts on the first enemy hit and slows.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Crush", "type": "nova", "cd": 11, "cdLv": -0.4, "mana": 60, "manaLv": 4, "radius": 280, "dmgType": "magic", "dmg": 120, "dmgLv": 14, "scaleAp": 0.5, "pullTo": { "target": "caster", "dist": 120, "speed": 900 }, "desc": "Collapse space around Nadir, dragging enemies 120 units toward him over 0.13s.", "_newFields": ["pullTo", "cdLv", "manaLv"] },
+        { "name": "Implosion", "type": "zone", "cd": [44, 38, 32], "mana": [120, 140, 160], "dmgType": "magic", "range": 560, "radius": 280, "delay": 0.9, "ticks": 1, "pullSpeed": 260, "dmg": [300, 390, 480], "scaleAp": 1.1, "stun": 0.8, "desc": "For 0.9s enemy heroes inside are dragged toward the centre at 260 u/s (refused by Purify, does not stop dashes), then it implodes and stuns 0.8s.", "_newFields": ["pullSpeed", "cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "The pull is slower than a dash or Flicker and Purify refuses it; the ring is visible from frame one; no escape, slow poke.",
+      "botHint": "Hold Implosion for 2+ heroes within 280 of a point or one hero under 40%; Crush after the detonation; Singularity on retreating targets.",
+      "_newFields": []
+    },
+    {
+      "id": "ashara", "name": "Ashara", "role": "Mage", "difficulty": 3, "damageStyle": "magic", "resource": "mana",
+      "hp": 500, "hpLv": 64, "mp": 280, "mpLv": 30, "atk": 47, "atkLv": 4.2, "armor": 10, "armorLv": 2.0, "mr": 11, "mrLv": 1.9, "range": 305, "atkSpd": 0.92, "speed": 255,
+      "identity": "Ambush and terrain mage: hides her team in sand, silences whoever pushes through, and turns ground into quicksand.",
+      "signature": "Concealment from a skill (F13 conceal) and the only progressive slow-to-root CC (F13 ramp + endPayload).",
+      "passive": { "name": "Dry Mouth", "id": "drymouth", "desc": "The third skill damage instance on a target within 6s silences it for 0.9s (8s lockout per target). Entering Sand Veil or Burial counts as one skill hit." },
+      "skills": [
+        { "name": "Glass Needle", "type": "skillshot", "cd": 6, "cdLv": -0.3, "mana": 45, "manaLv": 4, "dmgType": "magic", "dmg": 150, "dmgLv": 18, "scaleAp": 0.65, "range": 660, "speed": 900, "radius": 22, "slowPct": 0.25, "slowDur": 1.2, "desc": "A shard of fused sand that damages and slows the first enemy hit.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Sand Veil", "type": "zone", "cd": 13, "cdLv": -0.5, "mana": 55, "manaLv": 4, "dmgType": "magic", "range": 500, "radius": 180, "delay": 0.2, "ticks": 1, "dmg": 70, "dmgLv": 10, "scaleAp": 0.35, "linger": { "dur": 4, "conceal": true, "enemySlowPct": 0.30, "countsAsSkillHit": true }, "desc": "A sand patch for 4s: allied heroes inside are concealed like a bush; enemies inside are slowed 30% and count a Dry Mouth hit on entry.", "_newFields": ["linger", "cdLv", "manaLv"] },
+        { "name": "Burial", "type": "zone", "cd": [42, 37, 32], "mana": [105, 125, 145], "dmgType": "magic", "range": 560, "radius": 220, "delay": 0.4, "ticks": 0, "linger": { "dur": 4, "enemySlowRamp": [0.20, 0.60], "countsAsSkillHit": true, "endPayload": { "dmg": [260, 340, 420], "scaleAp": 1.0, "immobilize": 1.2 } }, "desc": "Quicksand for 4s: the slow ramps 20% to 60%; anyone still inside at the end takes heavy damage and is rooted 1.2s.", "_newFields": ["linger", "ticks:0", "cd[]", "mana[]"] }
+      ],
+      "counterplay": "The veil is visible and skills into it still hit; Burial is a 4s telegraph, walk out; no mobility, 500 HP; Purify clears the root.",
+      "botHint": "Sand Veil on the allied group when an enemy approaches within 600, or on herself with a melee within 300; Glass Needle at max range; Burial under 2+ attacking enemies or a slowed hero.",
+      "_newFields": []
+    },
+    {
+      "id": "hexa", "name": "Hexa", "role": "Mage", "difficulty": 3, "damageStyle": "magic", "resource": "mana",
+      "hp": 488, "hpLv": 61, "mp": 315, "mpLv": 36, "atk": 43, "atkLv": 3.7, "armor": 9, "armorLv": 1.8, "mr": 15, "mrLv": 2.3, "range": 345, "atkSpd": 0.84, "speed": 240,
+      "identity": "Drain and attrition mage: stacking Blight, a thread that feeds her health, rot that spreads.",
+      "signature": "Drain tether (F16 hostile, healPct + spreadMark payload, no root).",
+      "passive": { "name": "Blight", "id": "blight", "desc": "Basic attacks and skill hits apply a rot dealing 45 (+30% MAGIC) magic damage over 3s; reapplying stacks it to 2. Hexa heals for 12% of Blight damage dealt to heroes." },
+      "skills": [
+        { "name": "Hex Bolt", "type": "skillshot", "cd": 6, "cdLv": -0.3, "mana": 45, "manaLv": 4, "dmgType": "magic", "dmg": 140, "dmgLv": 17, "scaleAp": 0.7, "range": 690, "speed": 820, "radius": 24, "desc": "A cursed bolt that carries the rot.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Leech Thread", "type": "tether", "cd": 13, "cdLv": -0.5, "mana": 70, "manaLv": 5, "dmgType": "magic", "targetRange": 520, "targetCone": 60, "tether": { "dur": 3.0, "breakRange": 620, "slowStart": 0.15, "slowEnd": 0.15, "interval": 0.6, "tickDmg": 40, "tickDmgLv": 6, "tickScaleAp": 0.25, "healPct": 0.40, "payload": { "dmg": 120, "dmgLv": 16, "scaleAp": 0.50, "slowPct": 0.40, "slowDur": 1.5, "spreadMark": { "tag": "blight", "stacks": 2, "radius": 200 } } }, "desc": "Latch onto the nearest enemy hero in the aim cone: 5 ticks over 3s healing Hexa 40% of each; if it holds, it bursts, slows 40% and spreads 2 Blight to enemies within 200. Breaks on range, death or Hexa being hard-CC'd.", "_newFields": ["type:tether", "targetRange", "targetCone", "tether", "cdLv", "manaLv"] },
+        { "name": "Black Mass", "type": "zone", "cd": [40, 35, 30], "mana": [110, 130, 150], "dmgType": "magic", "range": 600, "radius": 240, "delay": 0.5, "ticks": 4, "interval": 0.5, "dmg": [80, 105, 130], "scaleAp": 0.35, "desc": "A lingering curse that pulses four times over 2s; each tick applies Blight.", "_newFields": ["cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Walk past 620 or dash to snap the thread; stun her to cut it; Blight caps at 2; 240 speed, no escape, no hard CC.",
+      "botHint": "Leech Thread the closest enemy hero then kite at 400-580 for 3s; Hex Bolt the tethered target; Black Mass on the burst or 2+ heroes; retreat to heal on Blight below 40%.",
+      "_newFields": []
+    },
+    {
+      "id": "grom", "name": "Grom", "role": "Tank", "difficulty": 1, "damageStyle": "physical", "resource": "mana",
+      "hp": 760, "hpLv": 105, "mp": 220, "mpLv": 24, "atk": 56, "atkLv": 6.0, "armor": 22, "armorLv": 3.6, "mr": 18, "mrLv": 2.8, "range": 95, "atkSpd": 0.85, "speed": 258,
+      "identity": "Hard-engage initiator who drags the enemy team onto his allies.",
+      "signature": "Channelled ultimate with an interrupt window (F18).",
+      "passive": { "name": "Bulwark", "id": "bulwark", "desc": "+5 armor and +5 magic resist per enemy hero within 420 (max +25). Below 40% HP gain a shield of 12% max HP for 4s (35s cooldown)." },
+      "skills": [
+        { "name": "Shockwave", "type": "nova", "cd": 7, "mana": 45, "radius": 240, "dmgType": "physical", "dmg": 120, "dmgLv": 16, "scaleAd": 0.6, "slowPct": 0.40, "slowDur": 1.5, "desc": "Slam the ground: damage and slow every enemy around Grom.", "_newFields": [] },
+        { "name": "Bull Charge", "type": "dash", "cd": 13, "mana": 60, "dist": 420, "speed": 950, "stopOnHero": true, "dmgType": "physical", "dmg": 110, "dmgLv": 14, "scaleAd": 0.6, "stun": 0.7, "knockback": 90, "desc": "Charge in a line; the first enemy hero hit is stunned 0.7s and shoved 90 units.", "_newFields": ["knockback is tweened (F15)"] },
+        { "name": "Earthsplitter", "type": "channel", "cd": [46, 42, 38], "mana": 110, "channel": 0.9, "interruptRefund": 0.5, "payload": { "type": "nova", "radius": 320, "dmgType": "physical", "dmg": 280, "dmgLv": 40, "scaleAd": 0.9, "knockback": -140, "airborne": 0.9 }, "desc": "Plant for 0.9s, then split the earth: every enemy within 320 is dragged 140 units toward Grom and launched 0.9s. Stun/silence/airborne/suppress/taunt cancel it (half cooldown refunded).", "_newFields": ["type:channel", "channel", "interruptRefund", "payload", "cd[]"] }
+      ],
+      "counterplay": "Interrupt the visible 0.9s channel; sidestep the straight charge; kite him away from enemy heroes; Purify the pull.",
+      "botHint": "Bull Charge the lowest-HP ranged hero within 420, Shockwave on landing; Earthsplitter only with 2+ enemy heroes within 320 and no visible enemy stun off cooldown; never channel below 25% HP.",
+      "_newFields": []
+    },
+    {
+      "id": "bastion", "name": "Bastion", "role": "Tank", "difficulty": 2, "damageStyle": "physical", "resource": "mana",
+      "hp": 740, "hpLv": 100, "mp": 240, "mpLv": 26, "atk": 52, "atkLv": 5.4, "armor": 24, "armorLv": 3.8, "mr": 17, "mrLv": 2.6, "range": 88, "atkSpd": 0.80, "speed": 248,
+      "identity": "Anti-ranged peel guardian who stands in front of his carries.",
+      "signature": "Projectile-blocking barrier (F9 barrier).",
+      "passive": { "name": "Rampart", "id": "rampart", "desc": "Every 8s allied heroes within 420 (including Bastion) gain a shield equal to 8% of Bastion's max HP for 3s." },
+      "skills": [
+        { "name": "Portcullis", "type": "nova", "cd": 8, "mana": 50, "radius": 230, "dmgType": "physical", "dmg": 110, "dmgLv": 14, "scaleAd": 0.45, "stun": 0.6, "desc": "Drop the gate on everyone around Bastion: stun 0.6s.", "_newFields": [] },
+        { "name": "Gatehouse", "type": "barrier", "cd": 16, "mana": 70, "length": 260, "offset": 90, "dur": 3.0, "desc": "Raise a fixed stone gate 90 units ahead for 3s that destroys enemy skillshots and arrows crossing it; units walk through.", "_newFields": ["type:barrier", "length", "offset", "dur"] },
+        { "name": "Hold the Line", "type": "nova", "cd": [40, 36, 32], "mana": 105, "radius": 320, "dmgType": "physical", "dmg": 200, "dmgLv": 28, "scaleAd": 0.5, "knockback": 70, "slowPct": 0.50, "slowDur": 1.5, "desc": "Shove every enemy within 320 away 70 units and slow them 50% for 1.5s.", "_newFields": ["cd[]", "knockback is tweened (F15)"] }
+      ],
+      "counterplay": "Gatehouse stops only projectiles; walk around the fixed 260 gate; Portcullis needs melee range; the ult pushes but does not lock; no dash.",
+      "botHint": "Stay within 300 of the lowest-HP ally; Gatehouse when an enemy ranged hero attacks or aims at that ally within 700; Portcullis when an enemy is within 230 of the ally; Hold the Line with 2+ enemies within 320 of an ally under 50%.",
+      "_newFields": []
+    },
+    {
+      "id": "marrow", "name": "Marrow", "role": "Tank", "difficulty": 3, "damageStyle": "magic", "resource": "hp", "hpFloor": 0,
+      "hp": 750, "hpLv": 102, "mp": 0, "mpLv": 0, "atk": 50, "atkLv": 5.2, "armor": 19, "armorLv": 3.0, "mr": 20, "mrLv": 3.0, "range": 85, "atkSpd": 0.78, "speed": 244,
+      "identity": "HP-fuelled sustain bruiser: every cast costs max-HP and heals the team or banks toward a bigger Catacomb.",
+      "signature": "Resourceless HP-cost casting for the whole kit (F6) with a spent-HP bank on the ult (F2).",
+      "passive": { "name": "Ossify", "id": "ossify", "desc": "Take up to 25% less damage as HP falls, scaling linearly from 0% at full HP to 25% at or below 25% HP. Not true damage." },
+      "skills": [
+        { "name": "Ribcage", "type": "nova", "cd": 6, "hpCost": 0.06, "radius": 220, "dmgType": "magic", "dmg": 120, "dmgLv": 15, "scaleAd": 0.55, "slowPct": 0.35, "slowDur": 1.5, "desc": "A fan of bone erupts around Marrow, damaging and slowing. Costs 6% max HP.", "_newFields": ["hpCost"] },
+        { "name": "Splint", "type": "heal", "cd": 12, "hpCost": 0.08, "heal": 100, "healLv": 16, "scaleAp": 0.35, "radius": 300, "desc": "Heal every allied hero within 300, himself included. Costs 8% max HP.", "_newFields": ["hpCost"] },
+        { "name": "Catacomb", "type": "zone", "cd": [42, 38, 34], "hpCost": 0.10, "dmgType": "magic", "range": 480, "radius": 240, "delay": 0.7, "ticks": 1, "dmg": [240, 275, 310], "scaleAd": 0.7, "airborne": 0.8, "bank": { "window": 6, "pct": 1.0, "capMaxHpPct": 0.20 }, "desc": "The floor gives way after 0.7s, launching everyone inside 0.8s, plus bonus damage equal to the HP Marrow paid for skills in the last 6s (cap 20% of his max HP).", "_newFields": ["hpCost", "bank", "cd[]", "dmg[]"] }
+      ],
+      "counterplay": "Poke him: every cast digs the hole deeper; Ossify ignores true and %-HP damage; no dash, no stun, 0.7s telegraph; burst from 60% to 0 in one window.",
+      "botHint": "Fight only above 50% HP or with an ally within 300; Splint when an ally within 300 is under 60%; never Ribcage below 20%; Catacomb on 2+ enemies within 240, ideally within 6s of two other casts.",
+      "_newFields": ["resource", "hpFloor"]
+    },
+    {
+      "id": "anchor", "name": "Anchor", "role": "Tank", "difficulty": 2, "damageStyle": "physical", "resource": "mana",
+      "hp": 730, "hpLv": 98, "mp": 220, "mpLv": 24, "atk": 54, "atkLv": 5.8, "armor": 23, "armorLv": 3.3, "mr": 16, "mrLv": 2.5, "range": 102, "atkSpd": 0.84, "speed": 241,
+      "identity": "Anti-mobility lockdown tank: he never moves anyone, he stops them moving.",
+      "signature": "Root-on-completion enemy tether (F16) and the only control-immune self state (F19).",
+      "passive": { "name": "Deadweight", "id": "deadweight", "desc": "Skill hits against slowed, rooted, stunned or airborne enemies deal +15% damage." },
+      "skills": [
+        { "name": "Hawser", "type": "skillshot", "cd": 12, "mana": 60, "dmgType": "physical", "dmg": 90, "dmgLv": 12, "scaleAd": 0.4, "range": 580, "speed": 760, "radius": 26, "pierce": false, "tether": { "dur": 2.0, "breakRange": 560, "slowStart": 0.25, "slowEnd": 0.50, "payload": { "dmg": 130, "dmgLv": 16, "scaleAd": 0.5, "immobilize": 1.3 } }, "desc": "Throw a heavy line; a hero it hits is tied to Anchor 2s with a slow ramping 25% to 50%. Past 560 it snaps; if it holds, the target is rooted 1.3s and struck again. Minions block it; breaks if Anchor is hard-CC'd.", "_newFields": ["tether"] },
+        { "name": "Weigh Anchor", "type": "selfState", "cd": 11, "mana": 50, "dur": 1.5, "selfRoot": true, "ccImmune": ["slow", "displacement"], "armorAdd": 20, "mrAdd": 20, "tetherSlowMult": 2.0, "recastCancel": true, "desc": "Root himself 1.5s: immune to slows, pulls and pushes, +20 armor/MR, and a tethered target's slow is doubled (cap 80%).", "_newFields": ["type:selfState", "dur", "selfRoot", "ccImmune", "armorAdd", "mrAdd", "tetherSlowMult", "recastCancel"] },
+        { "name": "Harbour", "type": "nova", "cd": [40, 36, 32], "mana": 105, "radius": 320, "dmgType": "physical", "dmg": 230, "dmgLv": 32, "scaleAd": 0.55, "slowPct": 0.55, "slowDur": 2.0, "desc": "Every enemy within 320 is slowed 55% for 2s.", "_newFields": ["cd[]"] }
+      ],
+      "counterplay": "Hawser is minion-blockable and needs you within 560 for 2s: dash or walk away; Purify or a stun on Anchor cuts it; no dash at all; Harbour is a slow, mobility works.",
+      "botHint": "Target the hero with the most dashes; Hawser only unblocked and within 500; walk toward a tethered target and Weigh Anchor when it is slowed inside 400; Harbour with 2+ heroes within 320 or a tethered target escaping.",
+      "_newFields": []
+    },
+    {
+      "id": "nyx", "name": "Nyx", "role": "Assassin", "difficulty": 3, "damageStyle": "physical", "resource": "mana",
+      "hp": 515, "hpLv": 68, "mp": 230, "mpLv": 25, "atk": 68, "atkLv": 8.0, "armor": 12, "armorLv": 2.0, "mr": 10, "mrLv": 1.6, "range": 95, "atkSpd": 1.15, "speed": 275,
+      "identity": "The execute assassin: one armor-piercing blow that grows the lower the target is; she vanishes to reach her spot.",
+      "signature": "Target-missing-HP execute (F21) and the only untargetable state (F19).",
+      "passive": { "name": "Backstab", "id": "backstab", "desc": "Hits on a target facing away deal 18% bonus true damage. Killing a hero grants +25% move speed for 3s." },
+      "skills": [
+        { "name": "Shadow Strike", "type": "dash", "cd": 8, "mana": 45, "dist": 340, "speed": 1100, "dmgType": "physical", "dmg": 130, "dmgLv": 16, "scaleAd": 0.7, "desc": "Dash through enemies in a line.", "_newFields": [] },
+        { "name": "Shade Step", "type": "selfState", "cd": 12, "mana": 40, "dur": 0.8, "untargetable": true, "speedPct": 0.30, "noAttack": true, "desc": "Vanish for 0.8s: untargetable, skipped by projectiles, novas and zones, +30% move speed; cannot attack or cast.", "_newFields": ["type:selfState", "dur", "untargetable", "speedPct", "noAttack"] },
+        { "name": "Deathmark", "type": "blinkstrike", "cd": [42, 38, 34], "mana": 100, "range": 500, "dmgType": "physical", "dmg": 260, "dmgLv": 40, "scaleAd": 1.0, "missingPct": 0.20, "missingPctLv": 0.05, "missingCap": 400, "physPenPct": 0.22, "desc": "Blink behind the nearest hero in range and strike for base + 20/25/30% of its missing HP with 22% armor penetration. No CC.", "_newFields": ["missingPct", "missingPctLv", "missingCap", "cd[]"] }
+      ],
+      "counterplay": "Heal or shield the carry before she jumps; stun her landing spot on the far side; wait out the 0.8s vanish; 42s ult.",
+      "botHint": "Hold Deathmark for a hero below 50% within 500; Shadow Strike through the target, Shade Step through a skillshot or to close 200, then ult; never ult above 70%.",
+      "_newFields": []
+    },
+    {
+      "id": "wraith", "name": "Wraith", "role": "Assassin", "difficulty": 2, "damageStyle": "physical", "resource": "energy",
+      "energy": { "max": 100, "regen": 8, "perBasic": 0 },
+      "hp": 500, "hpLv": 65, "mp": 0, "mpLv": 0, "atk": 66, "atkLv": 7.6, "armor": 11, "armorLv": 1.9, "mr": 9, "mrLv": 1.5, "range": 90, "atkSpd": 1.18, "speed": 280,
+      "identity": "The energy skirmisher: cheap fast casts, small hits, dips in and out and throws blades while kiting.",
+      "signature": "Fast energy pool (F4) and the only basic-range-changing skill (F25).",
+      "passive": { "name": "Afterimage", "id": "afterimage", "desc": "After any skill hits, the next basic attack within 3s deals +30% damage and, if it hits a hero, restores 10 energy." },
+      "skills": [
+        { "name": "Phase Cut", "type": "dash", "cd": 5, "energy": 25, "dist": 360, "speed": 1200, "dmgType": "physical", "dmg": 100, "dmgLv": 14, "scaleAd": 0.6, "desc": "A short blink-dash that cuts everything on the line.", "_newFields": ["energy"] },
+        { "name": "Phantom Blades", "type": "basicRange", "cd": 8, "energy": 30, "rangeSet": 300, "count": 3, "dur": 4, "dmgType": "physical", "bonusDmg": 20, "bonusDmgLv": 3, "bonusScaleAd": 0.15, "desc": "Her next 3 basic attacks within 4s are 300-range spectral throws with bonus damage.", "_newFields": ["type:basicRange", "energy", "rangeSet", "count", "dur", "bonusDmg", "bonusDmgLv", "bonusScaleAd"] },
+        { "name": "Haunt", "type": "blinkstrike", "cd": [30, 27, 24], "energy": 40, "range": 460, "dmgType": "physical", "dmg": 240, "dmgLv": 40, "scaleAd": 0.85, "silence": 0.5, "desc": "Blink onto the nearest hero in range for a quick silencing cut.", "_newFields": ["energy", "cd[]"] }
+      ],
+      "counterplay": "Armor and HP blunt her small hits; Phase Cut is a fixed line; collapse when her visible energy is below 25.",
+      "botHint": "Phase Cut only at energy >= 55; weave a basic after each skill hit; Phantom Blades at 150-300 range; Haunt the lowest-HP hero within 460; retreat with Phase Cut at energy < 25 or HP < 35%.",
+      "_newFields": ["resource", "energy{}"]
+    },
+    {
+      "id": "sable", "name": "Sable", "role": "Assassin", "difficulty": 3, "damageStyle": "magic", "resource": "mana",
+      "hp": 508, "hpLv": 67, "mp": 240, "mpLv": 26, "atk": 60, "atkLv": 6.4, "armor": 12, "armorLv": 2.0, "mr": 12, "mrLv": 1.8, "range": 92, "atkSpd": 1.12, "speed": 272,
+      "identity": "The %-HP poison assassin: darts that ignore minions, venom that eats max HP, a Kiss that bites a tenth of it.",
+      "signature": "%-max-HP damage on skills and the only hero-only projectile (F20), via skill-owned marks (F12).",
+      "passive": { "name": "Venom Bank", "id": "venom", "desc": "Hero kills grant 18% spell vamp for 5s, assists 8% for 3s. Basic attacks on a Venomed hero refresh the Venom timer (once per stack lifetime)." },
+      "skills": [
+        { "name": "Needle", "type": "skillshot", "cd": 5, "cdLv": -0.2, "mana": 40, "heroOnly": true, "dmgType": "magic", "dmg": 90, "dmgLv": 12, "scaleAp": 0.5, "range": 560, "speed": 1000, "radius": 20, "pierce": false, "applyMark": { "tag": "venom", "max": 3, "dur": 4, "stacks": 1, "dot": { "pctMaxHp": 0.015, "pctPerMp": 0.0001, "dur": 4, "capNonHero": 40 } }, "desc": "A venom dart that passes through minions and hits the first hero, applying Venom: 1.5% (+0.01% per MAGIC) of max HP per second per stack for 4s, up to 3 stacks.", "_newFields": ["heroOnly", "applyMark", "cdLv"] },
+        { "name": "Lunge", "type": "dash", "cd": 9, "cdLv": -0.3, "mana": 45, "dist": 300, "speed": 1100, "dmgType": "magic", "dmg": 110, "dmgLv": 14, "scaleAp": 0.5, "applyMark": { "tag": "venom", "max": 3, "dur": 4, "stacks": 1 }, "desc": "Lunge through enemies, coating each in one Venom stack.", "_newFields": ["applyMark", "cdLv"] },
+        { "name": "Kiss", "type": "blinkstrike", "cd": [38, 34, 30], "mana": 100, "range": 460, "dmgType": "magic", "dmg": 220, "dmgLv": 40, "scaleAp": 0.7, "pctMaxHp": [0.08, 0.10, 0.12], "pctMaxHpCap": 500, "slowPct": 0.50, "slowDur": 1.5, "refreshMark": { "tag": "venom" }, "desc": "Blink in and bite: base + 8/10/12% of the target's max HP, slow 50% for 1.5s, and every Venom stack is refreshed to full duration.", "_newFields": ["pctMaxHp[]", "pctMaxHpCap", "refreshMark", "cd[]"] }
+      ],
+      "counterplay": "Back off at 2 visible Venom pips; Needle is narrow and slow; no hard CC, Purify or speed walks out of the slow; lowest AD, MR shuts her down early.",
+      "botHint": "Needle the chosen hero at max range to 2+ stacks, Lunge for the third and Kiss at once; prefer the highest-max-HP reachable hero; keep Lunge for the exit when the target already has 3.",
+      "_newFields": []
+    },
+    {
+      "id": "rook", "name": "Rook", "role": "Assassin", "difficulty": 3, "damageStyle": "physical", "resource": "mana",
+      "hp": 530, "hpLv": 70, "mp": 200, "mpLv": 22, "atk": 64, "atkLv": 7.0, "armor": 13, "armorLv": 2.1, "mr": 10, "mrLv": 1.6, "range": 98, "atkSpd": 1.05, "speed": 278,
+      "identity": "The dive-and-return striker: airborne on both gap-closers, ult recast to fly back.",
+      "signature": "Recast return dash-to-point (F22).",
+      "passive": { "name": "Stoop", "id": "stoop", "desc": "Landing Dive or Skyfall on a hero grants +40 move speed for 2s and makes Rook's next basic attack within 3s deal +50% total ATK bonus physical damage." },
+      "skills": [
+        { "name": "Dive", "type": "dash", "cd": 10, "mana": 45, "dist": 380, "speed": 1150, "stopOnHero": true, "dmgType": "physical", "dmg": 120, "dmgLv": 15, "scaleAd": 0.6, "airborne": 0.5, "desc": "Dive along a line and stop on the first hero, knocking them up 0.5s.", "_newFields": [] },
+        { "name": "Talon Fan", "type": "nova", "cd": 7, "mana": 40, "radius": 210, "dmgType": "physical", "dmg": 115, "dmgLv": 14, "scaleAd": 0.6, "desc": "Rake everyone nearby. No CC.", "_newFields": [] },
+        { "name": "Skyfall", "type": "blinkstrike", "cd": [40, 36, 32], "mana": 105, "range": 540, "dmgType": "physical", "dmg": 250, "dmgLv": 40, "scaleAd": 0.9, "airborne": 0.6, "recast": { "window": 3.0, "speed": 1300, "label": "Return" }, "desc": "Appear on the nearest hero in range and slam them airborne 0.6s; within 3s recast to leap back to the takeoff point (no damage, cannot cross walls). Cooldown starts on the first cast.", "_newFields": ["recast", "cd[]"] }
+      ],
+      "counterplay": "Stand on her known return point; CC her landing inside the 3s window; both gap-closers are fixed lines; she runs dry after two rotations.",
+      "botHint": "Dive the squishiest hero only with an ally within 400; Skyfall the marksman or mage, Talon Fan, one basic, Return if HP < 45% or 2+ enemies within 300, else Dive the next.",
+      "_newFields": []
+    },
+    {
+      "id": "torren", "name": "Torren", "role": "Fighter", "difficulty": 1, "damageStyle": "physical", "resource": "none",
+      "hp": 690, "hpLv": 96, "mp": 0, "mpLv": 0, "atk": 63, "atkLv": 7.4, "armor": 19, "armorLv": 3.0, "mr": 14, "mrLv": 2.2, "range": 95, "atkSpd": 1.02, "speed": 262,
+      "identity": "The Reaver: resourceless sustain brawler who hits harder the more of his own blood he has lost.",
+      "signature": "Own-missing-HP scaling (F21 self) and the only leap-to-point (F22); the only pure cooldown hero (F3 none).",
+      "passive": { "name": "Bloodthirst", "id": "bloodthirst", "desc": "8% lifesteal plus 1% for every 3% of missing HP, capped at 35% at or below 20% HP. Basic attacks only." },
+      "skills": [
+        { "name": "Whirling Axe", "type": "nova", "cd": 7, "cdLv": -0.3, "mana": 0, "radius": 220, "dmgType": "physical", "dmg": 130, "dmgLv": 16, "scaleAd": 0.8, "selfMissingBonus": { "perPct": 0.01, "per": 0.02, "max": 0.40 }, "desc": "Spin the axe around Torren; +1% damage per 2% of his missing HP (max +40%).", "_newFields": ["selfMissingBonus", "cdLv"] },
+        { "name": "War Leap", "type": "dash", "cd": 11, "cdLv": -0.3, "mana": 0, "dashToPoint": true, "dist": 340, "speed": 950, "endNova": { "radius": 180, "dmgType": "physical", "dmg": 110, "dmgLv": 13, "scaleAd": 0.6, "slowPct": 0.30, "slowDur": 1.2 }, "desc": "Leap to the aimed point up to 340 away and slam down, damaging and slowing.", "_newFields": ["dashToPoint", "cdLv"] },
+        { "name": "Reaver's Toll", "type": "nova", "cd": [42, 38, 34], "mana": 0, "radius": 260, "dmgType": "true", "dmg": [160, 220, 280], "scaleAd": 0.7, "selfMissingPct": [0.20, 0.25, 0.30], "selfMissingCap": 0.50, "desc": "A true-damage cleave that adds 20/25/30% of Torren's own missing HP (cap 50% of his max HP).", "_newFields": ["selfMissingPct[]", "selfMissingCap", "cd[]", "dmg[]"] }
+      ],
+      "counterplay": "Kite him: no ranged tool, one leap, no CC; burst him before the missing-HP ramp or finish him rather than leaving him at 30%; shields eat the true damage.",
+      "botHint": "Fight in extended melee; War Leap onto the lowest-HP-percent hero within 340; Reaver's Toll when own HP is below 50% with a hero inside 260, or two heroes inside 260.",
+      "_newFields": ["resource"]
+    },
+    {
+      "id": "karn", "name": "Karn", "role": "Fighter", "difficulty": 3, "damageStyle": "physical", "resource": "mana",
+      "hp": 700, "hpLv": 96, "mp": 240, "mpLv": 26, "atk": 58, "atkLv": 6.4, "armor": 21, "armorLv": 3.0, "mr": 16, "mrLv": 2.5, "range": 100, "atkSpd": 0.90, "speed": 255,
+      "identity": "Chained Warden: hooks one target out and chains the whole fight to himself. Nobody leaves.",
+      "signature": "Karn-only hook drag with suppression, plus Gaol: a multi-target tether that punishes leaving (F16 multi + breakPayload).",
+      "passive": { "name": "Ironclad", "id": "ironclad", "desc": "Basic attacks cut 0.5s from every skill cooldown. Taking damage from an enemy hero grants 4 armor for 4s, stacking to 5." },
+      "skills": [
+        { "name": "Chain Hook", "type": "skillshot", "cd": 13, "cdLv": -0.5, "mana": 80, "manaLv": 5, "dmgType": "physical", "dmg": 110, "dmgLv": 14, "scaleAd": 0.5, "range": 640, "speed": 850, "radius": 26, "pierce": false, "hook": true, "suppress": 0.6, "markOnHit": "hooked", "desc": "Throw the chain; the first unit hit stops it. A hero is reeled to Karn and suppressed 0.6s.", "_newFields": ["markOnHit", "cdLv", "manaLv"] },
+        { "name": "Iron Slam", "type": "nova", "cd": 8, "cdLv": -0.4, "mana": 50, "radius": 240, "dmgType": "physical", "dmg": 140, "dmgLv": 17, "scaleAd": 0.7, "slowPct": 0.40, "slowDur": 1.2, "bonusVsMark": { "tag": "hooked", "within": 2.0, "mult": 1.5 }, "desc": "Smash the ground; +50% damage to a target hooked within the last 2s.", "_newFields": ["bonusVsMark", "cdLv"] },
+        { "name": "Gaol", "type": "tether", "cd": [44, 40, 36], "mana": 120, "dmgType": "physical", "tether": { "multi": { "radius": 320 }, "dur": 2.5, "breakRange": 450, "anchored": true, "breakPayload": { "dmg": [260, 340, 420], "scaleAd": 1.0, "stun": 1.0 } }, "desc": "Chain every enemy hero within 320 to Karn for 2.5s. A hero that moves beyond 450 snaps its chain and is struck and stunned 1.0s; staying is free.", "_newFields": ["type:tether", "tether", "cd[]"] }
+      ],
+      "counterplay": "Keep a body between you and the hook; sidestep it at range; he has no dash; Gaol punishes leaving, so hold your ground for 2.5s or Purify the chain.",
+      "botHint": "Hook only an unblocked, isolated hero (no second enemy within 400), preferring carries; Iron Slam right after; Gaol when 2+ enemy heroes are within 300 and at least one is retreating.",
+      "_newFields": []
+    },
+    {
+      "id": "brass", "name": "Brass", "role": "Fighter", "difficulty": 1, "damageStyle": "physical", "resource": "mana",
+      "hp": 720, "hpLv": 98, "mp": 210, "mpLv": 22, "atk": 55, "atkLv": 6.0, "armor": 22, "armorLv": 3.3, "mr": 16, "mrLv": 2.5, "range": 105, "atkSpd": 0.95, "speed": 252,
+      "identity": "Line-Holder: lowest fighter damage, forces enemies to hit him instead of his carry.",
+      "signature": "Taunt CC (F23).",
+      "passive": { "name": "Rimguard", "id": "rimguard", "desc": "Take 10% less damage from enemy heroes." },
+      "skills": [
+        { "name": "Buckler", "type": "nova", "cd": 7, "cdLv": -0.3, "mana": 45, "manaLv": 3, "radius": 200, "dmgType": "physical", "dmg": 120, "dmgLv": 14, "scaleAd": 0.55, "selfShieldPct": 0.06, "selfShieldDur": 3, "desc": "Bash the buckler in a circle and gain a shield of 6% max HP for 3s.", "_newFields": ["selfShieldPct", "selfShieldDur", "cdLv", "manaLv"] },
+        { "name": "Shoulder", "type": "dash", "cd": 12, "cdLv": -0.5, "mana": 60, "dist": 340, "speed": 900, "stopOnHero": true, "dmgType": "physical", "dmg": 100, "dmgLv": 12, "scaleAd": 0.5, "stun": 0.6, "desc": "Shoulder-check forward and stop on the first hero, stunning 0.6s.", "_newFields": ["cdLv"] },
+        { "name": "Call to the Rim", "type": "nova", "cd": [44, 40, 36], "mana": 120, "radius": 260, "dmgType": "physical", "dmg": [220, 290, 360], "scaleAd": 0.7, "taunt": [0.8, 1.0, 1.2], "armorAdd": 30, "mrAdd": 30, "buffDur": 4, "desc": "Every enemy hero within 260 must turn and hit Brass for 0.8/1.0/1.2s while he gains +30 armor and MR for 4s.", "_newFields": ["taunt[]", "armorAdd", "mrAdd", "buffDur", "cd[]", "dmg[]"] }
+      ],
+      "counterplay": "Purify beats the taunt; stay outside 260; his gap-closer stops on the first hero; kill him last.",
+      "botHint": "Stand between the enemy and the allied carry; Shoulder any enemy attacking an ally within 340; Call to the Rim with 2+ enemies within 240 and an ally within 400.",
+      "_newFields": []
+    },
+    {
+      "id": "omen", "name": "Omen", "role": "Fighter", "difficulty": 2, "damageStyle": "physical", "resource": "mana",
+      "hp": 640, "hpLv": 88, "mp": 200, "mpLv": 22, "atk": 66, "atkLv": 7.6, "armor": 16, "armorLv": 2.6, "mr": 13, "mrLv": 2.0, "range": 108, "atkSpd": 1.06, "speed": 266,
+      "identity": "Twin-blade Duelist: chains kills, every takedown resets his step.",
+      "signature": "Kill-reset mobility (F24).",
+      "passive": { "name": "Cadence", "id": "cadence", "desc": "Basic attacks grant +5% attack speed for 3s, stacking to 8. A Crosscut that hits an enemy hero grants 2 stacks." },
+      "skills": [
+        { "name": "Crosscut", "type": "nova", "cd": 6, "cdLv": -0.3, "mana": 40, "manaLv": 3, "radius": 190, "dmgType": "physical", "dmg": 120, "dmgLv": 14, "scaleAd": 0.8, "canCrit": true, "desc": "A tight X of steel around Omen that can critically strike.", "_newFields": ["canCrit", "cdLv", "manaLv"] },
+        { "name": "Pass", "type": "dash", "cd": 10, "cdLv": -0.4, "mana": 45, "dist": 300, "speed": 1050, "dmgType": "physical", "dmg": 90, "dmgLv": 11, "scaleAd": 0.6, "resetOnKill": 1.0, "resetOnAssist": 0.5, "desc": "Step through the target; a hero kill resets it fully, an assist refunds half.", "_newFields": ["resetOnKill", "resetOnAssist", "cdLv"] },
+        { "name": "Duelist's End", "type": "dash", "cd": [38, 34, 30], "mana": 120, "dist": 420, "speed": 1200, "stopOnHero": true, "dmgType": "physical", "dmg": [240, 300, 360], "scaleAd": 1.1, "stun": 0.8, "resetOnKill": 0.5, "desc": "A committed lunge that stops on the first hero and stuns 0.8s; a kill refunds half the cooldown.", "_newFields": ["resetOnKill", "cd[]", "dmg[]"] }
+      ],
+      "counterplay": "Do not feed the reset; any stun mid-chain kills him; a tank steps in front of the ult.",
+      "botHint": "Engage when an enemy within 420 is below 60% or an ally has engaged; after a kill or assist Pass onto the next-lowest enemy within 300; retreat when Pass is down and HP < 40%.",
+      "_newFields": []
+    },
+    {
+      "id": "tide", "name": "Tide", "role": "Fighter", "difficulty": 2, "damageStyle": "magic", "resource": "mana",
+      "hp": 670, "hpLv": 92, "mp": 240, "mpLv": 26, "atk": 56, "atkLv": 6.0, "armor": 17, "armorLv": 2.8, "mr": 17, "mrLv": 2.6, "range": 112, "atkSpd": 0.98, "speed": 256,
+      "identity": "Breaker: a magic bruiser who fights with the map; shoves into walls stun.",
+      "signature": "Terrain-collision displacement (F15 wallDmg/wallStun).",
+      "passive": { "name": "Undertow", "id": "undertow", "desc": "Basic attacks slow 12% for 1s. Slowed heroes take 8% bonus magic damage from Tide." },
+      "skills": [
+        { "name": "Breaker", "type": "skillshot", "cd": 8, "cdLv": -0.4, "mana": 55, "manaLv": 4, "dmgType": "magic", "dmg": 130, "dmgLv": 16, "scaleAp": 0.5, "range": 560, "speed": 750, "radius": 32, "pierce": true, "knockback": 120, "wallDmg": 80, "wallScaleAp": 0.30, "wallStun": 0.6, "desc": "A wave that carries everyone in a line 120 units; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.", "_newFields": ["wallDmg", "wallScaleAp", "wallStun", "knockback is tweened (F15)", "cdLv", "manaLv"] },
+        { "name": "Surge", "type": "dash", "cd": 10, "cdLv": -0.4, "mana": 55, "dist": 320, "speed": 950, "dmgType": "magic", "dmg": 90, "dmgLv": 11, "scaleAp": 0.4, "slowPct": 0.30, "slowDur": 1.2, "desc": "Ride a surge forward, slowing everything along the path.", "_newFields": ["cdLv"] },
+        { "name": "High Water", "type": "zone", "cd": [42, 38, 34], "mana": 120, "dmgType": "magic", "range": 480, "radius": 250, "delay": 0.5, "ticks": 1, "dmg": [250, 320, 390], "scaleAp": 0.8, "knockback": 130, "wallDmg": 120, "wallScaleAp": 0.40, "wallStun": 0.7, "noWallCC": { "airborne": 0.5 }, "desc": "A wall of water throws everyone 130 units away from the centre; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, others are airborne 0.5s.", "_newFields": ["wallDmg", "wallScaleAp", "wallStun", "noWallCC", "knockback radial from zone centre (F15)", "cd[]", "dmg[]"] }
+      ],
+      "counterplay": "Fight in open ground; the wave is slow; High Water has a 0.5s delay; Purify refuses the slide; one dash, no sustain.",
+      "botHint": "Breaker / High Water when the push vector through the target extended 130 hits a wall tile, else shove whoever is attacking the allied carry; Surge to the open side of a target near a wall.",
+      "_newFields": []
+    },
+    {
+      "id": "cinder", "name": "Cinder", "role": "Fighter", "difficulty": 2, "damageStyle": "magic", "resource": "heat",
+      "heat": { "gainBasicHero": 8, "gainBasic": 4, "gainSkillHero": 8, "gainSkill": 4, "burnPerSec": 2, "decay": 5, "decayDelay": 4 },
+      "hp": 660, "hpLv": 88, "mp": 0, "mpLv": 0, "atk": 58, "atkLv": 6.4, "armor": 16, "armorLv": 2.6, "mr": 15, "mrLv": 2.3, "range": 118, "atkSpd": 1.06, "speed": 250,
+      "identity": "Coal-Fist: a relentless magic brawler on a Heat gauge; at 100 her next skill overheats.",
+      "signature": "Heat gauge with overheat overrides (F5).",
+      "passive": { "name": "Live Coal", "id": "livecoal", "desc": "Basic attacks and skills apply a 3s burn of 25 (+20% MAGIC) magic damage; reapplying refreshes. During Furnace the burn is 50 (+40% MAGIC)." },
+      "skills": [
+        { "name": "Haymaker", "type": "nova", "cd": 7, "cdLv": -0.4, "mana": 0, "radius": 200, "dmgType": "magic", "dmg": 140, "dmgLv": 17, "scaleAp": 0.55, "overheat": { "radius": 260, "dmgMult": 1.4, "slowPct": 0.40, "slowDur": 1.5 }, "desc": "A burning haymaker around Cinder; overheated it is wider, 40% harder and slows 40% for 1.5s.", "_newFields": ["overheat", "cdLv"] },
+        { "name": "Coal Dash", "type": "dash", "cd": 10, "cdLv": -0.4, "mana": 0, "dist": 320, "speed": 980, "endNova": { "radius": 170, "dmgType": "magic", "dmg": 100, "dmgLv": 12, "scaleAp": 0.4 }, "overheat": { "endNova": { "radius": 220, "dmgType": "magic", "dmg": 100, "dmgLv": 12, "scaleAp": 0.4, "stun": 0.5 } }, "desc": "Dash and detonate cinders on landing (no CC); overheated the blast is wider and stuns 0.5s.", "_newFields": ["overheat", "cdLv"] },
+        { "name": "Furnace", "type": "buff", "cd": [42, 38, 34], "mana": 0, "atkMult": 1.25, "spdAdd": 50, "hotPct": 0.18, "dur": 6, "burnUpgrade": true, "overheat": { "dur": 9, "tenacityAdd": 0.35 }, "desc": "Stoke the furnace 6s: +25% basic damage, +50 speed, 18% max HP over time, burns twice as hot; overheated it lasts 9s and grants 35% tenacity.", "_newFields": ["overheat", "burnUpgrade", "cd[]"] }
+      ],
+      "counterplay": "Poke and kite deny both damage and Heat; back off for one cast when the gauge is full; her only stun is the overheated dash.",
+      "botHint": "Stay in melee to build Heat; at 100 Haymaker if 2+ enemies within 260, else Coal Dash onto the nearest marksman or mage within 320; Furnace when HP drops below 60% in a fight.",
+      "_newFields": ["resource", "heat{}"]
+    },
+    {
+      "id": "sylva", "name": "Sylva", "role": "Support", "difficulty": 2, "damageStyle": "magic", "resource": "mana",
+      "hp": 545, "hpLv": 70, "mp": 330, "mpLv": 36, "atk": 48, "atkLv": 4.4, "armor": 12, "armorLv": 2.4, "mr": 15, "mrLv": 2.3, "range": 330, "atkSpd": 0.95, "speed": 242,
+      "identity": "The lifeline healer: one ally through a vine, then the whole canopy.",
+      "signature": "Ally link tether with single-ally targeting (F16 friendly, F17).",
+      "passive": { "name": "Verdant Gift", "id": "verdant", "desc": "Healing an ally with a cast grants them +60 move speed for 2s and restores 12 mana to Sylva (link ticks do not trigger this)." },
+      "skills": [
+        { "name": "Thorn Volley", "type": "skillshot", "cd": 7, "cdLv": -0.4, "mana": 45, "manaLv": 4, "dmgType": "magic", "dmg": 130, "dmgLv": 16, "scaleAp": 0.6, "range": 680, "speed": 850, "radius": 26, "slowPct": 0.30, "slowDur": 1.5, "desc": "A thorn that damages and slows the first enemy hit.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Vine Link", "type": "link", "cd": 11, "cdLv": -0.6, "mana": 70, "manaLv": 5, "allyTarget": { "range": 520, "self": false }, "heal": 110, "healLv": 18, "scaleAp": 0.55, "link": { "dur": 4, "interval": 0.5, "tickHeal": 25, "tickHealLv": 4, "tickScaleAp": 0.15, "targetSpeedAdd": 40, "casterArmorAdd": 12, "casterMrAdd": 12, "breakRange": 650 }, "desc": "Bind a vine to one ally: heal now, then 8 ticks over 4s while they stay within 650; the ally gains +40 speed and Sylva +12 armor/MR.", "_newFields": ["type:link", "allyTarget", "link", "cdLv", "manaLv"] },
+        { "name": "Canopy", "type": "heal", "cd": [55, 48, 41], "mana": [120, 150, 180], "heal": [150, 210, 270], "scaleAp": 0.50, "radius": 420, "link": { "all": true, "dur": 6, "interval": 0.5, "tickHeal": [16, 22, 28], "tickScaleAp": 0.08, "targetSpeedAdd": 40, "breakRange": 550 }, "desc": "Heal every ally within 420, then link all of them for 6s (12 ticks of 16/22/28 +8% MAGIC, +40 speed, snaps past 550). Does not stack with a Vine Link on the same ally.", "_newFields": ["link", "cd[]", "mana[]", "heal[]"] }
+      ],
+      "counterplay": "Kill or displace the linked ally, or knock Sylva 650 away; no escape, no CC, no shield: dive her first; anti-heal shrinks every tick.",
+      "botHint": "Stay 350-500 behind the nearest ally; Vine Link the ally that took damage most recently (prefer lowest HP); Thorn Volley chasers; Canopy when 2+ allies within 420 are below 55%.",
+      "_newFields": []
+    },
+    {
+      "id": "bell", "name": "Bell", "role": "Support", "difficulty": 2, "damageStyle": "magic", "resource": "mana",
+      "hp": 560, "hpLv": 74, "mp": 300, "mpLv": 34, "atk": 46, "atkLv": 4.2, "armor": 13, "armorLv": 2.4, "mr": 15, "mrLv": 2.3, "range": 300, "atkSpd": 0.95, "speed": 250,
+      "identity": "The tempo caller: the team hits harder and moves faster when she rings; she silences casters and heals nothing.",
+      "signature": "Ally offensive buff (F26).",
+      "passive": { "name": "Peal", "id": "peal", "desc": "Every 6s allied heroes within 420 gain +50 move speed for 2s." },
+      "skills": [
+        { "name": "Chime", "type": "skillshot", "cd": 6, "cdLv": -0.3, "mana": 40, "manaLv": 4, "dmgType": "magic", "dmg": 115, "dmgLv": 14, "scaleAp": 0.5, "range": 620, "speed": 800, "radius": 28, "pierce": true, "desc": "A ringing note that passes through every enemy in a line. No CC.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Carillon", "type": "allybuff", "cd": 14, "cdLv": -0.6, "mana": 65, "manaLv": 5, "radius": 380, "asAdd": 0.20, "asAddLv": 0.02, "spdAdd": 35, "dur": 3.5, "desc": "Every ally within 380 gains +0.20 (+0.02/rank) attack speed and +35 move speed for 3.5s; the attack speed takes the max against other steroids.", "_newFields": ["type:allybuff", "asAdd", "asAddLv", "spdAdd", "dur", "cdLv", "manaLv"] },
+        { "name": "Knell", "type": "zone", "cd": [46, 40, 34], "mana": [100, 125, 150], "dmgType": "magic", "range": 540, "radius": 220, "delay": 0.5, "ticks": 1, "dmg": [200, 260, 320], "scaleAp": 0.6, "silence": 1.2, "slowPct": 0.40, "slowDur": 1.5, "desc": "After 0.5s damage, silence 1.2s and slow 40% everyone inside.", "_newFields": ["cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Disengage or CC the buffed carry for 3.5s; Knell has a 0.5s telegraph and does not stop basics; no heal, no shield, no escape.",
+      "botHint": "Shadow the allied marksman; Chime on cooldown; Carillon when an ally within 380 is basic-attacking a hero; Knell on 2+ heroes or an enemy mage/support within 540.",
+      "_newFields": []
+    },
+    {
+      "id": "wick", "name": "Wick", "role": "Support", "difficulty": 1, "damageStyle": "magic", "resource": "mana",
+      "hp": 575, "hpLv": 76, "mp": 310, "mpLv": 34, "atk": 48, "atkLv": 4.4, "armor": 15, "armorLv": 2.7, "mr": 15, "mrLv": 2.4, "range": 290, "atkSpd": 0.95, "speed": 244,
+      "identity": "The lantern guardian: plant a lantern, shield whoever fights around it, see everything that hides from it.",
+      "signature": "Placed pulse object with the only skill-based vision (F9 pulse).",
+      "passive": { "name": "Lampglass", "id": "lampglass", "desc": "Whenever Wick heals an ally, that ally also gains a shield for 40% of the heal for 2.5s." },
+      "skills": [
+        { "name": "Spark", "type": "skillshot", "cd": 6, "cdLv": -0.3, "mana": 40, "manaLv": 4, "dmgType": "magic", "dmg": 125, "dmgLv": 15, "scaleAp": 0.5, "range": 640, "speed": 900, "radius": 22, "slowPct": 0.25, "slowDur": 1.0, "desc": "A lantern spark that stings and briefly slows the first enemy hit.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Lantern", "type": "object", "cd": 13, "cdLv": -0.6, "mana": 60, "manaLv": 4, "range": 480, "dur": 5, "tick": 1.0, "allyRadius": 300, "shield": 45, "shieldLv": 7, "shieldScaleAp": 0.20, "shieldDur": 2.0, "revealRadius": 300, "revealBasicBonus": 0.15, "desc": "Plant a lantern for 5s: each second allies within 300 gain a refreshing 2s shield; enemy heroes within 300 are revealed for the whole duration and Wick's basics on them deal +15%.", "_newFields": ["type:object", "dur", "tick", "allyRadius", "shield", "shieldLv", "shieldScaleAp", "shieldDur", "revealRadius", "revealBasicBonus", "cdLv", "manaLv"] },
+        { "name": "Warding Glow", "type": "heal", "cd": [48, 42, 36], "mana": [110, 140, 170], "heal": [170, 230, 290], "scaleAp": 0.55, "radius": 320, "shieldPct": 0.08, "desc": "Flood allies within 320 with hard light: a large heal plus a shield of 8% max HP for 3s, and the Lampglass shield on top.", "_newFields": ["cd[]", "mana[]", "heal[]"] }
+      ],
+      "counterplay": "The lantern is stationary: pull the fight 300 away or wait a pulse out; Wick's only CC is a 25% slow; kill Wick and it goes out.",
+      "botHint": "Lantern under the allied frontliner when 2+ enemies are within 500 of an ally, stand within 250 of it; Spark on cooldown; Warding Glow when an ally within 320 drops below 45% or three allies are fighting in range.",
+      "_newFields": []
+    },
+    {
+      "id": "pact", "name": "Pact", "role": "Support", "difficulty": 3, "damageStyle": "magic", "resource": "hp", "hpFloor": 0.25,
+      "hp": 600, "hpLv": 80, "mp": 280, "mpLv": 30, "atk": 52, "atkLv": 4.8, "armor": 14, "armorLv": 2.6, "mr": 15, "mrLv": 2.2, "range": 270, "atkSpd": 0.92, "speed": 246,
+      "identity": "The blood liturgist: mana for the lash and the covenant, her own health for one ally's Offering; hero damage tithes back to whoever is lowest.",
+      "signature": "Single-target blood transfusion: the only single-ally heal and the only skill scaling with the caster's own HP (F17 + F6 on one skill).",
+      "passive": { "name": "Tithe", "id": "tithe", "desc": "15% of skill damage Pact deals to heroes heals the lowest-HP allied hero within 520 (including herself)." },
+      "skills": [
+        { "name": "Let", "type": "skillshot", "cd": 6, "cdLv": -0.3, "mana": 45, "manaLv": 4, "dmgType": "magic", "dmg": 140, "dmgLv": 17, "scaleAp": 0.6, "range": 600, "speed": 860, "radius": 24, "desc": "A lash of blood at the first enemy hit. No CC.", "_newFields": ["cdLv", "manaLv"] },
+        { "name": "Offering", "type": "heal", "cd": 11, "cdLv": -0.6, "hpCost": 0.12, "allyTarget": { "range": 520, "self": false }, "healFromCost": 2.0, "healLv": 20, "scaleAp": 0.45, "desc": "Pay 12% of max HP and heal one ally for 200% of the HP paid (+20/rank, +45% MAGIC). Refused below 25% HP; no target, no cost.", "_newFields": ["hpCost", "allyTarget", "healFromCost", "cdLv"] },
+        { "name": "Covenant", "type": "zone", "cd": [50, 44, 38], "mana": [100, 120, 140], "dmgType": "true", "range": 480, "radius": 200, "delay": 0.6, "ticks": 1, "dmg": [190, 250, 310], "scaleAp": 0.4, "immobilize": 1.0, "silence": 1.0, "desc": "After 0.6s everyone inside takes true damage and is rooted and silenced for 1s (purifiable).", "_newFields": ["cd[]", "mana[]", "dmg[]"] }
+      ],
+      "counterplay": "Poke her below 25% to lock Offering; Covenant has a 0.6s telegraph and is purifiable; anti-heal shrinks Tithe and Offering; no mobility, no shield.",
+      "botHint": "Offering the lowest-HP ally within 520 when under 55% and Pact above 40%; Let at heroes when an ally within 520 is under 60%; Covenant on 2+ heroes or the enemy about to kill an ally.",
+      "_newFields": ["resource:hp (hybrid; Let and Covenant use mana)", "hpFloor"]
+    }
+  ]
+}
