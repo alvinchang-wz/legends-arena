@@ -371,6 +371,18 @@ const UI = {
     heal: 'Heal',
     blinkstrike: 'Blink strike',
     buff: 'Self buff',
+    /* docs/design/heroes.md engine features */
+    channel: 'Channelled burst',
+    barrier: 'Fixed gate',
+    selfState: 'Stance',
+    tether: 'Tether',
+    link: 'Ally link',
+    cone: 'Cone',
+    trap: 'Trap',
+    object: 'Placed object',
+    basicMod: 'Attack volley',
+    basicRange: 'Thrown attacks',
+    allybuff: 'Team buff',
   },
 
   /* "Magic Damage" / "Physical Damage" / "True Damage" — naming the type in
