@@ -199,7 +199,7 @@ const Features = {
       if (h.sweepT > 0) h.sweepT -= dt;
       if (h._manaSip) {
         h._manaSip.t -= dt;
-        if (h.maxMana) h.mana = Math.min(h.maxMana, h.mana + h._manaSip.rate * dt);
+        h.gainMana(h._manaSip.rate * dt);   // F3: a mana thing; a heat, energy or cooldown hero gets nothing
         if (h._manaSip.t <= 0) h._manaSip = null;
       }
       for (const k in h.itemCd) if (h.itemCd[k] > 0) h.itemCd[k] -= dt;
@@ -211,7 +211,7 @@ const Features = {
         this.lastSeen.set(h, { x: h.x, y: h.y, t: Game.time });
         if (h.combatT <= 0) {
           h.heal(h.maxHp * 0.004 * dt);
-          if (h.maxMana) h.mana = Math.min(h.maxMana, h.mana + h.maxMana * 0.003 * dt);
+          h.gainMana(h.maxMana * 0.003 * dt);   // F3: never a heat gauge (Cinder would warm up standing still)
         }
       }
     }
