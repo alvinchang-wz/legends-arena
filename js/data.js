@@ -464,19 +464,26 @@ const HEROES = [
   },
   {
     id: 'brass', name: 'Brass', role: 'Fighter', icon: '🔰', color: '#d97706', projColor: '#fbbf24',
-    desc: 'A buckler brawler who shrugs hero damage and answers with the rim.',
+    desc: 'A buckler-and-shoulder line-holder who makes enemies hit him instead of his carry.',
     difficulty: 1, damageStyle: 'physical',
-    hp: 700, hpLv: 92, mp: 200, mpLv: 22, atk: 56, atkLv: 6.2,
-    armor: 21, armorLv: 3.2, mr: 15, mrLv: 2.4,
-    range: 105, atkSpd: 0.96, speed: 250,
+    /* docs/design/heroes.md, Fighters: Brass. The roster's only taunt (F23):
+       Call to the Rim makes every enemy within 260 walk at him and swing
+       while he armours up; Buckler's shield and the ult's resists are the
+       F27 self fields. Lowest fighter damage on purpose. Bot fields:
+       botGuardAlly sends Shoulder at the enemy hero attacking an allied
+       hero; botCrowd / botAllyWithin gate the ult on 2+ heroes inside its
+       radius with an ally within 400 to protect. */
+    hp: 720, hpLv: 98, mp: 210, mpLv: 22, atk: 55, atkLv: 6.0,
+    armor: 22, armorLv: 3.3, mr: 16, mrLv: 2.5,
+    range: 105, atkSpd: 0.95, speed: 252,
     passive: {
       name: 'Rimguard', icon: '○', id: 'rimguard',
-      desc: 'Take 10% less damage from enemy heroes. The protector: lowest fighter damage, highest team value.',
+      desc: 'Take 10% less damage from enemy heroes.',
     },
     skills: [
-      { name: 'Buckler', icon: '◎', type: 'nova', cd: 7, mana: 45, dmgType: 'physical', radius: 200, dmg: 130, dmgLv: 15, scaleAd: 0.55, slowPct: 0.3, slowDur: 1.2, desc: 'Bash the buckler, damaging and slowing.' },
-      { name: 'Shoulder', icon: '▶', type: 'dash', cd: 11, mana: 50, dmgType: 'physical', dist: 340, speed: 900, dmg: 100, dmgLv: 12, scaleAd: 0.5, stopOnHero: true, stun: 0.7, desc: 'Shoulder-check the first hero, stunning them.' },
-      { name: 'Hold the Line', icon: '▣', type: 'buff', cd: 44, mana: 90, atkMult: 1.2, spdAdd: 40, tenacityAdd: 0.35, dur: 5, desc: 'Brace: bonus attack, speed, and tenacity.' },
+      { name: 'Buckler', icon: '◎', type: 'nova', cd: 7, cdLv: -0.3, mana: 45, manaLv: 3, dmgType: 'physical', radius: 200, dmg: 120, dmgLv: 14, scaleAd: 0.55, selfShieldPct: 0.06, selfShieldDur: 3, desc: 'Bash the buckler in a circle and gain a shield of 6% max HP for 3s.' },
+      { name: 'Shoulder', icon: '▶', type: 'dash', cd: 12, cdLv: -0.5, mana: 60, dmgType: 'physical', dist: 340, speed: 900, dmg: 100, dmgLv: 12, scaleAd: 0.5, stopOnHero: true, stun: 0.6, botGuardAlly: true, desc: 'Shoulder-check forward and stop on the first hero, stunning 0.6s.' },
+      { name: 'Call to the Rim', icon: '▣', type: 'nova', cd: [44, 40, 36], mana: 120, dmgType: 'physical', radius: 260, dmg: [220, 290, 360], scaleAd: 0.7, taunt: [0.8, 1.0, 1.2], armorAdd: 30, mrAdd: 30, buffDur: 4, botCrowd: true, botAllyWithin: 400, desc: 'Every enemy within 260 must turn and hit Brass for 0.8/1.0/1.2s while he gains +30 armor and MR for 4s.' },
     ],
   },
   {

@@ -2555,21 +2555,31 @@ class Hero extends Unit {
         if (cc && isHero && !locked) return 815;
         return isHero ? 510 : 220;
       case 'nova': {
-        if (d >= s.radius + t.radius) return 0;
-        if (!isHero && !farmOk) return 0;
-        if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
+        /* heroes inside the ring, whoever the bot's own target is: a crowd is
+           worth the cast even when the target itself stands outside */
         let near = 0;
         for (const h of Game.heroes) {
           if (h.team !== this.team && h.alive && this.distTo(h) < s.radius + h.radius) near++;
         }
         if (near >= 2) return 880;
-        if (ownLow && isHero) return 860;   // F29 (Torren's hint): Reaver's Toll under 50% HP with a hero inside
+        if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
+        // F29 (Brass's hint): a crowd tool waits for 2+ heroes inside, or one hero inside who is on an
+        // ally (botAllyWithin: with that ally close enough to matter)
+        if (s.botCrowd) {
+          if (!this.guardTarget(s.radius + t.radius, 0)) return 0;
+          return (!s.botAllyWithin || this.allyWithin(s.botAllyWithin)) ? 820 : 0;
+        }
+        if (ownLow && near >= 1) return 860;   // F29 (Torren's hint): Reaver's Toll under 50% HP with a hero inside
+        if (d >= s.radius + t.radius) return 0;
+        if (!isHero && !farmOk) return 0;
         if (locked && !cc) return 840;
         if (cc && isHero && !locked) return 800;
         return isHero ? 480 : 200;
       }
       case 'dash':
         if (s.dashBack) return isHero && d < 260 ? 600 : 0;   // F22: a hop away from whoever got close
+        // F29 (Brass's hint): Shoulder any enemy hero attacking an allied hero within its reach
+        if (s.botGuardAlly && isHero && this.guardTarget(s.dist)) return 800;
         if (d <= 150 || d >= s.dist + 100) return 0;
         if (!(isHero || (farmOk && (s.dmg || s.endNova)))) return 0;
         if (isHero && this.advancedAI && !this.gapCloseLegal(t)) return 0;
@@ -2727,6 +2737,8 @@ class Hero extends Unit {
       return { x: this.x + (pick.x - this.x) * k, y: this.y + (pick.y - this.y) * k };
     }
     if (!s.stopOnHero) return t;
+    // F29 (Brass's hint): the guard's shoulder goes at whoever is on an ally
+    if (s.botGuardAlly) { const g = this.guardTarget(s.dist); if (g) return g; }
     let best = null, bh = Infinity;
     for (const e of Game.heroes) {
       if (e.team === this.team || !e.alive || e.untargetable || !e.ranged || !Game.canSee(this.team, e)) continue;
@@ -2735,6 +2747,26 @@ class Hero extends Unit {
       if (e.hpPct < bh) { bh = e.hpPct; best = e; }
     }
     return best || t;
+  }
+  /* F29 (Brass's hint): the visible enemy hero between `minD` and `reach`
+     away who is attacking one of our other heroes (its current target),
+     lowest HP first. */
+  guardTarget(reach, minD = 150) {
+    let best = null, bh = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+      const ct = e.curTarget;
+      if (!ct || ct.type !== 'hero' || ct.team !== this.team || ct === this || !ct.alive) continue;
+      const d = this.distTo(e);
+      if (d > reach || d <= minD || e.hpPct >= bh) continue;
+      bh = e.hpPct; best = e;
+    }
+    return best;
+  }
+  /* Another allied hero alive within `r`. */
+  allyWithin(r) {
+    for (const a of Game.heroes) if (a !== this && a.team === this.team && a.alive && this.distTo(a) <= r) return true;
+    return false;
   }
 
   botFireSkill(i, t, d, isHero, farmOk) {
@@ -2847,10 +2879,19 @@ class Hero extends Unit {
     const order = [0, 1, 2];
     order.sort((a, b) => this.botSkillUrgency(b, t, d, isHero, farmOk) -
       this.botSkillUrgency(a, t, d, isHero, farmOk));
+    /* Ult mana reserve. A mana hero whose ultimate is learned and ready keeps
+       its cost in the bar during a hero fight: a routine (sub-700) cast that
+       would dip under it is skipped. Measured on Brass, the 120-mana Call to
+       the Rim was affordable at 0 of 18 crowd moments in a match because
+       Buckler and Shoulder had drained the 210 pool first. */
+    const ult = this.skills[2];
+    const reserve = (isHero && ult && this.usesMana() && !ult.hpCost && this.skillRank[2] >= 1 && this.skillCd[2] <= 0)
+      ? this.costOf(ult, this.skillRank[2]) : 0;
     for (const i of order) {
       const urgency = this.botSkillUrgency(i, t, d, isHero, farmOk);
       if (urgency <= 0) continue;
       if (urgency < 700 && Math.random() > p.castChance) continue;
+      if (i !== 2 && reserve && urgency < 700 && this.mana - this.costOf(this.skills[i], this.skillRank[i]) < reserve) continue;
       this.botFireSkill(i, t, d, isHero, farmOk);
     }
   }

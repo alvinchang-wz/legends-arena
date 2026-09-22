@@ -767,7 +767,12 @@ const Icons = (() => {
   GLYPHS['skill:rook:2'] = g => { path(g, [[50, 12], [66, 40], [50, 32], [34, 40]]); g.fillStyle = '#fb7185'; g.fill(); spark4(g, 50, 70, 12, '#fecdd3'); };
   GLYPHS['skill:brass:0'] = g => { ring(g, 50, 50, 26, 10, '#d97706'); };
   GLYPHS['skill:brass:1'] = g => { arrow(g, 16, 50, 84, 50, 8, '#fbbf24', 2); };
-  GLYPHS['skill:brass:2'] = g => { path(g, [[50, 16], [78, 32], [78, 68], [50, 84], [22, 68], [22, 32]]); g.lineWidth = 5; g.strokeStyle = '#d97706'; g.stroke(); };
+  GLYPHS['skill:brass:2'] = g => {                                // Call to the Rim: everyone is pulled to the buckler
+    ring(g, 50, 50, 40, 4, 'rgba(217,119,6,0.35)');
+    for (let i = 0; i < 6; i++) rot(g, 50, 50, i / 6 * T2, () => arrow(g, 0, -44, 0, -26, 4, '#fbbf24', 2));
+    ring(g, 50, 50, 16, 8, '#d97706'); ring(g, 50, 50, 16, 3, '#fde68a');
+    dot(g, 50, 50, 5, '#fde68a');
+  };
   GLYPHS['skill:omen:0'] = g => { rot(g, 50, 50, 0.4, () => blade(g, 0, 0, 50, 10, '#e2e8f0', '#64748b', '#0f172a')); rot(g, 50, 50, -0.4, () => blade(g, 0, 0, 50, 10, '#f8fafc', '#94a3b8', '#0f172a')); };
   GLYPHS['skill:omen:1'] = g => { arrow(g, 16, 62, 84, 38, 6, '#94a3b8', 2); };
   GLYPHS['skill:omen:2'] = g => { arrow(g, 14, 70, 86, 30, 8, '#e2e8f0', 2.2); tri(g, 50, 50, 8, -0.5, '#64748b'); };

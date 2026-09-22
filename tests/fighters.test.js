@@ -160,4 +160,105 @@ T.test("Torren bot: War Leap lands short of the lowest-HP-percent hero within 34
   assert.equal(torren.botSkillUrgency(2, tide, torren.distTo(tide), true, false), 880, 'two heroes inside 260');
 });
 
+/* ---------------- Brass ---------------- */
+
+T.test('Brass: base stats and skill numbers match the spec; Rimguard takes 10% less from enemy heroes only', () => {
+  reset();
+  const d = brass.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [720, 98, 210, 22, 55, 6.0, 22, 3.3, 16, 2.5, 105, 0.95, 252]);
+  const [s1, s2, s3] = brass.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAd, s1.selfShieldPct, s1.selfShieldDur, s1.slowPct],
+    ['nova', 7, -0.3, 45, 3, 200, 120, 14, 0.55, 0.06, 3, undefined]);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAd, s2.stopOnHero, s2.stun],
+    ['dash', 12, -0.5, 60, 340, 900, 100, 12, 0.5, true, 0.6]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.radius, s3.dmg, s3.scaleAd, s3.taunt, s3.armorAdd, s3.mrAdd, s3.buffDur],
+    ['nova', [44, 40, 36], 120, 260, [220, 290, 360], 0.7, [0.8, 1.0, 1.2], 30, 30, 4]);
+  assert.equal(rankVal(s1, 'mana', 6), 60); assert.equal(rankVal(s1, 'dmg', 6), 190);
+  T.place(brass, open.x, open.y); T.place(karn, open.x + 200, open.y);
+  // a hero's 100 lands as 90, a creep's as 100 (the target-side hook resolveDamage calls)
+  assert.equal(brass.onIncomingDamage(karn, 100, { type: 'true' }), 90, 'Rimguard vs a hero');
+  const m = G.minions.find(x => x.alive && x.team === 1) || { type: 'minion', team: 1 };
+  assert.equal(brass.onIncomingDamage(m, 100, { type: 'true' }), 100, 'a creep hits full');
+});
+
+T.test('Brass: Buckler hits everything within 200 with no slow and shields him for 6% max HP for 3 s', () => {
+  reset();
+  T.place(brass, open.x, open.y); T.place(karn, open.x + 180, open.y); T.place(tide, open.x - 300, open.y);
+  assert.ok(brass.castSkill(0, karn));
+  assert.ok(karn.hp < karn.maxHp, 'in radius: hit'); assert.equal(tide.hp, tide.maxHp, 'outside 200: not');
+  assert.ok(!karn.cc.has('slow'), 'no slow');
+  assert.equal(brass.shields.length, 1);
+  assert.ok(Math.abs(brass.shields[0].amount - brass.maxHp * 0.06) < 1, `6% max HP: ${brass.shields[0].amount}`);
+  assert.ok(Math.abs(brass.shields[0].t - 3) < 1e-9, 'for 3 s');
+  assert.equal(brass.mana, brass.maxMana - 60, 'rank-6 cost 60');
+});
+
+T.test('Brass: Shoulder stops on the first hero and stuns 0.6 s; Call to the Rim taunts everyone within 260 for 1.2 s and gives +30 armor / MR for 4 s', () => {
+  reset();
+  T.place(brass, open.x, open.y); T.place(karn, open.x + 200, open.y); T.place(tide, open.x + 330, open.y);
+  assert.ok(brass.castSkill(1, tide));
+  T.seconds(G, 0.15);
+  assert.ok(karn.cc.t.stun > 0.45 && karn.cc.t.stun <= 0.6, `stun 0.6: ${karn.cc.t.stun}`);
+  T.seconds(G, 0.35);
+  assert.equal(tide.hp, tide.maxHp, 'stopped on Karn, never reached Tide');
+  assert.ok(brass.x < open.x + 200, `stopped at the first hero: ${brass.x - open.x}`);
+  // the taunt
+  reset();
+  T.place(brass, open.x, open.y); T.place(karn, open.x + 220, open.y); T.place(tide, open.x, open.y - 200); T.place(vesper, open.x + 500, open.y);
+  const armor0 = brass.armorValue(), mr0 = brass.mrValue();
+  assert.ok(brass.castSkill(2, karn));
+  assert.equal(brass.skillCd[2], 36); assert.equal(brass.mana, brass.maxMana - 120);
+  for (const v of [karn, tide]) {
+    assert.ok(v.hp < v.maxHp, `${v.name} struck`);
+    assert.ok(Math.abs(v.cc.t.taunt - 1.2) < 1e-9, `${v.name} taunted 1.2 s: ${v.cc.t.taunt}`);
+    assert.ok(v.forced && v.forced.mode === 'taunt' && v.forced.src === brass, `${v.name} walks at Brass`);
+  }
+  assert.equal(vesper.hp, vesper.maxHp, 'outside 260');
+  assert.ok(!vesper.cc.has('taunt'));
+  assert.equal(brass.armorValue(), armor0 + 30, '+30 armor'); assert.equal(brass.mrValue(), mr0 + 30, '+30 MR');
+  assert.ok(Math.abs(brass.buffs.armor.t - 4) < 1e-9, 'for 4 s');
+  // the victim closes in on Brass and swings at him
+  const dk = karn.distTo(brass);
+  T.seconds(G, 0.6);
+  assert.ok(karn.distTo(brass) < dk - 40 && karn.inAttackRange(brass), `Karn walked into reach of Brass: ${dk} -> ${karn.distTo(brass)}`);
+  assert.equal(karn.curTarget, brass);
+  // Purify refuses it
+  tide.cc.purify(1);
+  assert.ok(!tide.cc.has('taunt') && !tide.forced, 'Purify ends the taunt');
+  // tenacity shortens it
+  reset();
+  T.place(brass, open.x, open.y); T.place(karn, open.x + 200, open.y);
+  karn.addTimedBuff('tenacity', 0.5, 5);
+  brass.castSkill(2, karn);
+  assert.ok(Math.abs(karn.cc.t.taunt - 0.6) < 1e-9, `50% tenacity: ${karn.cc.t.taunt}`);
+  karn.buffs.tenacity = null; karn.recalcStats(false);
+});
+
+T.test('Brass bot: Shoulder goes at the enemy hero attacking an allied hero within 340; Call to the Rim wants 2+ heroes inside 240 and an ally within 400', () => {
+  reset();
+  T.place(brass, open.x, open.y); T.place(zephyr, open.x - 250, open.y);
+  T.place(karn, open.x + 260, open.y); T.place(tide, open.x + 200, open.y + 200);
+  karn.hp = karn.maxHp * 0.5;
+  tide.curTarget = zephyr;      // Tide is on the marksman
+  assert.equal(brass.dashPick(brass.skills[1], karn), tide, 'the shoulder answers whoever is on the ally');
+  assert.equal(brass.botSkillUrgency(1, karn, brass.distTo(karn), true, false), 800);
+  tide.curTarget = null;
+  assert.ok(brass.botSkillUrgency(1, karn, brass.distTo(karn), true, false) < 800, 'nobody on an ally: the ordinary dash rule');
+  // the ult: one hero inside 260 is not a crowd, even with the taunt...
+  T.place(zephyr, open.x - 700, open.y);
+  T.place(tide, open.x - 600, open.y);
+  assert.equal(brass.botSkillUrgency(2, karn, brass.distTo(karn), true, false), 0, 'one healthy hero inside, on nobody');
+  // ...unless it is on an ally who is close enough to protect
+  karn.curTarget = zephyr;
+  assert.equal(brass.botSkillUrgency(2, karn, brass.distTo(karn), true, false), 0, 'the ally is 700 away');
+  T.place(zephyr, open.x - 350, open.y);
+  assert.equal(brass.botSkillUrgency(2, karn, brass.distTo(karn), true, false), 820, 'on an ally within 400');
+  karn.curTarget = null;
+  // two heroes inside 260 is the crowd it is for
+  T.place(tide, open.x - 200, open.y);
+  T.place(karn, open.x + 230, open.y);
+  assert.equal(brass.botSkillUrgency(2, karn, brass.distTo(karn), true, false), 880, 'two inside 260');
+});
+
 T.done();

@@ -429,11 +429,20 @@ const UI = {
   /* short effect chips: crowd control, buffs, quirks */
   skillTags(s) {
     const t = [];
+    const fmt = v => Array.isArray(v) ? v.join('/') : v;   // per-rank arrays (F1)
     for (const k of CC_PRIORITY) {
       if (k === 'slow' || !s[k]) continue;
-      t.push(`${CC_TYPES[k].icon} ${CC_TYPES[k].label} ${s[k]}s`);
+      t.push(`${CC_TYPES[k].icon} ${CC_TYPES[k].label} ${fmt(s[k])}s`);
     }
     if (s.knockback) t.push(`↞ Knocks back ${s.knockback}`);
+    if (s.wallStun) t.push(`Wall hit: +${s.wallDmg || 0} dmg, stun ${s.wallStun}s`);
+    if (s.selfShieldPct) t.push(`Self shield ${Math.round(s.selfShieldPct * 100)}% max HP`);
+    if (s.armorAdd || s.mrAdd) t.push(`+${s.armorAdd || 0} Armor / +${s.mrAdd || 0} MR`);
+    if (s.resetOnKill) t.push(`Kill refunds ${Math.round(s.resetOnKill * 100)}%${s.resetOnAssist ? `, assist ${Math.round(s.resetOnAssist * 100)}%` : ''}`);
+    if (s.canCrit) t.push('Can crit');
+    if (s.selfMissingPct || s.selfMissingBonus) t.push('Scales with own missing HP');
+    if (s.bonusVsMark) t.push(`+${Math.round((s.bonusVsMark.mult - 1) * 100)}% vs ${s.bonusVsMark.tag}`);
+    if (s.overheat) t.push('Overheats at 100 Heat');
     if (s.physPenPct) t.push(`Ignores ${Math.round(s.physPenPct * 100)}% Armor`);
     if (s.shieldPct) t.push(`Shield ${Math.round(s.shieldPct * 100)}% max HP`);
     if (s.tenacityAdd) t.push(`+${Math.round(s.tenacityAdd * 100)}% Tenacity`);
