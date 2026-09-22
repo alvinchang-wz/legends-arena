@@ -194,10 +194,45 @@ const ItemAI = {
      them explicitly beats hoping the two vocabularies stay in step. */
   STYLE_TAG: { physical: 'phys', magic: 'magic' },
 
+  /* Consumables and wards are useful, but they occupy a build slot each, and
+     a bot with gold in hand buys whatever it can afford right now: six
+     75-220 gold trinkets are affordable long before the first 1,150 gold
+     stat item is, so bots used to fill all six slots with potions and wards
+     by 3:00 and then bank the rest of the match's income (measured: 5.67 of
+     6 slots consumable, 4,070 gold unspent per hero). One slot, and only
+     when the gold is not needed for the item being saved for. */
+  CONSUMABLE_SLOTS: 1,
+  isConsumable(item) {
+    return !!(item.tags && (item.tags.includes('consumable') || item.tags.includes('ward')));
+  },
+  consumableCount(hero) {
+    let n = 0;
+    for (const i of hero.items) if (this.isConsumable(i)) n++;
+    return n;
+  },
+
+  /* What a hero is building toward, in order. Boots first — 40 movement is
+     worth more than any single stat at three minutes — then the role's own
+     shape: carries buy damage, front-liners buy the resist that is being
+     used against them. The tags are matched against ITEM_DEFS, so a new
+     item slots into the plan without editing this table. */
+  PLAN: {
+    Marksman: ['boots', 'damage', 'crit', 'speed', 'sustain', 'pen', 'defense'],
+    Mage:     ['boots', 'damage', 'pen', 'cdr', 'sustain', 'defense'],
+    Assassin: ['boots', 'damage', 'pen', 'sustain', 'crit', 'defense'],
+    Fighter:  ['boots', 'damage', 'sustain', 'hp', 'defense', 'pen'],
+    Tank:     ['boots', 'hp', 'defense', 'support', 'cdr', 'damage'],
+    Support:  ['boots', 'support', 'hp', 'defense', 'cdr', 'damage'],
+  },
+
   score(item, hero) {
-    if (item.tags && (item.tags.includes('consumable') || item.tags.includes('ward'))) {
+    if (this.isConsumable(item)) {
       if (hero.items.some(i => i.id === item.id)) return -Infinity;
-      if (item.id === 'hpPotion' && hero.hpPct < 0.42) return 35;
+      if (this.consumableCount(hero) >= this.CONSUMABLE_SLOTS) return -Infinity;
+      // one slot, and a potion only while it would actually be drunk
+      if (item.id === 'hpPotion') return hero.level < 6 ? 30 : 10;
+      if (item.id === 'flask') return 18;
+      if (item.id === 'stealthWard') return 12;
       return -40;
     }
     const mine = this.STYLE_TAG[hero.def0.damageStyle] || 'phys';
@@ -210,10 +245,21 @@ const ItemAI = {
     if (item.tags.includes(mine)) s += 110;
     if (item.tags.includes(other)) s -= 90;
 
+    /* The role's build order: every step still on the list is worth more
+       than the ones after it, so a marksman finishes boots, then damage,
+       then crit, rather than re-scoring the whole shop each time. */
+    const plan = this.PLAN[hero.def0.role] || this.PLAN.Fighter;
+    const done = tag => hero.items.some(i => i.tags && i.tags.includes(tag));
+    for (let i = 0; i < plan.length; i++) {
+      if (done(plan[i])) continue;
+      if (item.tags.includes(plan[i])) s += 220 - i * 22;
+      break;                              // only the next unfinished step pays
+    }
+
     // exactly one pair of boots, bought early
     if (item.cat === 'Boots') {
       if (hero.items.some(i => i.cat === 'Boots')) return -Infinity;
-      s += 130 - hero.items.length * 20;
+      s += 200 - hero.items.length * 20;
     }
 
     // buy the resist that is actually being used against you
@@ -262,15 +308,30 @@ const ItemAI = {
   },
 
   /* Buy at most one item per call. Bots only shop at their own fountain,
-     which is what makes recalling a real decision for them too. */
+     which is what makes recalling a real decision for them too.
+
+     The gold check is the important part: a bot buys the affordable item
+     only when it is the one it is building toward, or when it is a cheap
+     consumable and the real item is still out of reach anyway. Otherwise it
+     saves. Spending 300 on a component the plan does not want is how six
+     slots filled with trinkets. */
   tryBuy(hero) {
     if (hero.items.length >= ITEM_SLOTS) return false;
     // being dead means being at the fountain: buy on the respawn timer too
     if (Game.isDuel() || (hero.alive && dist(hero, Game.fountain(hero.team)) > 380)) return false;
-    const best = this.recommend(hero, true);
-    if (!best) return false;
-    hero.buyItem(best);
-    return true;
+    const want = this.recommend(hero, false);
+    if (want && hero.gold >= want.cost) { hero.buyItem(want); return true; }
+    const affordable = this.recommend(hero, true);
+    if (!affordable) return false;
+    // a trinket only while the real item is still more than one wave away
+    if (this.isConsumable(affordable)) {
+      if (!want || hero.gold > want.cost * 0.75) return false;
+      if (this.consumableCount(hero) >= this.CONSUMABLE_SLOTS) return false;
+      if (hero.items.length >= ITEM_SLOTS - 1) return false;
+      hero.buyItem(affordable);
+      return true;
+    }
+    return false;
   },
 };
 
