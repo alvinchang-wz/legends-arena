@@ -585,19 +585,21 @@ const Icons = (() => {
       ring(g, 50, 78, r, 4.4, `rgba(251,191,36,${a})`, Math.PI * 1.08, Math.PI * 1.92);
     }
   };
-  GLYPHS['skill:karn:2'] = g => {                                 // Groundbreaker
-    for (let i = 0; i < 6; i++) {
-      rot(g, 50, 52, i / 6 * T2 + 0.26, () => {
-        g.beginPath(); g.moveTo(0, -12);
-        g.lineTo(-4, -22); g.lineTo(2, -30); g.lineTo(-2, -40);
-        g.lineWidth = 4; g.strokeStyle = '#f59e0b'; g.lineJoin = 'round'; g.stroke();
+  GLYPHS['skill:karn:2'] = g => {                                 // Gaol: chains from the warden to everyone around
+    ring(g, 50, 50, 42, 3, 'rgba(251,191,36,0.3)');
+    for (let i = 0; i < 4; i++) {
+      rot(g, 50, 50, i / 4 * T2 + Math.PI / 4, () => {
+        for (const y of [-16, -26, -36]) {
+          g.beginPath(); g.ellipse(0, y, 4.2, 6.5, 0, 0, T2);
+          g.lineWidth = 3; g.strokeStyle = '#b45309'; g.stroke();
+          g.beginPath(); g.ellipse(0, y, 4.2, 6.5, 0, 0, T2);
+          g.lineWidth = 1.4; g.strokeStyle = '#fde68a'; g.stroke();
+        }
+        ring(g, 0, -44, 5, 3, '#fbbf24');
       });
     }
-    for (let i = 0; i < 3; i++) {
-      rot(g, 50, 52, i / 3 * T2 + Math.PI / 6, () => tri(g, 0, -44, 7.5, -Math.PI / 2, '#fde68a'));
-    }
-    dot(g, 50, 52, 12, '#b45309');
-    ring(g, 50, 52, 12, 3.4, '#fde68a');
+    dot(g, 50, 50, 11, '#b45309');
+    ring(g, 50, 50, 11, 3.2, '#fde68a');
   };
 
   /* ---------------- new roster portraits ---------------- */

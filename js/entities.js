@@ -936,6 +936,8 @@ class Hero extends Unit {
       dealt = resolveDamage(this, u, pkt);
     }
     if (!(o && o.noCC)) applySkillCC(this, u, s, rank, o);
+    // markOnHit: a timestamp mark (marks[tag + 'At']) another skill's bonusVsMark reads (Karn's hook)
+    if (s.markOnHit && u.marks && !u.isStructure) u.marks[s.markOnHit + 'At'] = Game.time;
     if (s.applyMark) applyMark(this, u, s, rank, o);
     if (s.consumeMark) consumeMark(this, u, s, rank);
     if (s.refreshMark) refreshMark(this, u, s.refreshMark);
@@ -2539,6 +2541,7 @@ class Hero extends Unit {
       // botExecuteHp: the skill's own execute threshold (Omen's End at 60%)
       if (t.hpPct > (s.botExecuteHp || p.ultExecuteHp) && crowd < 2 && !ownLow &&
           !(s.botAllyEngaged && this.allyEngagedNear(t)) &&   // F29 (Omen's hint): an ally has engaged
+          !(s.tether && s.tether.multi && this.gaolCrowd(s).leaving) &&   // F29 (Karn's hint): someone is leaving
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2547,6 +2550,12 @@ class Hero extends Unit {
       case 'skillshot':
         if (d >= s.range * 0.95 || !(isHero || farmOk)) return 0;
         if (s.heroOnly && !isHero) return 0;   // F20: it flies straight through creeps
+        if (s.hook) {     // F29 (Karn's hint): only an unblocked, isolated hero, carries first
+          if (!isHero) return 0;
+          const pick = this.hookPick(s);
+          if (!pick) return 0;
+          return this.unitLockedDown(pick) ? 500 : 840;
+        }
         if (s.tether) {   // F16 / F29 (Anchor's hint): heroes only, inside botRange, no creep on the line, one at a time
           if (!isHero || d >= (s.botRange || s.range * 0.95) || this.liveTether()) return 0;
           const pick = this.tetherPick(s, t);
@@ -2570,6 +2579,8 @@ class Hero extends Unit {
         }
         if (near >= 2) return 880;
         if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
+        // F29 (Karn's hint): Iron Slam straight after a hook, while the mark's bonus still applies
+        if (s.bonusVsMark && this.markedHeroInside(s)) return 900;
         // F29 (Brass's hint): a crowd tool waits for 2+ heroes inside, or one hero inside who is on an
         // ally (botAllyWithin: with that ally close enough to matter)
         if (s.botCrowd) {
@@ -2621,7 +2632,15 @@ class Hero extends Unit {
       case 'tether': {   // F16: chain a hero in reach
         if (!isHero) return 0;
         const tt = s.tether || {};
-        const reach = tt.multi ? tt.multi.radius : (s.targetRange || s.range || 500);
+        if (tt.multi) {
+          /* F29 (Karn's hint): Gaol on 2+ heroes inside botRadius (300), best when
+             one of them is already retreating; a lone hero who is leaving is
+             chained too (nobody leaves), a crowd not leaving yet is still worth it */
+          const g = this.gaolCrowd(s);
+          if (g.n >= 2) return g.leaving ? 880 : 720;
+          return g.leaving ? 840 : 0;
+        }
+        const reach = s.targetRange || s.range || 500;
         if (d >= reach) return 0;
         return locked ? 500 : 640;
       }
@@ -2790,6 +2809,53 @@ class Hero extends Unit {
     }
     return false;
   }
+  /* F29 (Karn's hint): the hero a hook should go at — visible, inside 95% of
+     the range, past 120, no creep on the line, isolated (no second enemy
+     hero within 400 of it); marksmen and mages first, then the lowest HP.
+     Null when nobody qualifies: the hook is held. */
+  hookPick(s) {
+    const reach = (s.range || 600) * 0.95;
+    let best = null, bc = -1, bh = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+      const d = this.distTo(e);
+      if (d >= reach || d <= 120 || this.lineBlocked(e, s)) continue;
+      let alone = true;
+      for (const o of Game.heroes) if (o !== e && o.team === e.team && o.alive && o.distTo(e) < 400) { alone = false; break; }
+      if (!alone) continue;
+      const role = e.def0 && e.def0.role;
+      const carry = role === 'Marksman' || role === 'Mage' ? 1 : 0;
+      if (carry > bc || (carry === bc && e.hpPct < bh)) { bc = carry; bh = e.hpPct; best = e; }
+    }
+    return best;
+  }
+  /* F29 (Karn's hint): the enemy heroes inside a multi tether's botRadius
+     (else its radius) and how many of them are leaving: moving away faster
+     than 40 u/s, or a bot that has decided to retreat or flee. */
+  gaolCrowd(s) {
+    const tt = s.tether || {};
+    const r = s.botRadius || (tt.multi && tt.multi.radius) || 320;
+    let n = 0, leaving = 0;
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive || h.untargetable) continue;
+      const dx = h.x - this.x, dy = h.y - this.y, dd = Math.sqrt(dx * dx + dy * dy);
+      if (dd >= r) continue;
+      n++;
+      if ((h.vx || 0) * dx + (h.vy || 0) * dy > 40 * dd || h.aiState === 'retreat' || h.fleeT > 0) leaving++;
+    }
+    return { n, leaving };
+  }
+  /* F29 (Karn's hint): an enemy hero inside the nova whose bonusVsMark mark
+     is still fresh (a hook landed within `within` seconds). */
+  markedHeroInside(s) {
+    const b = s.bonusVsMark;
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive || !h.marks || this.distTo(h) >= s.radius + h.radius) continue;
+      const at = h.marks[b.tag + 'At'];
+      if (at !== undefined && Game.time - at <= (b.within || 0)) return h;
+    }
+    return null;
+  }
   /* F29 (Omen's hint): within 3 s of a hero kill or assist, the lowest-HP
      visible enemy hero between 60 and `reach` away; null otherwise. */
   chainTarget(reach) {
@@ -2808,7 +2874,7 @@ class Hero extends Unit {
     const s = this.skills[i];
     switch (s.type) {
       case 'skillshot': {
-        const at = s.tether ? this.tetherPick(s, t) : t;
+        const at = s.tether ? this.tetherPick(s, t) : s.hook ? (this.hookPick(s) || t) : t;
         this.castSkill(i, Game.aimLeadPoint(this, at, s.speed));
         break;
       }
@@ -4136,6 +4202,8 @@ class Tether {
     this.dead = true;
     if (this.onBreak) this.onBreak(this);
   }
+  /* End it without the break payload (a Purify, the caster's death). */
+  release() { this.dead = true; }
   update(dt) {
     if (this.dead) return;
     const a = this.src, b = this.target;

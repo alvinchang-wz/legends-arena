@@ -59,7 +59,7 @@ T.test('F16: a tether breaks past breakRange and fires onBreak, not onComplete',
   assert.equal(broke, 1);
 });
 
-T.test('F16: a hostile tether snaps when its source is stunned unless anchored; the target Purifying snaps it', () => {
+T.test('F16: a hostile tether snaps when its source is stunned unless anchored; the target Purifying releases it without the break payload', () => {
   reset();
   let broke = 0;
   G.addTether({ src: grom, target: tide, hostile: true, t: 3, onBreak() { broke++; } });
@@ -69,7 +69,7 @@ T.test('F16: a hostile tether snaps when its source is stunned unless anchored; 
   assert.equal(broke, 1, 'the unanchored chain snapped, the anchored one held');
   assert.equal(G.tethers.length, 1);
   mira.cc.purify(1);
-  assert.equal(broke, 11, 'Purify on the target snaps even an anchored chain');
+  assert.equal(broke, 1, 'Purify on the target releases even an anchored chain, quietly (Gaol is beaten, not triggered)');
   assert.equal(G.tethers.filter(t => !t.dead).length, 0);
   grom.cc.clear(); mira.cc.immuneT = 0;
 });

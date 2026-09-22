@@ -379,4 +379,154 @@ T.test("Omen bot: Duelist's End on a hero under 60% or when an ally has engaged;
   omen.aiState = 'push'; omen.recallT = 0; omen.hp = omen.maxHp;
 });
 
+/* ---------------- Karn ---------------- */
+
+T.test('Karn: base stats and skill numbers match the spec; Ironclad grants 4 armor per hero hit taken (5 plates) and basics cut 0.5 s off cooldowns', () => {
+  reset();
+  const d = karn.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [700, 96, 240, 26, 58, 6.4, 21, 3.0, 16, 2.5, 100, 0.90, 255]);
+  const [s1, s2, s3] = karn.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAd, s1.range, s1.speed, s1.radius, s1.pierce, s1.hook, s1.suppress, s1.markOnHit],
+    ['skillshot', 13, -0.5, 80, 5, 110, 14, 0.5, 640, 850, 26, false, true, 0.6, 'hooked']);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.radius, s2.dmg, s2.dmgLv, s2.scaleAd, s2.slowPct, s2.slowDur, s2.bonusVsMark],
+    ['nova', 8, -0.4, 50, 240, 140, 17, 0.7, 0.4, 1.2, { tag: 'hooked', within: 2, mult: 1.5 }]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.tether.multi.radius, s3.tether.dur, s3.tether.breakRange, s3.tether.anchored, s3.tether.breakPayload],
+    ['tether', [44, 40, 36], 120, 320, 2.5, 450, true, { dmg: [260, 340, 420], scaleAd: 1.0, stun: 1.0 }]);
+  assert.ok(Math.abs(karn.cooldownFor(s1, 6) - 10.5) < 1e-9); assert.equal(rankVal(s1, 'mana', 6), 105);
+  T.place(karn, open.x, open.y); T.place(torren, open.x + 150, open.y);
+  const armor0 = karn.armorValue();
+  karn.onIncomingDamage(torren, 10, {}); karn.recalcStats(false);
+  assert.equal(karn.armorValue(), armor0 + 4, '+4 armor per plate');
+  for (let i = 0; i < 6; i++) karn.onIncomingDamage(torren, 10, {});
+  karn.recalcStats(false);
+  assert.equal(karn.armorValue(), armor0 + 20, 'five plates at most');
+  karn.skillCd = [5, 5, 5];
+  karn.onBasicLanded(torren, 10);
+  assert.deepEqual(karn.skillCd, [4.5, 4.5, 4.5]);
+});
+
+T.test('Karn: Chain Hook stops on the first body, reels a hero in under a 0.6 s suppression and marks it; Iron Slam within 2 s does +50%', () => {
+  reset();
+  T.place(karn, open.x, open.y); T.place(zephyr, open.x + 500, open.y);
+  assert.ok(karn.castSkill(0, zephyr));
+  assert.equal(karn.mana, karn.maxMana - 105, 'rank-6 cost');
+  let n = 0;
+  while (!(zephyr.forced && zephyr.forced.mode === 'hook') && n++ < 60) G.update(1 / 60);
+  assert.ok(zephyr.forced && zephyr.forced.mode === 'hook', 'hooked');
+  assert.ok(zephyr.cc.has('suppress') && zephyr.cc.t.suppress <= 0.6, `suppressed 0.6: ${zephyr.cc.t.suppress}`);
+  assert.equal(zephyr.marks.hookedAt, G.time, 'the hook mark');
+  const before = zephyr.hp;
+  T.seconds(G, 0.5);
+  assert.ok(zephyr.distTo(karn) < 120, `reeled in: ${zephyr.distTo(karn)}`);
+  // Iron Slam: 1.5x while the mark is fresh
+  const s2 = karn.skills[1];
+  const plain = karn.skillDmg(s2, 6);
+  assert.ok(Math.abs(karn.skillDmg(s2, 6, zephyr) - plain * 1.5) < 1e-6, 'hooked within 2 s: +50%');
+  assert.ok(Math.abs(karn.skillDmg(s2, 6, torren) - plain) < 1e-9, 'an unhooked target: normal');
+  zephyr.marks.hookedAt = G.time - 2.5;
+  assert.ok(Math.abs(karn.skillDmg(s2, 6, zephyr) - plain) < 1e-9, 'past 2 s: normal');
+  assert.ok(zephyr.hp < before || zephyr.hp < zephyr.maxHp, 'the hook itself hurt');
+  // a creep on the line takes the hook instead
+  reset();
+  T.place(karn, open.x, open.y); T.place(zephyr, open.x + 500, open.y);
+  const m = new sim.context.Minion(0, 'mid', 'melee');
+  T.place(m, open.x + 250, open.y); G.minions.push(m);
+  m.update = () => {};   // a creep standing still on the line
+  assert.ok(karn.castSkill(0, zephyr));
+  T.seconds(G, 0.8);
+  assert.ok(m.hp < m.maxHp, 'the creep took the hook');
+  assert.equal(zephyr.hp, zephyr.maxHp, 'the hero behind it was not touched');
+  assert.ok(!zephyr.forced, 'and not dragged');
+  m.alive = false; G.minions.splice(G.minions.indexOf(m), 1);
+});
+
+T.test('Karn: Gaol chains every hero within 320 for 2.5 s; crossing 450 snaps the chain for 420 (+100% ATK) and a 1 s stun; staying costs nothing; a stun on Karn does not cut it; Purify releases it', () => {
+  reset();
+  T.place(karn, open.x, open.y); T.place(zephyr, open.x + 300, open.y); T.place(torren, open.x - 250, open.y); T.place(brass, open.x, open.y + 600);
+  assert.ok(karn.castSkill(2, zephyr));
+  assert.equal(karn.skillCd[2], 36); assert.equal(karn.mana, karn.maxMana - 120);
+  const chains = G.tethers.filter(t => !t.dead && t.src === karn);
+  assert.equal(chains.length, 2, 'two heroes inside 320 chained');
+  assert.ok(chains.every(t => t.anchored && t.multi && Math.abs(t.t - 2.5) < 1e-9 && t.breakRange === 450));
+  assert.ok(!chains.some(t => t.target === brass), 'outside 320: free');
+  assert.equal(zephyr.hp, zephyr.maxHp, 'the chain itself does no damage');
+  // a stun on Karn does not cut the chains (anchored)
+  karn.cc.apply('stun', 0.3, 0);
+  G.update(1 / 60);
+  assert.equal(G.tethers.filter(t => !t.dead && t.src === karn).length, 2);
+  // Zephyr walks out past 450: struck and stunned
+  const expect = Math.round((420 + karn.curAtk() * 1.0) * G.rules.COMBAT.SKILL_DMG);
+  T.place(zephyr, open.x + 470, open.y);
+  G.update(1 / 60);
+  assert.ok(zephyr.hp < zephyr.maxHp, 'snapped');
+  assert.ok(Math.abs((zephyr.maxHp - zephyr.hp) - expect * G.rules.COMBAT.DEF_K / (G.rules.COMBAT.DEF_K + zephyr.armorValue())) < 2, `420 (+100% ATK) physical: ${zephyr.maxHp - zephyr.hp}`);
+  assert.ok(Math.abs(zephyr.cc.t.stun - 1.0) < 1e-9, `stun 1.0: ${zephyr.cc.t.stun}`);
+  // Torren stays: the chain ends quietly at 2.5 s
+  T.seconds(G, 2.6);
+  assert.equal(G.tethers.filter(t => !t.dead && t.src === karn).length, 0, 'over');
+  assert.equal(torren.hp, torren.maxHp, 'staying costs nothing');
+  assert.ok(!torren.cc.has('stun'));
+  // Purify releases the chain without the payload
+  reset();
+  T.place(karn, open.x, open.y); T.place(zephyr, open.x + 300, open.y);
+  karn.castSkill(2, zephyr);
+  zephyr.cc.purify(1);
+  assert.equal(G.tethers.filter(t => !t.dead && t.src === karn).length, 0, 'released');
+  T.place(zephyr, open.x + 600, open.y);
+  G.update(1 / 60);
+  assert.equal(zephyr.hp, zephyr.maxHp, 'no break payload after a Purify');
+  zephyr.cc.immuneT = 0;
+  // Karn dying ends the chains quietly
+  reset();
+  T.place(karn, open.x, open.y); T.place(zephyr, open.x + 300, open.y);
+  karn.castSkill(2, zephyr);
+  karn.hp = 0; karn.die(null);
+  T.place(zephyr, open.x + 600, open.y);
+  G.update(1 / 60);
+  assert.equal(zephyr.hp, zephyr.maxHp, 'chains die with Karn');
+  karn.alive = true; karn.hp = karn.maxHp; karn.respawnT = 0;
+});
+
+T.test('Karn bot: the hook waits for an unblocked, isolated hero (carries first); Iron Slam right after a hook; Gaol on 2+ heroes inside 300 with one leaving', () => {
+  reset();
+  T.place(karn, open.x, open.y); T.place(zephyr, open.x + 450, open.y); T.place(torren, open.x + 300, open.y + 250);
+  torren.hp = torren.maxHp * 0.3;
+  G.update(1 / 60);   // vision follows the placements
+  const s1 = karn.skills[0];
+  assert.equal(karn.hookPick(s1), null, 'Zephyr has Torren within 400: nobody is isolated');
+  assert.equal(karn.botSkillUrgency(0, zephyr, karn.distTo(zephyr), true, false), 0, 'the hook is held');
+  T.place(torren, open.x - 300, open.y + 250);
+  G.update(1 / 60);
+  assert.equal(karn.hookPick(s1), zephyr, 'both isolated: the marksman before the lower-HP fighter');
+  assert.equal(karn.botSkillUrgency(0, torren, karn.distTo(torren), true, false), 840, 'and the urgency follows the pick, not the target');
+  const m = new sim.context.Minion(0, 'mid', 'melee');
+  T.place(m, open.x + 220, open.y); G.minions.push(m);
+  m.update = () => {};
+  assert.equal(karn.hookPick(s1), torren, 'a creep on the line to Zephyr: Torren instead');
+  m.alive = false; G.minions.splice(G.minions.indexOf(m), 1);
+  // Iron Slam: 900 while a hooked hero is inside the ring
+  T.place(zephyr, open.x + 150, open.y);
+  G.update(1 / 60);
+  zephyr.marks.hookedAt = G.time;
+  assert.equal(karn.botSkillUrgency(1, zephyr, karn.distTo(zephyr), true, false), 900);
+  zephyr.marks.hookedAt = G.time - 3;
+  assert.ok(karn.botSkillUrgency(1, zephyr, karn.distTo(zephyr), true, false) < 900);
+  // Gaol: two inside 300, one of them moving away
+  T.place(torren, open.x - 200, open.y); torren.hp = torren.maxHp;
+  assert.equal(karn.botSkillUrgency(2, zephyr, karn.distTo(zephyr), true, false), 720, 'two inside, nobody leaving yet: worth chaining');
+  torren.vx = -200; torren.vy = 0;
+  assert.equal(karn.botSkillUrgency(2, zephyr, karn.distTo(zephyr), true, false), 880, 'Torren backing off: chain them');
+  T.place(torren, open.x - 310, open.y);
+  assert.equal(karn.botSkillUrgency(2, zephyr, karn.distTo(zephyr), true, false), 0, 'outside 300 does not count');
+  torren.vx = 0;
+  // a lone hero inside 300 who is running is chained too: nobody leaves
+  T.place(torren, open.x - 900, open.y);
+  zephyr.hp = zephyr.maxHp;
+  assert.equal(karn.botSkillUrgency(2, zephyr, karn.distTo(zephyr), true, false), 0, 'one hero standing his ground: hold');
+  zephyr.vx = 300;
+  assert.equal(karn.botSkillUrgency(2, zephyr, karn.distTo(zephyr), true, false), 840, 'one hero leaving: chain him');
+  zephyr.vx = 0;
+});
+
 T.done();

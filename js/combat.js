@@ -100,11 +100,12 @@ class CCState {
   purify(immuneFor = 0) {
     this.clear();
     this.immuneT = Math.max(this.immuneT, immuneFor);
-    // F16: a hostile tether on the purified unit snaps; F23: a taunt walk ends
+    // F16: a hostile tether on the purified unit is released (quietly: no break
+    // payload, so a Purify beats Karn's Gaol); F23: a taunt walk ends
     const o = this.owner;
     if (o) {
       if (o.forced && o.forced.mode === 'taunt') o.forced = null;
-      if (Game.tethers) for (const t of Game.tethers) if (!t.dead && t.hostile && t.target === o) t.snap();
+      if (Game.tethers) for (const t of Game.tethers) if (!t.dead && t.hostile && t.target === o) t.release();
     }
   }
   update(dt) {
@@ -651,7 +652,7 @@ const PASSIVES = {
         if (h.skillCd[i] > 0) h.skillCd[i] = Math.max(0, h.skillCd[i] - 0.5);
       }
     },
-    statMod(h) { return { armor: (h.pv ? h.pv.plates : 0) * 3 }; },
+    statMod(h) { return { armor: (h.pv ? h.pv.plates : 0) * 4 }; },
     tick(h, dt) {
       if (!h.pv) return;
       if (h.pv.plateT > 0) { h.pv.plateT -= dt; if (h.pv.plateT <= 0) h.pv.plates = 0; }

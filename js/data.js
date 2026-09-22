@@ -271,25 +271,28 @@ const HEROES = [
   },
   {
     id: 'karn', name: 'Karn', role: 'Fighter', icon: '⛓️', color: '#fbbf24', projColor: '#fde68a',
-    desc: 'A chained warden who drags enemies to their doom.',
+    desc: 'A chained warden who hooks one target out and chains the whole fight to himself.',
     difficulty: 3, damageStyle: 'physical',
-    hp: 685, hpLv: 94, mp: 230, mpLv: 25, atk: 60, atkLv: 6.8,
-    /* Lighter evidence than the Nyx change, so a lighter touch: Karn was
-       carrying 90% of the dedicated Tank's effective HP while out-damaging
-       every other melee and holding the best crowd control in the game. The
-       armour growth is the cheapest thing to give back — it lands Karn between
-       the other Fighter and the Tank, which is where a Fighter belongs.
-       Balance pass: base HP 720 -> 685 so the hook has a real durability cost. */
-    armor: 20, armorLv: 2.6, mr: 16, mrLv: 2.6,
-    range: 100, atkSpd: 0.9, speed: 260,
+    /* docs/design/heroes.md, Fighters: Karn. The roster's only hook (a drag
+       with suppression; the first body stops it) and Gaol, a multi-target
+       anchored tether (F16) that punishes leaving: a chained hero crossing
+       450 is struck and stunned, one who stays pays nothing; a hard CC on
+       Karn does not cut it, a Purify releases it quietly. Iron Slam reads
+       the hook's mark (F2 bonusVsMark: +50% within 2 s of the drag). Bot
+       fields: botRadius is Gaol's tighter crowd test (300). */
+    hp: 700, hpLv: 96, mp: 240, mpLv: 26, atk: 58, atkLv: 6.4,
+    armor: 21, armorLv: 3.0, mr: 16, mrLv: 2.5,
+    range: 100, atkSpd: 0.90, speed: 255,
     passive: {
       name: 'Ironclad', icon: '⚙', id: 'ironclad',
-      desc: 'Basic attacks cut 0.5s from every skill cooldown. Taking hero damage grants 3 Armor for 4s, stacking to 5.',
+      desc: 'Basic attacks cut 0.5s from every skill cooldown. Taking damage from an enemy hero grants 4 Armor for 4s, stacking to 5.',
     },
     skills: [
-      { name: 'Chain Hook', icon: '🪝', type: 'skillshot', cd: 10, mana: 55, dmgType: 'physical', dmg: 120, dmgLv: 14, scaleAd: 0.5, range: 620, speed: 800, radius: 28, hook: true, suppress: 0.6, desc: 'Throw a hook that drags the first enemy hero to you, suppressing them.' },
-      { name: 'Iron Slam', icon: '🔨', type: 'nova', cd: 8, mana: 50, dmgType: 'physical', radius: 240, dmg: 145, dmgLv: 17, scaleAd: 0.7, slowPct: 0.35, slowDur: 1.5, desc: 'Smash the ground, damaging and slowing nearby enemies.' },
-      { name: 'Groundbreaker', icon: '🌋', type: 'nova', cd: 42, mana: 110, dmgType: 'physical', radius: 320, dmg: 300, dmgLv: 30, scaleAd: 0.8, stun: 1, knockback: 120, desc: 'Shatter the battlefield, stunning and hurling back all enemies around you.' },
+      { name: 'Chain Hook', icon: '🪝', type: 'skillshot', cd: 13, cdLv: -0.5, mana: 80, manaLv: 5, dmgType: 'physical', dmg: 110, dmgLv: 14, scaleAd: 0.5, range: 640, speed: 850, radius: 26, pierce: false, hook: true, suppress: 0.6, markOnHit: 'hooked', desc: 'Throw the chain; the first unit hit stops it. A hero is reeled to Karn and suppressed 0.6s.' },
+      { name: 'Iron Slam', icon: '🔨', type: 'nova', cd: 8, cdLv: -0.4, mana: 50, dmgType: 'physical', radius: 240, dmg: 140, dmgLv: 17, scaleAd: 0.7, slowPct: 0.4, slowDur: 1.2, bonusVsMark: { tag: 'hooked', within: 2, mult: 1.5 }, desc: 'Smash the ground, slowing 40% for 1.2s; +50% damage to a target hooked within the last 2s.' },
+      { name: 'Gaol', icon: '⛓', type: 'tether', cd: [44, 40, 36], mana: 120, dmgType: 'physical', botRadius: 300,
+        tether: { multi: { radius: 320 }, dur: 2.5, breakRange: 450, anchored: true, breakPayload: { dmg: [260, 340, 420], scaleAd: 1.0, stun: 1.0 } },
+        desc: 'Chain every enemy hero within 320 to Karn for 2.5s. A hero that moves beyond 450 snaps its chain and is struck for 260/340/420 (+100% ATK) and stunned 1s; staying is free. Purify releases the chain.' },
     ],
   },
   {
