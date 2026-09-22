@@ -250,12 +250,14 @@ const Game = {
     }
 
     UI.buildMinimapStatic();
-    /* 5v5: the reference game shows about 106 map px of ground across the
-       screen at the hero (measured through its calibrated camera), so the
-       view width is fixed in map px; the other modes keep their height rule */
+    /* 5v5: the reference game shows 106 map px of ground across the screen
+       at the hero and 157 at the top edge (perspective, measured through its
+       calibrated camera); our flat view uses the middle of that, 124, so the
+       amount of map in sight feels the same. The other modes keep their
+       height rule. */
     this.cam.zoom = this.cam.zoomWant = this.isDuel() || this.isTen()
       ? clamp(CH / (this.isDuel() ? 900 : 1450), 0.45, 1.3)
-      : clamp(CW / (106 * MAP_K), 0.4, 1.6);
+      : clamp(CW / (124 * MAP_K), 0.4, 1.6);
     if (typeof Mlbb !== 'undefined') Mlbb.onMatchStart();
     if (this.spectate) {
       this.cam.x = this.worldSize() / 2; this.cam.y = this.worldSize() / 2;
