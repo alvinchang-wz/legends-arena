@@ -1548,11 +1548,21 @@ const UI = {
     // walls, under the bushes — terrain you cannot cross is worth reading on
     // the minimap, since it decides which way a rotation actually goes
     g.strokeStyle = THEME.wallLight; g.lineJoin = 'round'; g.lineCap = 'round';
+    if (typeof MAP_CORNERS !== 'undefined' && !Game.isTen()) {
+      g.fillStyle = THEME.wallLight;
+      for (const poly of MAP_CORNERS) {
+        g.beginPath(); g.moveTo(mx(poly[0].x), my(poly[0].y));
+        for (const p of poly) g.lineTo(mx(p.x), my(p.y));
+        g.closePath(); g.fill();
+      }
+    }
     for (const w of Game.walls()) {
-      g.lineWidth = Math.max(3, w.r * 2 * k);
-      g.beginPath(); g.moveTo(mx(w.pts[0].x), my(w.pts[0].y));
-      for (const p of w.pts) g.lineTo(mx(p.x), my(p.y));
-      g.stroke();
+      if (w.hidden) continue;
+      for (let i = 1; i < w.pts.length; i++) {
+        const a = w.pts[i - 1], b = w.pts[i], r = a.r !== undefined ? (a.r + b.r) / 2 : w.r;
+        g.lineWidth = Math.max(3, r * 2 * k);
+        g.beginPath(); g.moveTo(mx(a.x), my(a.y)); g.lineTo(mx(b.x), my(b.y)); g.stroke();
+      }
     }
     // bushes
     for (const b of Game.bushes()) {

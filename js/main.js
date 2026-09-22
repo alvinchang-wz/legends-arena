@@ -1169,7 +1169,7 @@ const Game = {
         const c = wallClosest(w, a.x, a.y);
         let dx = a.x - c.x, dy = a.y - c.y;
         const d = Math.hypot(dx, dy);
-        const min = w.r + a.radius;
+        const min = c.r + a.radius;
         if (d >= min) continue;
         if (d < 0.01) {           // dead centre: leave along the nearest segment's normal
           const p0 = w.pts[0], p1 = w.pts[w.pts.length - 1];
@@ -2800,12 +2800,23 @@ function render() {
   /* Terrain joins the same depth pass: each wall is chopped into its
      polyline segments so one long ridge can be in front of one hero and
      behind another at the same time. */
+  const runArt = !Game.isTen() && typeof MapArt !== 'undefined';
   for (const w of Game.walls()) {
+    if (w.hidden) continue;
+    let run = null;
+    const flush = () => { if (run) { const segs = run.segs; pushBody(run.depth, () => MapArt.drawWallRun(ctx, segs)); run = null; } };
     for (let i = 1; i < w.pts.length; i++) {
       const a = w.pts[i - 1], b = w.pts[i];
-      if (!inView((a.x + b.x) / 2, (a.y + b.y) / 2, w.r + 170)) continue;
-      pushBody(Math.max(a.y, b.y) + w.r, () => drawWallPiece(a, b, w.r));
+      if (!inView((a.x + b.x) / 2, (a.y + b.y) / 2, w.r + 170)) { flush(); continue; }
+      const r = a.r !== undefined ? (a.r + b.r) / 2 : w.r;
+      const depth = Math.max(a.y, b.y) + r;
+      if (!runArt) { pushBody(depth, () => drawWallPiece(a, b, r)); continue; }
+      /* consecutive pieces at about one depth are painted as one body */
+      if (run && Math.abs(depth - run.depth0) > 140) flush();
+      if (!run) run = { segs: [], depth0: depth, depth };
+      run.segs.push({ a, b, r }); run.depth = Math.max(run.depth, depth);
     }
+    flush();
   }
 
   // back-to-front by ground-front edge: the painter's pass that turns the

@@ -18,17 +18,22 @@ function segClosest(px, py, ax, ay, bx, by) {
   const vx = bx - ax, vy = by - ay;
   const len2 = vx * vx + vy * vy;
   const t = len2 < 1e-6 ? 0 : clamp(((px - ax) * vx + (py - ay) * vy) / len2, 0, 1);
-  return { x: ax + vx * t, y: ay + vy * t };
+  return { x: ax + vx * t, y: ay + vy * t, t };
 }
 
-/* Closest point on a wall's centreline. */
+/* Closest point on a wall's spine, with the wall's radius there. Fat rock
+   tapers, so a wall's points may each carry a radius; otherwise w.r. */
 function wallClosest(w, x, y) {
-  let best = null, bestD = Infinity;
+  let best = null, bestD = Infinity, bi = 1;
   for (let i = 1; i < w.pts.length; i++) {
     const c = segClosest(x, y, w.pts[i - 1].x, w.pts[i - 1].y, w.pts[i].x, w.pts[i].y);
     const d = (c.x - x) * (c.x - x) + (c.y - y) * (c.y - y);
-    if (d < bestD) { bestD = d; best = c; }
+    if (d < bestD) { bestD = d; best = c; bi = i; }
   }
+  if (!best) return null;
+  const a = w.pts[bi - 1], b = w.pts[bi];
+  const ra = a.r !== undefined ? a.r : w.r, rb = b.r !== undefined ? b.r : w.r;
+  best.r = ra + (rb - ra) * best.t;
   return best;
 }
 
@@ -36,7 +41,7 @@ function wallClosest(w, x, y) {
 function wallBlocks(w, x, y, pad) {
   if (w.minX !== undefined && (x < w.minX - pad || x > w.maxX + pad || y < w.minY - pad || y > w.maxY + pad)) return false;
   const c = wallClosest(w, x, y);
-  const r = w.r + pad;
+  const r = c.r + pad;
   return (c.x - x) * (c.x - x) + (c.y - y) * (c.y - y) < r * r;
 }
 
@@ -230,7 +235,9 @@ const TURTLE_PIT = mpx(...MAP_DATA.pits.turtle);
 const PIT_WALL_R = MAP_DATA.pits.r * MAP_K;
 const STREAMS = [mpxs(MAP_DATA.river)];
 const RIVER_HALF_W = MAP_DATA.riverHalf * MAP_K;
-const POOLS = [{ ...LORD_PIT, r: PIT_WALL_R }, { ...TURTLE_PIT, r: PIT_WALL_R }];
+const POOLS = MAP_DATA.pools
+  ? MAP_DATA.pools.map(p => ({ ...mpx(p.x, p.y), r: p.r * MAP_K }))   // lord, turtle, then any extra ponds
+  : [{ ...LORD_PIT, r: PIT_WALL_R }, { ...TURTLE_PIT, r: PIT_WALL_R }];
 const LAKE = POOLS[1];                           // older callers
 const RIVER = { a: LORD_PIT, b: TURTLE_PIT };    // older callers
 
@@ -241,11 +248,14 @@ const CAMPS = MAP_DATA.camps.map(c => ({ ...mpx(c.x, c.y), kind: c.kind }));
    Thick polylines (points + radius). Each carries its bounding box so the
    per-unit collision tests can skip the terrain that is nowhere near. */
 const MAP_WALLS = MAP_DATA.walls.map(w => {
-  const pts = mpxs(w.pts), r = w.r * MAP_K;
-  const wall = { pts, r, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  const pts = mpxs(w.pts);
+  if (w.rs) pts.forEach((p, i) => { p.r = w.rs[i] * MAP_K; });   // radius per point
+  const r = (w.rs ? Math.max(...w.rs) : w.r) * MAP_K;             // the fattest point
+  const wall = { pts, r, hidden: !!w.hidden, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const p of pts) {
-    wall.minX = Math.min(wall.minX, p.x - r); wall.maxX = Math.max(wall.maxX, p.x + r);
-    wall.minY = Math.min(wall.minY, p.y - r); wall.maxY = Math.max(wall.maxY, p.y + r);
+    const pr = p.r !== undefined ? p.r : r;
+    wall.minX = Math.min(wall.minX, p.x - pr); wall.maxX = Math.max(wall.maxX, p.x + pr);
+    wall.minY = Math.min(wall.minY, p.y - pr); wall.maxY = Math.max(wall.maxY, p.y + pr);
   }
   return wall;
 });
@@ -253,6 +263,10 @@ const MAP_WALLS = MAP_DATA.walls.map(w => {
 /* ---- bushes ----
    A bush is a circle {x, y, r} or a capsule {x, y, r, ax, ay, bx, by}: the
    concealing area is every point within r of the segment a-b. */
+/* The cut-off corners beyond the lane chamfers: solid plateau, painted flat
+   by the board painter; hidden walls inside them do the blocking. */
+const MAP_CORNERS = (MAP_DATA.corners || []).map(poly => mpxs(poly));
+
 const BUSHES = MAP_DATA.bushes.map(b => {
   const c = mpx(b.x, b.y), out = { x: c.x, y: c.y, r: b.r * MAP_K };
   if (b.ax !== undefined) {

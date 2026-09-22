@@ -462,19 +462,23 @@ const MapArt = (() => {
      so the extruded ridge stands on something instead of floating on grass. */
   function paintWallFootprints(g) {
     const rnd = rng(78123);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const segR = (a, b, w) => a.r !== undefined ? (a.r + b.r) / 2 : w.r;
+    const eachSeg = fn => { for (const w of MAP_WALLS) { if (w.hidden) continue; for (let i = 1; i < w.pts.length; i++) fn(w.pts[i - 1], w.pts[i], segR(w.pts[i - 1], w.pts[i], w)); } };
+    eachSeg((a, b, r) => {
+      g.strokeStyle = 'rgba(10, 18, 10, 0.5)'; g.lineWidth = r * 2 + 40;
+      g.beginPath(); g.moveTo(a.x + 14, a.y + 22); g.lineTo(b.x + 14, b.y + 22); g.stroke();
+    });
+    eachSeg((a, b, r) => {
+      g.strokeStyle = PAL.rockDark; g.lineWidth = r * 2 + 8;
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+    });
     for (const w of MAP_WALLS) {
-      g.strokeStyle = 'rgba(10, 18, 10, 0.5)'; g.lineWidth = w.r * 2 + 40; g.lineCap = 'round'; g.lineJoin = 'round';
-      g.beginPath(); g.moveTo(w.pts[0].x + 14, w.pts[0].y + 22);
-      for (const p of w.pts) g.lineTo(p.x + 14, p.y + 22);
-      g.stroke();
-      g.strokeStyle = PAL.rockDark; g.lineWidth = w.r * 2 + 8;
-      g.beginPath(); g.moveTo(w.pts[0].x, w.pts[0].y);
-      for (const p of w.pts) g.lineTo(p.x, p.y);
-      g.stroke();
+      if (w.hidden) continue;
       const step = Math.max(1, Math.floor(w.pts.length / 4));
       for (let i = 0; i < w.pts.length; i += step) {
-        const p = w.pts[i];
-        rock(g, p.x + (rnd() - 0.5) * w.r, p.y + w.r * 0.6 + rnd() * 10, Math.min(60, w.r * (0.3 + rnd() * 0.25)), rnd, false);
+        const p = w.pts[i], r = p.r !== undefined ? p.r : w.r;
+        rock(g, p.x + (rnd() - 0.5) * r, p.y + r * 0.6 + rnd() * 10, Math.min(60, r * (0.3 + rnd() * 0.25)), rnd, false);
       }
     }
   }
@@ -556,9 +560,33 @@ const MapArt = (() => {
   }
 
   /* ---------------------------------------------------------------- board */
+  /* The two cut-off corners: a flat rock plateau behind the chamfer ridge. */
+  function paintCorners(g) {
+    const rnd = rng(90210);
+    for (const poly of (typeof MAP_CORNERS !== 'undefined' ? MAP_CORNERS : [])) {
+      g.beginPath(); g.moveTo(poly[0].x, poly[0].y);
+      for (const p of poly) g.lineTo(p.x, p.y);
+      g.closePath();
+      g.fillStyle = PAL.rockShade; g.fill();
+      g.strokeStyle = PAL.rockDark; g.lineWidth = 26; g.lineJoin = 'round'; g.stroke();
+      g.save(); g.clip();
+      const minX = Math.min(...poly.map(p => p.x)), maxX = Math.max(...poly.map(p => p.x));
+      const minY = Math.min(...poly.map(p => p.y)), maxY = Math.max(...poly.map(p => p.y));
+      for (let i = 0; i < 90; i++) {
+        const x = minX + rnd() * (maxX - minX), y = minY + rnd() * (maxY - minY);
+        g.fillStyle = rnd() < 0.5 ? PAL.rockDark : PAL.rockLit; g.globalAlpha = 0.35;
+        blob(g, x, y, 30 + rnd() * 70, 20 + rnd() * 40, rnd, 0.3, 7, rnd() * TAU); g.fill();
+      }
+      g.globalAlpha = 1;
+      for (let i = 0; i < 14; i++) rock(g, minX + rnd() * (maxX - minX), minY + rnd() * (maxY - minY), 18 + rnd() * 30, rnd, false);
+      g.restore();
+    }
+  }
+
   function paintBoard(g) {
     paintSea(g);
     paintGround(g);
+    paintCorners(g);
     paintJungleFloor(g);
     paintRiver(g);
     for (const lane of Object.values(LANES)) paintLaneAO(g, lane, LANE_WIDTH);
@@ -577,43 +605,56 @@ const MapArt = (() => {
   /* ---------------------------------------------------------------- walls
      Live extrusion of one wall segment inside the tilted world pass. The
      top outline wobbles per segment so ridges read as rock, not pipe. */
-  function drawWall(ctx, a, b, r) {
-    const h = r * 1.15 + 30;
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const n = Math.max(2, Math.min(9, Math.round(len / 40)));
-    const seed = ((a.x * 73 + a.y * 151 + b.x * 31) | 0) & 0x7fffffff;
-    const rnd = rng(seed);
-    const wob = Array.from({ length: n + 1 }, () => (rnd() - 0.5) * r * 0.32);
-    const ridge = (dy, w, col, wobble) => {
-      ctx.strokeStyle = col; ctx.lineWidth = w * 2;
+  function drawWall(ctx, a, b, r) { drawWallRun(ctx, [{ a, b, r }]); }
+
+  /* A run is consecutive segments of one wall at about the same depth. Every
+     layer is stroked across the whole run before the next layer starts, so
+     fat rock sampled every few steps reads as one body instead of a stack
+     of rings. Each segment keeps its own radius, so rock tapers. */
+  function drawWallRun(ctx, segs) {
+    const prep = segs.map(({ a, b, r }) => {
+      const h = r * 1.15 + 30;
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const n = Math.max(2, Math.min(9, Math.round(len / 40)));
+      const rnd = rng(((a.x * 73 + a.y * 151 + b.x * 31) | 0) & 0x7fffffff);
+      const wob = Array.from({ length: n + 1 }, () => (rnd() - 0.5) * r * 0.32);
+      return { a, b, r, h, n, wob };
+    });
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const layer = (dyOf, wOf, colOf, wobble) => {
+      for (const s of prep) {
+        const dy = dyOf(s), w = wOf(s);
+        ctx.strokeStyle = colOf(s); ctx.lineWidth = w * 2;
+        ctx.beginPath();
+        for (let i = 0; i <= s.n; i++) {
+          const t = i / s.n;
+          const x = s.a.x + (s.b.x - s.a.x) * t, y = s.a.y + (s.b.y - s.a.y) * t + dy + (wobble ? s.wob[i] : 0);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+    };
+    layer(s => s.r * 0.35 + 12, s => s.r + 14, () => 'rgba(6, 12, 8, 0.4)', false);
+    layer(() => 0, s => s.r + 4, () => PAL.rockDark, false);
+    for (let i = 0; i <= 5; i++) {
+      const t = i / 5, col = mixHex(PAL.rockShade, PAL.rockLit, t);
+      layer(s => -s.h * t, s => s.r * (1 - t * 0.16), () => col, t > 0.5);
+    }
+    layer(s => -s.h, s => s.r * 0.84, () => PAL.rockTop, true);
+    layer(s => -s.h - 3, s => s.r * 0.5, () => mixHex(PAL.rockTop, '#fff2d8', 0.22), true);
+    for (const s of prep) {
+      ctx.strokeStyle = rgba(PAL.moss, 0.55); ctx.lineWidth = Math.max(3, s.r * 0.26);
       ctx.beginPath();
-      for (let i = 0; i <= n; i++) {
-        const t = i / n;
-        const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t + dy + (wobble ? wob[i] : 0);
+      for (let i = 0; i <= s.n; i++) {
+        const t = i / s.n;
+        const x = s.a.x + (s.b.x - s.a.x) * t - s.r * 0.3, y = s.a.y + (s.b.y - s.a.y) * t - s.h - s.r * 0.5 + s.wob[i] * 0.8;
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
-    };
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ridge(r * 0.35 + 12, r + 14, 'rgba(6, 12, 8, 0.4)', false);
-    ridge(0, r + 4, PAL.rockDark, false);
-    for (let i = 0; i <= 5; i++) {
-      const t = i / 5;
-      ridge(-h * t, r * (1 - t * 0.16), mixHex(PAL.rockShade, PAL.rockLit, t), t > 0.5);
+      ctx.strokeStyle = 'rgba(30, 24, 16, 0.4)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(s.a.x + s.r * 0.2, s.a.y - s.h + s.r * 0.15); ctx.lineTo(s.b.x - s.r * 0.2, s.b.y - s.h - s.r * 0.02); ctx.stroke();
     }
-    ridge(-h, r * 0.84, PAL.rockTop, true);
-    ridge(-h - 3, r * 0.5, mixHex(PAL.rockTop, '#fff2d8', 0.22), true);
-    ctx.strokeStyle = rgba(PAL.moss, 0.55); ctx.lineWidth = Math.max(3, r * 0.26);
-    ctx.beginPath();
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const x = a.x + (b.x - a.x) * t - r * 0.3, y = a.y + (b.y - a.y) * t - h - r * 0.5 + wob[i] * 0.8;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(30, 24, 16, 0.4)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(a.x + r * 0.2, a.y - h + r * 0.15); ctx.lineTo(b.x - r * 0.2, b.y - h - r * 0.02); ctx.stroke();
   }
 
-  return { paintBoard, drawWall, PAL, MARGIN };
+  return { paintBoard, drawWall, drawWallRun, PAL, MARGIN };
 })();
