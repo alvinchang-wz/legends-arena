@@ -621,7 +621,8 @@ const BALANCE = {
   /* Respawn grows with the clock, not only with level: a won fight late has
      to buy the time to walk a lane and take an inhibitor. x1.25 from 18:00,
      hard cap 75 s (L12 at 12:00 = 40.4 s, L15 at 18:00 = 66.5 s). */
-  respawnTime: (l, t = 0) => Math.min(75, (3.2 + 2.1 * l + t / 60) * (t >= 1080 ? 1.25 : 1)),
+  respawnTime: (l, t = 0) => Math.min(75, (3.2 + 2.1 * l + t / 60) * (t >= BALANCE.respawnLateFrom ? 1.25 : 1)),
+  respawnLateFrom: 900,        // section-15 lever 3: the x1.25 starts at 15:00 (spec default 18:00)
   spawnProtection: 2.5,
   /* Economy rewards are deliberately flatter than combat power (0.6x of the
      reference). A level-15 pick is worth 160 before modifiers, so kills are
@@ -640,7 +641,7 @@ const BALANCE = {
     outer:  { hp: 3000, armor: 20, atk: 190, atkPerMin: 2.3, gold: 50, shield: 1800 },
     middle: { hp: 3400, armor: 20, atk: 215, atkPerMin: 2.5, gold: 65, shield: 0 },
     inner:  { hp: 3800, armor: 40, atk: 300, atkPerMin: 3.0, gold: 80, shield: 0 },
-    base:   { hp: 4800, armor: 40, atk: 300, atkPerMin: 1.2, gold: 0,  shield: 0 },
+    base:   { hp: 4000, armor: 40, atk: 300, atkPerMin: 1.2, gold: 0,  shield: 0 },   // section-15 lever 1 (spec default 4800)
   },
   firstTowerGold: 30,
   towerRamp: 0.35,             // turret hit n on the same hero = ATK x (1 + ramp x min(rampCap, n - 1))
@@ -678,7 +679,7 @@ const BALANCE = {
   firstWaveAt: 10,
   midCannonFromWave: 11,
   minionSpeed: 180,            // 0.69x hero speed: side waves clash at 0:40, mid at 0:31
-  minionSpeedUpFrom: 600,      // from 10:00, +10 wu/s per minute, cap +80 (260 at 18:00)
+  minionSpeedUpFrom: 480,      // section-15 lever 4: from 8:00 (spec default 10:00), +10 wu/s per minute, cap +80
   minionSpeedUpPerMin: 10,
   minionSpeedUpCap: 80,
   minionLateAtkFrom: 720,      // the cannon's ATK growth steepens from 12:00
@@ -711,6 +712,17 @@ const BALANCE = {
   turtleGold: [45, 55, 65],
   ancientLordAt: 900,
   lordWaveBoost: 60,           // seconds of +50% HP/ATK waves for the team that took Lord
+  lordChargeFrac: [0.4, 0.5],  // Summoned Lord's charge: fraction of a structure's max HP (normal, evolved); section-15 lever 2 (spec default 0.3)
+  /* Stalemate levers (docs/design/lanes-economy.md, 15). A Lord that is left
+     alone heals this fraction of max HP per second; with `lordLeashSnap` it
+     would also snap to full on reaching the pit (the Turtle always does).
+     Without the snap a failed attempt still costs the Lord health, which is
+     what stops heuristic bots from resetting it forty times a match.
+     `lordExtraAllies` is added to the allies a bot needs nearby before it
+     starts the Lord (0: measured worse, the Lord is then rarely taken). */
+  lordLeashRegen: 0.01,
+  lordLeashSnap: false,
+  lordExtraAllies: 0,
 
   /* Skill points: one per hero level, ultimate gated behind these levels.
      maxSkillRank must sum to maxLevel or heroes finish with points they can

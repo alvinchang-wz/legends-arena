@@ -1656,7 +1656,7 @@ class Hero extends Unit {
         if (h === this || h.team !== this.team || !h.alive) continue;
         if (dist(h, mo) < p.objectiveRange) allies++;
       }
-      if (allies < p.objectiveMinAllies) continue;
+      if (allies < p.objectiveMinAllies + (mo.epic === 'lord' ? BALANCE.lordExtraAllies : 0)) continue;
       if (this.advancedAI) {
         const f = this.localFightPower(mo.x, mo.y, p.objectiveRange);
         const secureDamage = this.spell && this.spell.id === 'retribution' && this.spellCd <= 0 ? retributionDamage(this) : 0;

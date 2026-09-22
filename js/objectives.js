@@ -88,7 +88,11 @@ class EpicMonster extends Unit {
     const A = this.attrs.base;
     if (lord) {
       this.maxHp = this.hp = Math.round(8000 + 400 * clamp(mins - 8, 0, 10));
-      A.physAtk = 200 + 10 * mins;
+      /* The design's 200 + 10/min true damage assumes a five-hero group.
+         Heuristic bots start the Lord two or three at a time, and at that
+         number it killed the party and reset to full every time (46 resets
+         in one 30:00 match). Scaled to 0.6x until bots group (bot-ai.md). */
+      A.physAtk = 120 + 6 * mins;
       A.armor = A.mr = 30;
       A.speed = 190; this.range = 130;
     } else {
@@ -134,13 +138,15 @@ class EpicMonster extends Unit {
     if (!this.alive) return;
     this.baseUpdate(dt);
     if (!this.cc.canAct) return;
+    const lord = this.epic === 'lord';
+    const regen = lord ? BALANCE.lordLeashRegen : 0.16;
     if (this.leashed) {
-      this.heal(this.maxHp * 0.16 * dt);
-      if (dist(this, this.home) < 40) { this.leashed = false; this.hp = this.maxHp; }
+      this.heal(this.maxHp * regen * dt);
+      if (dist(this, this.home) < 40) { this.leashed = false; if (!lord || BALANCE.lordLeashSnap) this.hp = this.maxHp; }
       else this.moveToward(this.home.x, this.home.y, dt);
       return;
     }
-    if (!this.target) return;
+    if (!this.target) { if (this.hp < this.maxHp) this.heal(this.maxHp * regen * dt); return; }
     if (!this.target.alive || dist(this, this.home) > 620) {
       this.target = null; this.leashed = true; return;
     }
@@ -242,7 +248,7 @@ class LordMinion extends Minion {
       if (!s.alive || s.team === this.team || s.shieldedByOuter || this.charged.has(s)) continue;
       if (dist(this, s) > 410 + s.radius) continue;
       this.charged.add(s);
-      resolveDamage(this, s, { amount: s.maxHp * (this.empowered ? 0.5 : 0.3), type: 'true' });
+      resolveDamage(this, s, { amount: s.maxHp * BALANCE.lordChargeFrac[this.empowered ? 1 : 0], type: 'true' });
       if (s.alive) s.disabledT = 3;
       Game.fx.ring(s.x, s.y, s.radius + 40, THEME.warn, 0.6);
     }
