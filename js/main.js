@@ -1003,7 +1003,7 @@ const Game = {
   },
   enemyUnits(team, opts = {}) {
     const out = [];
-    for (const h of this.heroes) if (h.team !== team && h.alive) out.push(h);
+    for (const h of this.heroes) if (h.team !== team && h.alive && !h.untargetable) out.push(h);
     for (const m of this.minions) if (m.team !== team && m.alive) out.push(m);
     if (opts.neutral) for (const mo of this.monsters) if (mo.alive) out.push(mo);
     if (opts.structures) for (const t of this.structures()) if (t.team !== team && t.alive) out.push(t);
@@ -1786,7 +1786,7 @@ const Game = {
    (the headless tests in tests/ drive them directly; the browser never
    needs this table). Keep it in step with docs/design/heroes.md. */
 Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo,
-  markStacks, applyMark, consumeMark, refreshMark, clearMark };
+  markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, CHANNEL_BREAKERS };
 Game.PlacedObject = PlacedObject;
 Game.Tether = Tether;
 

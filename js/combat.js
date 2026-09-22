@@ -396,6 +396,28 @@ function refreshMark(src, target, r) {
   return true;
 }
 
+/* ============================================================
+   Taunt (docs/design/heroes.md F23) and channel breakers (F18)
+   ============================================================ */
+/* The CC kinds that break a channel the moment they land. */
+const CHANNEL_BREAKERS = { stun: 1, silence: 1, airborne: 1, suppress: 1, taunt: 1 };
+
+/* A taunt is a CC timer plus a forced state: while `taunt` runs the victim
+   ignores its own input, walks at `src` and swings at it. A shove or hook
+   already carrying the victim finishes first (the taunt is queued behind
+   it, see Unit.endForced). Tenacity shortens it; Purify ends it. */
+function applyTaunt(src, target, dur, ten) {
+  if (!src || !target.cc || target.isStructure || !target.alive || src === target) return 0;
+  const d = target.cc.apply('taunt', dur, ten);
+  if (d <= 0) return 0;
+  const f = { mode: 'taunt', src, t: d };
+  const cur = target.forced;
+  if (cur && cur.mode !== 'taunt') cur.prev = f;
+  else target.forced = f;
+  Game.fx.ring(target.x, target.y, target.radius + 18, THEME.warn, 0.4);
+  return d;
+}
+
 /* F28 chill lock. Every Chill stack (Mira's passive today, a lingering Frost
    zone later) lands through here so `marks.chillImmuneT` is honoured in one
    place: a target that has just thawed cannot be re-frozen until it passes.
@@ -851,5 +873,5 @@ const PASSIVES = {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, applyDisplacement, applyPullTo, rankVal, applyChill,
-    markStacks, applyMark, consumeMark, refreshMark, clearMark, PASSIVES };
+    markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, CHANNEL_BREAKERS, PASSIVES };
 }

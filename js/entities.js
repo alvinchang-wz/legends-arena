@@ -447,6 +447,54 @@ class Hero extends Unit {
   }
   cdr() { return clamp(this.attrs.get('cdr'), 0, COMBAT.CDR_CAP); }
 
+  /* F18 / F19: a channelling hero and a self-rooted one do not walk
+     (forced movement is separate and refused by a displacement immunity). */
+  moveToward(tx, ty, dt) {
+    if (this.channelS || (this.state && this.state.t > 0 && this.state.s.selfRoot)) return;
+    super.moveToward(tx, ty, dt);
+  }
+  tryAttack(target) {
+    if (this.channelS || (this.state && this.state.t > 0 && this.state.s.noAttack)) return;
+    super.tryAttack(target);
+  }
+  /* F19: nobody's target while a Shade Step runs (dots keep ticking). */
+  get untargetable() { return !!(this.state && this.state.t > 0 && this.state.s.untargetable); }
+  /* End a self state early (expiry or recast): its stat buffs go with it. */
+  endState() {
+    const st = this.state;
+    if (!st) return;
+    this.state = null;
+    for (const k of st.buffs) if (this.buffs[k]) this.buffs[k].t = 0;
+    if (st.buffs.length) this.recalcStats(false);
+  }
+  /* F18: stop a channel. `interrupted` (a hard CC, a Flicker or Purify
+     cast) leaves the cost paid and sets the cooldown to fullCd x
+     interruptRefund; the payload never lands. */
+  cancelChannel(interrupted) {
+    const c = this.channelS;
+    if (!c) return;
+    this.channelS = null;
+    if (interrupted) {
+      const refund = c.s.interruptRefund !== undefined ? c.s.interruptRefund : 0.5;
+      this.skillCd[c.i] = this.cooldownFor(c.s, c.rank) * refund;
+    }
+  }
+  /* F23: the taunted hero walks at its source and swings when in reach.
+     The player's queued input is dropped; bots path there. */
+  updateTaunt(dt, f) {
+    if (!this.cc.has('taunt') || !f.src || !f.src.alive) {
+      this.forced = null;
+      if (this.cc.t.taunt > 0) { this.cc.t.taunt = 0; this.cc.recount(); }
+      return false;
+    }
+    if (this.isPlayer) { Input.casts.length = 0; Input.spellQueued = null; Input.recallQueued = false; }
+    this.curTarget = f.src;
+    if (this.inAttackRange(f.src)) this.tryAttack(f.src);
+    else if (this.isPlayer) this.moveToward(f.src.x, f.src.y, dt);
+    else this.botMoveTo(f.src.x, f.src.y, dt);
+    return true;
+  }
+
   /* Jungle and epic buffs. Kept separate from `buffs` because they are
      dropped wholesale on death and shown individually on the HUD. */
   /* `dur` overrides the rune's own duration — the duel shrine hands out the
@@ -608,6 +656,7 @@ class Hero extends Unit {
     if (!this.cc.canCast && this.spell.id !== 'purify') return false;
     const ok = this.spell.cast(this, point);
     if (!ok) return false;
+    if (this.channelS) this.cancelChannel(true);   // F18: casting a spell is choosing to stop
     this.spellCd = this.spell.cd;
     if (this.isPlayer) SFX.skill();
     return true;
@@ -1092,9 +1141,16 @@ class Hero extends Unit {
   castSkill(i, point) {
     const s0 = this.skills[i];
     const rank = this.skillRank[i];
-    if (!this.alive || this.skillCd[i] > 0 || !this.canAfford(s0, rank)) return false;
+    if (!this.alive || !s0) return false;
+    // F19 recastCancel: pressing an active self state again ends it early, free
+    if (s0.recastCancel && this.state && this.state.t > 0 && (this.state.s._base || this.state.s) === s0) {
+      this.endState();
+      return true;
+    }
+    if (this.skillCd[i] > 0 || !this.canAfford(s0, rank)) return false;
     if (rank < 1) return false;                          // ultimate not learned yet
-    if (!this.cc.canCast || this.dashS || this.forced) return false;
+    if (!this.cc.canCast || this.dashS || this.forced || this.channelS) return false;
+    if (this.state && this.state.t > 0 && this.state.s.noAttack) return false;   // F19
     this.recallT = 0;
     /* F5 overheat: at 100 heat this cast uses the skill's overheat variant
        (a per-cast copy; `_base` keeps rank and index lookups working) and
@@ -1160,6 +1216,21 @@ class Hero extends Unit {
         if (Game.wallAt(spot.x, spot.y, 12)) return false;   // nothing is planted inside rock
         this.placeObject(s.type === 'trap' ? 'trap' : 'pulse', s, spot.x, spot.y, rank, dir);
         castAt = spot;
+        break;
+      }
+      case 'channel': {  // F18: stand and channel; the payload nova lands at the end
+        this.channelS = { s, t: s.channel || 1, i, rank };
+        Game.fx.ring(this.x, this.y, (s.payload && s.payload.radius) || 200, this.color, s.channel || 1);
+        break;
+      }
+      case 'selfState': {   // F19: a timed state on the caster (immunities, root, untargetable...)
+        const dur = s.dur || 1;
+        this.state = { s, t: dur, buffs: [] };
+        if (s.armorAdd) { this.addTimedBuff('armor', s.armorAdd, dur); this.state.buffs.push('armor'); }
+        if (s.mrAdd) { this.addTimedBuff('mr', s.mrAdd, dur); this.state.buffs.push('mr'); }
+        if (s.speedPct) { this.addTimedBuff('speedPct', s.speedPct, dur); this.state.buffs.push('speedPct'); }
+        if (s.untargetable) { this.curTarget = null; }
+        Game.fx.ring(this.x, this.y, this.radius + 30, this.color, 0.5);
         break;
       }
       case 'barrier': {  // F9: a wall segment across the aim direction that eats enemy projectiles
@@ -1278,6 +1349,7 @@ class Hero extends Unit {
     if (this.buffAsT > 0) this.buffAsT -= dt;
     if (this.revealT > 0) this.revealT -= dt;
     if (this.concealT > 0) this.concealT -= dt;
+    if (this.state) { this.state.t -= dt; if (this.state.t <= 0) this.endState(); }
     if (this.fleeT > 0) this.fleeT -= dt;
     if (this.spellCd > 0) this.spellCd -= dt;
     if (this.reflectT > 0) this.reflectT -= dt;
@@ -1348,6 +1420,22 @@ class Hero extends Unit {
       if (d.remaining <= 0.5) {
         if (d.endNova) { this.doNova(d.endNova, d.rank); Game.fx.skillCast(this, d.endNova, null); }
         this.dashS = null;
+      }
+      this.trackVelocity(dt);
+      return;
+    }
+    // F18 channel: rooted and silent until the payload lands or a hard CC breaks it
+    if (this.channelS) {
+      const c = this.channelS;
+      c.t -= dt;
+      if (this.isPlayer) Input.casts.length = 0;
+      if (c.t <= 0) {
+        this.channelS = null;
+        if (c.s.payload) {
+          this.doNova(c.s.payload, c.rank);
+          Game.fx.skillCast(this, c.s.payload, null);
+          Game.fx.shake(4);
+        }
       }
       this.trackVelocity(dt);
       return;
@@ -2217,6 +2305,17 @@ class Hero extends Unit {
       case 'barrier':    // F9: raise it against a ranged hero
         if (!isHero || !t.ranged || d >= 640 || d < 120) return 0;
         return 380;
+      case 'channel': {  // F18: a channelled nova wants a crowd in its radius
+        const pr = (s.payload && s.payload.radius) || 300;
+        if (!isHero || d >= pr + t.radius - 40) return 0;
+        let near = 0;
+        for (const h of Game.heroes) if (h.team !== this.team && h.alive && this.distTo(h) < pr + h.radius) near++;
+        return near >= 2 ? 860 : locked ? 700 : 520;
+      }
+      case 'selfState':  // F19: vanish when in danger; dig in when the enemy is on top of you
+        if (!isHero) return 0;
+        if (s.untargetable) return this.hpPct < 0.5 && d < 450 ? 760 : 0;
+        return d < 300 ? 420 : 0;
     }
     return 0;
   }
@@ -2259,6 +2358,12 @@ class Hero extends Unit {
         break;
       case 'barrier':
         this.castSkill(i, t);
+        break;
+      case 'channel':
+        this.castSkill(i, t);
+        break;
+      case 'selfState':
+        this.castSkill(i, null);
         break;
     }
   }
@@ -3098,7 +3203,7 @@ class Tower extends Unit {
       if (!t) {
         bd = Infinity;
         for (const h of Game.heroes) {
-          if (h.team === this.team || !h.alive) continue;
+          if (h.team === this.team || !h.alive || h.untargetable) continue;
           const dx = h.x - this.x, dy = h.y - this.y, d2 = dx * dx + dy * dy, r = reach + h.radius;
           if (d2 <= r * r && d2 < bd) { bd = d2; t = h; }
         }
@@ -3179,7 +3284,7 @@ class Monster extends Unit {
     }
     let best = null, bd = Infinity;
     for (const h of Game.heroes) {
-      if (!h.alive || dist(h, this.home) > 620) continue;
+      if (!h.alive || h.untargetable || dist(h, this.home) > 620) continue;
       const d = dist(this, h);
       if (d < bd) { bd = d; best = h; }
     }
@@ -3247,7 +3352,7 @@ class Projectile {
     const px = this.x, py = this.y;   // for the barrier crossing test (F9)
     if (this.kind === 'homing') {
       const t = this.target;
-      if (!t || !t.alive) { this.dead = true; return; }
+      if (!t || !t.alive || t.untargetable) { this.dead = true; return; }
       const d = dist(this, t);
       const step = this.speed * dt;
       if (Game.objects.length && Game.barrierBlocks(this.team, px, py, t.x, t.y, Math.min(d, step + t.radius))) { this.dead = true; return; }

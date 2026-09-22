@@ -77,6 +77,8 @@ function mitigation(defence, flatPen, pctPen) {
      stun        — nothing at all
      airborne    — nothing at all, displaces you, and IGNORES tenacity
                    (docs/design/heroes.md F28: a launch is a launch)
+     taunt       — you walk at whoever taunted you and hit them; no casting
+                   (F23: the forced state does the walking, so move/act stay on)
      suppress    — nothing at all, and IGNORES tenacity
 
    Tenacity shortens every type except airborne and suppression. */
@@ -86,10 +88,11 @@ const CC_TYPES = {
   silence:    { move: true,  act: true,  cast: false, tenacity: true,  icon: '🔇', label: 'Silenced' },
   stun:       { move: false, act: false, cast: false, tenacity: true,  icon: '💫', label: 'Stunned' },
   airborne:   { move: false, act: false, cast: false, tenacity: false, icon: '🌪', label: 'Airborne' },
+  taunt:      { move: true,  act: true,  cast: false, tenacity: true,  icon: '😤', label: 'Taunted' },
   suppress:   { move: false, act: false, cast: false, tenacity: false, icon: '⛓', label: 'Suppressed' },
 };
 /* Ordered hardest-first, for "what does the health bar pip show". */
-const CC_PRIORITY = ['suppress', 'airborne', 'stun', 'silence', 'immobilize', 'slow'];
+const CC_PRIORITY = ['suppress', 'airborne', 'taunt', 'stun', 'silence', 'immobilize', 'slow'];
 
 /* ============================================================
    Skills
