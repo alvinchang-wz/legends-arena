@@ -28,17 +28,26 @@ the playable square is 436 px on a side, so one map px is about 14.7 world units
    along the board edges (centrelines at x = 51 and y = 24) with a chamfered
    corner between them; mid is dead straight through the centre. Turrets are
    the survey's positions snapped onto the lanes.
-2. **Walls**: the aligned minimap's rock layer, symmetrised, with the lanes,
-   bases, camp floors and turret pads carved free, specks removed and every
-   corridor widened to at least 5.5 map px. Each rock is then an exact
-   polygon: the blob's outline traced at 2 raster px per map px and
-   simplified by a third of a map px (`poly`, plus `r`, the largest inscribed
-   radius, which sets its height). Overlap with the reference mask is 0.99.
+2. **Walls and bushes**: exact outlines from the reference minimap, made by
+   `docs/drafts/exact-trace.py` in the picture's own 512 px grid. Each pixel's
+   colour is placed between the jungle-ground colour and the rock (or bush)
+   colour; the 0.5 line of that field, traced at 4x with a half-pixel blur, is
+   the outline, so the picture's anti-aliased edge pixels give sub-pixel
+   edges. The picture's drop shadows are cancelled by comparing each pixel
+   with its 180-degree partner, which also makes the board exactly symmetric.
+   A bush's edge against rock is the rock's edge; the lane band is masked out
+   of the bush field. The outlines are rasterised back into the picture and
+   compared pixel by pixel (about 1 percent of rock pixels and 3 percent of
+   bush pixels disagree, all single edge pixels). Nothing reshapes them
+   afterwards: no morphology, speck removal, corridor widening or carving.
+   46 rocks, 26 bushes (the six light patches on the mid lane at the river
+   crossing are bank decoration and are dropped).
 3. **Corners**: the two cut-off corners beyond the lane chamfers are void
    (`void` polygons): the painter shows water there and a hidden polygon
    wall keeps units out.
-4. **Bushes**: the aligned minimap's bush layer, symmetrised, as exact
-   polygons the same way. 32 bushes.
+4. **Checks**: `docs/drafts/ref-diff.py` draws a colour-coded difference map
+   against the picture; the pipeline reports reachability of every camp and
+   turret and any enclosed pocket.
 5. **River**: a channel of half-width 10 from the Lord pit through the centre
    to the Turtle pit, with pools at both pits (r 25) and a pond at the mid
    crossing (r 30) that the lane bridges.
@@ -70,4 +79,4 @@ board is untuned: the reference walks about 25 percent faster than ours.
 - Draft A: the user's 8-slice design, cleaned in several passes (`draft-a*.png`).
 - Draft B: the Mobile Legends blockout drawn from the survey (`mlbb-blockout.py`).
 - Draft C: Draft B cleaned by `mlbb-clean.py` (walls from the walked classification).
-- Draft D (current): walls and bushes from the reference minimap (`draft-d.py`).
+- Draft D (current): walls and bushes traced pixel-exactly from the reference minimap (`exact-trace.py` + `draft-d.py`).
