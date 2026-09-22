@@ -1,0 +1,34 @@
+name: Tests
+
+# The two suites that guard the game: the headless simulator (it loads the
+# real js/ scripts, so a syntax error or a broken Game.start fails here) and
+# the hero-kit checks. Both are plain node:test — no install step, no
+# dependencies, nothing to cache.
+
+on:
+  push:
+    branches: [main, overnight]
+  pull_request:
+    branches: [main, overnight]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Headless runtime
+        run: node headless/runtime.test.js
+      - name: Hero kits and features
+        run: node tests/run-all.js
