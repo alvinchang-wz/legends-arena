@@ -320,6 +320,82 @@ function applySkillCC(src, target, s, rank, over) {
   if (s.pullTo) applyPullTo(src, target, s, r, over);
 }
 
+/* ============================================================
+   Skill-owned marks (docs/design/heroes.md F12)
+   ============================================================
+   marks[tag] holds the stacks, marks[tag+'T'] the expiry (the convention
+   the passives already use: emberT, chillT...), marks[tag+'At'] when it
+   was last applied (bonusVsMark's `within`), marks[tag+'C'] its pip colour.
+   A mark whose expiry has passed reads as 0 stacks. */
+function markStacks(target, tag) {
+  const m = target.marks;
+  if (!m || !(m[tag] > 0) || !(m[tag + 'T'] > Game.time)) return 0;
+  return m[tag];
+}
+/* applyMark: {tag, max, dur, stacks?, centreStacks?: {within, stacks},
+   dot?: {base, scaleAp, pctMaxHp, pctPerMp, dur, capNonHero}}. With a dot,
+   the total is stacks x the per-stack amount over dur, refreshed on re-apply. */
+function applyMark(src, target, s, rank, over) {
+  const a = s.applyMark;
+  if (!a || !target.marks || target.isStructure || !target.alive) return 0;
+  const m = target.marks;
+  let add = a.stacks || 1;
+  if (a.centreStacks && over && over.zone) {
+    const z = over.zone;
+    if (hyp(target.x - z.x, target.y - z.y) <= a.centreStacks.within) add = a.centreStacks.stacks;
+  }
+  const n = Math.min(a.max || 99, markStacks(target, a.tag) + add);
+  const dur = a.dur || 4;
+  m[a.tag] = n; m[a.tag + 'T'] = Game.time + dur; m[a.tag + 'At'] = Game.time;
+  m[a.tag + 'D'] = dur; m[a.tag + 'C'] = src.color || THEME.magic;
+  if (!target.markTags) target.markTags = [];
+  if (target.markTags.indexOf(a.tag) < 0) target.markTags.push(a.tag);
+  if (a.dot) {
+    const d = a.dot, mp = src.magicPower ? src.magicPower() : 0;
+    let per = (d.base || 0) + mp * (d.scaleAp || 0) + target.maxHp * ((d.pctMaxHp || 0) + (d.pctPerMp || 0) * mp);
+    if (target.type !== 'hero' && d.capNonHero) per = Math.min(per, d.capNonHero);
+    if (per > 0) target.addDot({ src, total: per * n, dur: d.dur || dur, type: d.type || s.dmgType || 'magic', color: src.color, tag: a.tag });
+  }
+  return n;
+}
+/* The damage a consumeMark adds per victim (read by skillDmg, F2):
+   stacks x (dmg + dmgLv per rank + scaleAp of magic power). */
+function markConsumeBonus(src, target, c, rank) {
+  const n = markStacks(target, c.tag);
+  if (!n) return 0;
+  return n * ((rankVal(c, 'dmg', rank) || 0) + (src.magicPower ? src.magicPower() : 0) * (c.scaleAp || 0));
+}
+/* consumeMark: {tag, dmg, dmgLv, scaleAp, stunAtStacks, stunDur, stunLock}.
+   After the hit: at stunAtStacks the victim is stunned unless its
+   stunLockT is still running, and the mark and its dot are removed. */
+function consumeMark(src, target, s, rank) {
+  const c = s.consumeMark;
+  const n = markStacks(target, c.tag);
+  if (!n) return 0;
+  const m = target.marks;
+  if (c.stunAtStacks && n >= c.stunAtStacks && target.cc && !(m.stunLockT > Game.time)) {
+    target.cc.apply('stun', c.stunDur || 0.5, target.attrs ? target.attrs.get('tenacity') : 0);
+    m.stunLockT = Game.time + (c.stunLock || 0);
+    Game.fx.ring(target.x, target.y, target.radius + 22, src.color || THEME.magic, 0.45);
+  }
+  clearMark(target, c.tag);
+  return n;
+}
+function clearMark(target, tag) {
+  const m = target.marks;
+  if (!m) return;
+  delete m[tag]; delete m[tag + 'T'];
+  if (target.dots && target.dots.length) target.dots = target.dots.filter(d => d.tag !== tag);
+}
+/* refreshMark: {tag, dur?} resets the timer (and the dot's) without consuming. */
+function refreshMark(src, target, r) {
+  if (!markStacks(target, r.tag)) return false;
+  const m = target.marks;
+  m[r.tag + 'T'] = Game.time + (r.dur || m[r.tag + 'D'] || 4);
+  if (target.dots) for (const d of target.dots) if (d.tag === r.tag && d.src === src) d.t = Math.max(d.t, r.dur || m[r.tag + 'D'] || 4);
+  return true;
+}
+
 /* F28 chill lock. Every Chill stack (Mira's passive today, a lingering Frost
    zone later) lands through here so `marks.chillImmuneT` is honoured in one
    place: a target that has just thawed cannot be re-frozen until it passes.
@@ -774,5 +850,6 @@ const PASSIVES = {
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, applyDisplacement, applyPullTo, rankVal, applyChill, PASSIVES };
+  module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, applyDisplacement, applyPullTo, rankVal, applyChill,
+    markStacks, applyMark, consumeMark, refreshMark, clearMark, PASSIVES };
 }

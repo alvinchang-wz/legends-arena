@@ -1093,11 +1093,23 @@ const Game = {
   canSee(team, u) {
     if (u.team === team) return true;
     if (u.isStructure) return true;         // structures are always on the map
+    if (u.untargetable) return false;       // F19: a Shade-Stepped hero is nobody's target
     // The duel arena has no fog: it is small enough that hiding in it would
     // only mean walking around looking for each other.
     if (this.isDuel()) return true;
+    if (u.concealT > 0 && this.concealedFrom(team, u)) return false;   // F13
     if (typeof Mlbb !== 'undefined' && Mlbb.bushHiddenFrom(team, u)) return false;
     return this.visible(team, u.x, u.y);
+  },
+  /* F13 conceal: hidden like a bush, unless revealed (dealing damage does
+     that for 1.6 s) or an enemy hero is right on top of the unit. */
+  concealedFrom(team, u) {
+    if (u.revealT > 0) return false;
+    for (const h of this.heroes) {
+      if (h.team !== team || !h.alive) continue;
+      if (dist(h, u) < 72) return false;
+    }
+    return true;
   },
   targetMatchesMode(u, mode = 'auto') {
     if (mode === 'hero') return u.type === 'hero';
@@ -1773,7 +1785,8 @@ const Game = {
 /* The rule helpers of combat.js, reachable by name from outside the scripts
    (the headless tests in tests/ drive them directly; the browser never
    needs this table). Keep it in step with docs/design/heroes.md. */
-Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo };
+Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo,
+  markStacks, applyMark, consumeMark, refreshMark, clearMark };
 Game.PlacedObject = PlacedObject;
 Game.Tether = Tether;
 
@@ -2750,6 +2763,14 @@ function drawStatusMarks(u, yOff) {
   if (u.pv && u.pv.plates > 0) {
     for (let i = 0; i < u.pv.plates; i++) pips.push(THEME.shield);
   }
+  // skill-owned marks (F12): one pip per live stack in the mark's colour
+  if (u.markTags && m) {
+    for (const tag of u.markTags) {
+      if (tag === 'ember' || tag === 'chill') continue;   // the passive pips above already draw these
+      if (!(m[tag] > 0) || !(m[tag + 'T'] > Game.time)) continue;
+      for (let i = 0; i < m[tag]; i++) pips.push(m[tag + 'C'] || THEME.magic);
+    }
+  }
   if (!pips.length) return;
   const top = u._top || u.radius * 1.9;
   uprightAt(u.x, u.y, () => {
@@ -2912,6 +2933,16 @@ function render() {
   for (const z of Game.zones) {
     if (!inView(z.x, z.y, z.radius + 40)) continue;
     const col = TEAM_COLORS[z.team];
+    if (z.lingerT > 0) {            // F13: a patch on the ground fading with its time left
+      const k = clamp(z.lingerT / z.linger.dur, 0, 1);
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, TAU);
+      ctx.fillStyle = rgba(z.color || col, 0.08 + 0.14 * k);
+      ctx.fill();
+      ctx.strokeStyle = rgba(z.color || col, 0.35 + 0.3 * k); ctx.lineWidth = 2;
+      ctx.setLineDash([5, 9]); ctx.lineDashOffset = -Game.time * 20;
+      ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
+      continue;
+    }
     const warm = z.delay > 0 ? 1 - z.delay / z.delay0 : 1;
     ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, TAU);
     ctx.fillStyle = rgba(col, 0.10 + warm * 0.16);

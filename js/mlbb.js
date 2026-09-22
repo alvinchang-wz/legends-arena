@@ -123,8 +123,7 @@ const Mlbb = {
   update(dt) {
     if (Game.state !== 'play' || Game.paused) return;
     for (const h of Game.heroes) {
-      if (h.revealT > 0) h.revealT -= dt;
-      if (h.arrivalT > 0) this.tickArrival(h, dt);
+      if (h.arrivalT > 0) this.tickArrival(h, dt);   // revealT ticks in Hero.update (core rule)
     }
     this.tickEvolveUnlock();
     this.tickEpicClocks();

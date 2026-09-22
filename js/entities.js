@@ -292,6 +292,7 @@ class Hero extends Unit {
     this.channelS = null;     // F18 channel {s, t, i, rank}
     this.basicRangeState = null;
     this.revealT = 0;         // seconds this hero is revealed through bush / conceal
+    this.concealT = 0;        // F13: standing in a concealing zone (hidden like a bush)
     this.recallT = 0; this.respawnT = 0;
     this.recentDmg = [];      // [{h, t}] recent hero damagers for assists
     this.aiTimer = rand(0, 0.3); this.aiState = 'push'; this.aiTarget = null;
@@ -483,6 +484,7 @@ class Hero extends Unit {
     return d;
   }
   onBasicLanded(target, dmg) {
+    if (this.concealT > 0) this.revealT = Math.max(this.revealT, 1.6);
     this.fire('onBasicHit', target, dmg);
     if (this.resource === 'energy') this.gainEnergy((this.def0.energy && this.def0.energy.perBasic) || 0);
     else if (this.resource === 'heat') this.gainHeat(target, 'Basic');
@@ -498,6 +500,7 @@ class Hero extends Unit {
     this.emblemOnHeroDamage(target, dmg);
   }
   onSkillLanded(target, dmg, s) {
+    if (this.concealT > 0 && dmg) this.revealT = Math.max(this.revealT, 1.6);
     this.fire('onSkillHit', target, dmg, s);
     if (this.resource === 'heat') this.gainHeat(target, 'Skill');
     if (this.emblem && this.emblem.id === 'fighter') this.heal(dmg * 0.06);
@@ -1273,6 +1276,8 @@ class Hero extends Unit {
     for (let i = 0; i < 3; i++) if (this.skillCd[i] > 0) this.skillCd[i] -= dt;
     if (this.buffAtkT > 0) this.buffAtkT -= dt;
     if (this.buffAsT > 0) this.buffAsT -= dt;
+    if (this.revealT > 0) this.revealT -= dt;
+    if (this.concealT > 0) this.concealT -= dt;
     if (this.fleeT > 0) this.fleeT -= dt;
     if (this.spellCd > 0) this.spellCd -= dt;
     if (this.reflectT > 0) this.reflectT -= dt;
@@ -3414,12 +3419,61 @@ class Zone {
     this.owner = owner; this.team = owner.team; this.s = s;
     this.x = x; this.y = y; this.radius = s.radius;
     this.delay = s.delay || 0.6; this.delay0 = this.delay;
-    this.ticks = s.ticks || 1; this.interval = s.interval || 0;
+    this.ticks = s.ticks !== undefined ? s.ticks : 1; this.interval = s.interval || 0;
     this.ticks0 = this.ticks;
     this.next = 0; this.dead = false; this.age = 0;
     this.color = owner.color;
     this.rank = owner.skillRankOf ? owner.skillRankOf(s) : 1;
     this.dmg = owner.skillDmg(s, this.rank);
+    /* F13: after its ticks the zone may stay as a patch (see updateLinger) */
+    this.linger = s.linger || null;
+    this.lingerT = 0; this.lingerAge = 0; this.chillT = 0; this.buffT = 0;
+    this.hitSet = this.linger && this.linger.countsAsSkillHit ? new Set() : null;
+  }
+  /* The ticks are done: linger or die. */
+  finish() {
+    if (this.linger && this.linger.dur > 0) { this.lingerT = this.linger.dur; this.lingerAge = 0; return; }
+    this.dead = true;
+  }
+  /* linger: {dur, enemySlowPct, enemySlowRamp?: [from, to], allySpeedAdd,
+     chillPerSec, chillDelay, conceal, countsAsSkillHit, endPayload?}.
+     Each frame: enemies inside are slowed (the pct lerps over dur with a
+     ramp), allied heroes inside are hastened and, with conceal, hidden like
+     a bush (revealed 1.6 s on dealing damage); after chillDelay enemies take
+     one Chill per 1/chillPerSec s; countsAsSkillHit fires onSkillLanded once
+     per enemy per cast; endPayload lands on everyone inside at t = 0. */
+  updateLinger(dt) {
+    const L = this.linger, s = this.s, owner = this.owner;
+    this.lingerT -= dt; this.lingerAge += dt;
+    const ending = this.lingerT <= 0;
+    const k = Math.min(1, this.lingerAge / L.dur);
+    const slow = L.enemySlowRamp ? lerp(L.enemySlowRamp[0], L.enemySlowRamp[1], k) : (L.enemySlowPct || 0);
+    let chillNow = false;
+    if (L.chillPerSec && this.lingerAge >= (L.chillDelay || 0)) {
+      this.chillT -= dt;
+      if (this.chillT <= 0) { this.chillT += 1 / L.chillPerSec; chillNow = true; }
+    }
+    const payload = ending && L.endPayload ? Object.assign({ dmgType: s.dmgType }, L.endPayload) : null;
+    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+      if (hyp(u.x - this.x, u.y - this.y) > this.radius + u.radius) continue;
+      const ten = u.attrs ? u.attrs.get('tenacity') : 0;
+      if (slow > 0 && u.cc) u.cc.applySlow(slow, 0.2, ten);
+      if (this.hitSet && !this.hitSet.has(u)) { this.hitSet.add(u); owner.onSkillLanded(u, 0, s); }
+      if (chillNow) applyChill(owner, u);
+      if (payload) owner.skillHit(u, payload, this.rank);
+    }
+    if (L.allySpeedAdd || L.conceal) {
+      this.buffT -= dt;
+      const buff = this.buffT <= 0;
+      if (buff) this.buffT = 0.1;
+      for (const h of Game.heroes) {
+        if (h.team !== this.team || !h.alive) continue;
+        if (hyp(h.x - this.x, h.y - this.y) > this.radius + h.radius) continue;
+        if (buff && L.allySpeedAdd) h.addTimedBuff('speed', L.allySpeedAdd, 0.25);
+        if (L.conceal) h.concealT = 0.15;
+      }
+    }
+    if (ending) this.dead = true;
   }
   tick() {
     const s = this.s, ti = this.ticks0 - this.ticks;   // 0 for the first tick
@@ -3462,19 +3516,20 @@ class Zone {
   update(dt) {
     if (this.dead) return;
     this.age += dt;
+    if (this.lingerT > 0) { this.updateLinger(dt); return; }
     if (this.delay > 0) {
       this.delay -= dt;
       if (this.s.pullSpeed) this.pull(dt);
       if (this.delay <= 0) {
-        this.tick();
-        if (this.ticks <= 0) this.dead = true; else this.next = this.interval;
+        if (this.ticks > 0) this.tick();
+        if (this.ticks <= 0) this.finish(); else this.next = this.interval;
       }
       return;
     }
     this.next -= dt;
     if (this.next <= 0) {
       this.tick();
-      if (this.ticks <= 0) this.dead = true; else this.next = this.interval;
+      if (this.ticks <= 0) this.finish(); else this.next = this.interval;
     }
   }
 }
