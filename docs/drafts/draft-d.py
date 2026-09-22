@@ -137,21 +137,28 @@ def remove_small(mask, min_area_px2):
     n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
     keep = np.zeros(n, bool); keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= min_area_px2 * R * R
     return keep[lab].astype(np.uint8)
-def polygons(mask, eps_raster_px, min_area_px2):
-    """outlines of every blob, in map px, simplified; holes are filled"""
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+UP = 3                                        # outline tracing happens at R*UP px per map px on a smoothed mask
+def polygons(mask, eps_map_px, min_area_px2):
+    """outlines of every blob, in map px, traced on the mask upsampled and
+    smoothed (so the pixel staircase becomes a curve), simplified; holes filled"""
+    big = cv2.resize(mask.astype(np.float32), (N * UP, N * UP), interpolation=cv2.INTER_LINEAR)
+    big = cv2.GaussianBlur(big, (0, 0), 0.45 * R * UP)          # ~0.45 map px: rounds the steps, keeps the shape
+    hi = (big > 0.5).astype(np.uint8)
+    cnts, _ = cv2.findContours(hi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     out = []
+    K = R * UP
     for c in cnts:
-        if cv2.contourArea(c) < min_area_px2 * R * R: continue
-        simp = cv2.approxPolyDP(c, eps_raster_px, True).reshape(-1, 2)
+        if cv2.contourArea(c) < min_area_px2 * K * K: continue
+        simp = cv2.approxPolyDP(c, eps_map_px * K, True).reshape(-1, 2)
         if len(simp) < 3: continue
-        one = np.zeros((N, N), np.uint8); cv2.drawContours(one, [c], -1, 1, -1)
+        one = np.zeros(hi.shape, np.uint8); cv2.drawContours(one, [c], -1, 1, -1)
         d = cv2.distanceTransform(one, cv2.DIST_L2, 5)
         m = cv2.moments(c)
         cxr, cyr = m['m10'] / m['m00'], m['m01'] / m['m00']
-        out.append({'poly': [[round(x, 1), round(y, 1)] for x, y in (from_r(float(px), float(py)) for px, py in simp)],
-                    'x': round(from_r(cxr, cyr)[0], 1), 'y': round(from_r(cxr, cyr)[1], 1),
-                    'r': round(float(d.max()) / R, 1), 'area': round(cv2.contourArea(c) / (R * R), 1)})
+        pts = [(x / K + X0, y / K + Y0) for x, y in simp.astype(float)]
+        out.append({'poly': [[round(x, 1), round(y, 1)] for x, y in pts],
+                    'x': round(cxr / K + X0, 1), 'y': round(cyr / K + Y0, 1),
+                    'r': round(float(d.max()) / K, 1), 'area': round(cv2.contourArea(c) / (K * K), 1)})
     return out
 
 # ---------------------------------------------------------------- corners: void beyond the chamfers
@@ -191,7 +198,7 @@ wall = remove_small(wall, 12)
 wall = symmetrise(wall)
 wall_src = wall.copy()
 
-WALLS = [{'poly': w['poly'], 'r': w['r'], 'x': w['x'], 'y': w['y']} for w in polygons(wall, 0.7, 12)]
+WALLS = [{'poly': w['poly'], 'r': w['r'], 'x': w['x'], 'y': w['y']} for w in polygons(wall, 0.35, 12)]
 for v in (VOID_A, VOID_B):
     WALLS.append({'poly': [[round(x, 1), round(y, 1)] for x, y in v], 'r': 20.0, 'hidden': True})
 
@@ -210,7 +217,7 @@ bush &= 1 - cv2.dilate(built, disk(0.5))
 for c in (BASE_A, BASE_B): circle(bush, c, 30, 0)
 bush = remove_small(bush, 25)
 bush = symmetrise(bush)
-BUSHES = [{'poly': b['poly'], 'x': b['x'], 'y': b['y'], 'r': round(max(3.0, math.sqrt(b['area'] / math.pi)), 1)} for b in polygons(bush, 0.7, 25)]
+BUSHES = [{'poly': b['poly'], 'x': b['x'], 'y': b['y'], 'r': round(max(3.0, math.sqrt(b['area'] / math.pi)), 1)} for b in polygons(bush, 0.35, 25)]
 # the mid lane has no bushes: the light patches the minimap draws on the lane at
 # the river crossing are bank decoration, not concealment (confirmed by the user)
 def _dist_mid(x, y):
