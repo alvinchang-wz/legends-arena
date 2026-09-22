@@ -8,7 +8,9 @@
     "sync": "npm run build:www && cap sync android",
     "android:debug": "npm run sync && cd android && gradlew assembleDebug",
     "android:open": "cap open android",
-    "test": "node headless/runtime.test.js"
+    "test": "node headless/runtime.test.js && node headless/batch.test.js && node headless/env.test.js && node headless/stats.test.js && node tests/run-all.js",
+    "test:headless": "node headless/runtime.test.js && node headless/batch.test.js && node headless/env.test.js && node headless/stats.test.js",
+    "test:kits": "node tests/run-all.js"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.9",
