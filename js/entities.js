@@ -289,6 +289,7 @@ class Hero extends Unit {
     this.lastDmgT = -99;      // F5: last time this hero dealt or took damage (heat decay)
     this._sx = 0; this._sy = 0;   // position at the top of the previous update (stillness)
     this.state = null;        // F19 self state {s, t}
+    this.untargetable = false; // F19: mirrors state.s.untargetable (a plain field: enemyUnits/canSee read it constantly)
     this.channelS = null;     // F18 channel {s, t, i, rank}
     this.basicRangeState = null;
     this.revealT = 0;         // seconds this hero is revealed through bush / conceal
@@ -457,13 +458,12 @@ class Hero extends Unit {
     if (this.channelS || (this.state && this.state.t > 0 && this.state.s.noAttack)) return;
     super.tryAttack(target);
   }
-  /* F19: nobody's target while a Shade Step runs (dots keep ticking). */
-  get untargetable() { return !!(this.state && this.state.t > 0 && this.state.s.untargetable); }
   /* End a self state early (expiry or recast): its stat buffs go with it. */
   endState() {
     const st = this.state;
     if (!st) return;
     this.state = null;
+    this.untargetable = false;
     for (const k of st.buffs) if (this.buffs[k]) this.buffs[k].t = 0;
     if (st.buffs.length) this.recalcStats(false);
   }
@@ -967,7 +967,7 @@ class Hero extends Unit {
     this.alive = false;
     this.deaths++; this.deathStreak++; this.streak = 0;
     this.dashS = null; this.forced = null; this.recallT = 0; this.hot = null;
-    this.state = null; this.channelS = null; this.basicRangeState = null;
+    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null;
     this.cc.clear(); this.shields = []; this.dots = []; this.marks = {};
     this.runes = {};
     this.curTarget = null; this.aiTarget = null;
@@ -1226,6 +1226,7 @@ class Hero extends Unit {
       case 'selfState': {   // F19: a timed state on the caster (immunities, root, untargetable...)
         const dur = s.dur || 1;
         this.state = { s, t: dur, buffs: [] };
+        this.untargetable = !!s.untargetable;   // nobody's target while it runs (dots keep ticking)
         if (s.armorAdd) { this.addTimedBuff('armor', s.armorAdd, dur); this.state.buffs.push('armor'); }
         if (s.mrAdd) { this.addTimedBuff('mr', s.mrAdd, dur); this.state.buffs.push('mr'); }
         if (s.speedPct) { this.addTimedBuff('speedPct', s.speedPct, dur); this.state.buffs.push('speedPct'); }
