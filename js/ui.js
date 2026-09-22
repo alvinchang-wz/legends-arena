@@ -481,7 +481,31 @@ const UI = {
     if (s.atkMult) t.push(`+${Math.round((s.atkMult - 1) * 100)}% attack`);
     if (s.spdAdd) t.push(`+${s.spdAdd} move speed`);
     if (s.hotPct) t.push(`Regen ${Math.round(s.hotPct * 100)}% HP`);
-    if (s.type === 'heal') t.push('Also heals allies');
+    /* the assassins' and supports' fields (docs/design/heroes.md F9, F17, F19-F22, F25, F26) */
+    if (s.heroOnly && s.type === 'skillshot') t.push('Passes through creeps, hits heroes only');
+    if (s.pctMaxHp) t.push(`+${Array.isArray(s.pctMaxHp) ? s.pctMaxHp.map(v => Math.round(v * 100)).join('/') : Math.round(s.pctMaxHp * 100)}% of target max HP${s.pctMaxHpCap ? ` (cap ${s.pctMaxHpCap} vs creeps)` : ''}`);
+    if (s.missingPct) t.push(`+${Math.round(s.missingPct * 100)}%${s.missingPctLv ? ` (+${Math.round(s.missingPctLv * 100)}/rank)` : ''} of target missing HP${s.missingCap ? ` (cap ${s.missingCap} vs creeps)` : ''}`);
+    if (s.refreshMark) t.push(`Refreshes ${s.refreshMark.tag}`);
+    if (s.recast) t.push(`Recast within ${s.recast.window}s: ${s.recast.label || 'Return'} (free)`);
+    if (s.untargetable) t.push(`Untargetable ${s.dur}s`);
+    if (s.type === 'selfState' && s.speedPct) t.push(`+${Math.round(s.speedPct * 100)}% move speed`);
+    if (s.noAttack) t.push('No attacks or casts while active');
+    if (s.type === 'basicRange') t.push(`Next ${s.count} basics thrown from ${s.rangeSet} within ${s.dur}s, +${s.bonusDmg}${s.bonusDmgLv ? ` +${s.bonusDmgLv}/rank` : ''} (+${Math.round((s.bonusScaleAd || 0) * 100)}% ATK) each`);
+    if (s.type === 'allybuff' && s.asAdd) t.push(`Allies +${s.asAdd.toFixed(2)}${s.asAddLv ? ` (+${s.asAddLv.toFixed(2)}/rank)` : ''} attack speed for ${s.dur}s (max with other steroids)`);
+    if (s.allyTarget) t.push(`One ally within ${s.allyTarget.range}${s.allyTarget.self ? '' : ', never yourself'}`);
+    if (s.link) {
+      const L = s.link;
+      t.push(`${L.all ? 'Links every ally healed' : 'Links the ally'} ${L.dur}s: ${Math.round(L.dur / (L.interval || 0.5))} ticks of ${fmt(L.tickHeal)}${L.tickHealLv ? ` +${L.tickHealLv}/rank` : ''} (+${Math.round((L.tickScaleAp || 0) * 100)}% MAGIC), snaps past ${L.breakRange}`);
+      if (L.targetSpeedAdd) t.push(`Linked ally +${L.targetSpeedAdd} move speed`);
+      if (L.casterArmorAdd || L.casterMrAdd) t.push(`You +${L.casterArmorAdd || 0} Armor / +${L.casterMrAdd || 0} MR while linked`);
+    }
+    if (s.type === 'object') {
+      t.push(`Lasts ${s.dur}s, pulses every ${s.tick}s`);
+      if (s.shield) t.push(`Allies within ${s.allyRadius} shielded ${s.shield}${s.shieldLv ? ` +${s.shieldLv}/rank` : ''} (+${Math.round((s.shieldScaleAp || 0) * 100)}% MAGIC) for ${s.shieldDur}s (refreshes)`);
+      if (s.revealRadius) t.push(`Reveals enemy heroes within ${s.revealRadius}${s.revealBasicBonus ? `, your basics on them +${Math.round(s.revealBasicBonus * 100)}%` : ''}`);
+    }
+    if (s.hpCost && s.healFromCost) t.push(`Heals ${Math.round(s.healFromCost * 100)}% of the HP paid`);
+    if (s.type === 'heal') t.push(s.allyTarget ? 'Heals one ally' : 'Also heals allies');
     if (s.delay) t.push(`${s.delay}s wind-up`);
     return t;
   },
@@ -1385,10 +1409,12 @@ const UI = {
     this.els.ppShield.style.width =
       Math.min(100 - hpW, p.shieldTotal / p.maxHp * 100) + '%';
     this.els.ppMp.style.width = (p.maxMana ? p.mana / p.maxMana * 100 : 0) + '%';
-    // F3: the bar is coloured by what it holds (mana / energy / heat) and hidden for a cooldown hero
+    // F3: the bar is coloured by what it holds (mana / energy / heat) and hidden for a cooldown hero;
+    // a hybrid HP hero with a mana pool (Pact) shows a mana bar: only Offering is paid in blood
     const bar = this.els.ppMp.parentElement;
-    if (bar && bar.dataset.resource !== p.resource) {
-      bar.dataset.resource = p.resource;
+    const shown = p.resource === 'hp' && p.maxMana ? 'mana' : p.resource;
+    if (bar && bar.dataset.resource !== shown) {
+      bar.dataset.resource = shown;
       // no bar for a cooldown hero, nor for an HP-cost hero with no mana pool at all (Marrow)
       bar.classList.toggle('hidden', p.resource === 'none' || (p.resource === 'hp' && !p.maxMana));
     }
