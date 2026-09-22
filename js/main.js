@@ -2930,12 +2930,13 @@ function render() {
   };
   const bushPoly = b => {
     const path = (dx, dy) => { ctx.beginPath(); b.poly.forEach((p, i) => i ? ctx.lineTo(p.x + dx, p.y + dy) : ctx.moveTo(p.x + dx, p.y + dy)); ctx.closePath(); };
-    path(6, 10); ctx.fillStyle = 'rgba(4,10,6,0.32)'; ctx.fill();
-    path(0, 0); ctx.fillStyle = Game.isTen() ? '#3a1a10' : THEME.bush; ctx.fill();
-    ctx.save(); path(0, -10); ctx.clip();
-    const sub = { r: Math.max(26, b.r * 0.62) };
-    for (const p of b.lobes) bushLobes(sub, p.x, p.y, Math.atan2(p.y - b.y, p.x - b.x) + Math.PI / 4);
-    ctx.restore();
+    /* the grass itself is baked into the board; live, the bush is a lifted
+       translucent canopy so units inside stay readable */
+    ctx.globalAlpha = 0.55;
+    path(0, -12); ctx.fillStyle = Game.isTen() ? '#4a2a18' : THEME.bushLight; ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = Game.isTen() ? 'rgba(90,50,30,0.5)' : 'rgba(40,110,50,0.55)'; ctx.lineWidth = 4; ctx.lineJoin = 'round';
+    path(0, -12); ctx.stroke();
   };
   for (const b of Game.bushes()) {
     if (b.poly) {

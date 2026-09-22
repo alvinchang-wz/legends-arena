@@ -427,13 +427,30 @@ const MapArt = (() => {
      beds along its axis, the same shape the concealment test uses. */
   function bush(g, b) {
     if (b.poly) {
-      /* exact outline: the bed is the polygon itself, thickets sit inside it */
-      g.fillStyle = 'rgba(6, 22, 8, 0.55)';
-      g.beginPath(); b.poly.forEach((p, i) => i ? g.lineTo(p.x + 10, p.y + 12) : g.moveTo(p.x + 10, p.y + 12)); g.closePath(); g.fill();
-      g.fillStyle = '#245a2c';
-      g.beginPath(); b.poly.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.fill();
-      const rr = Math.max(26, b.r * 0.62);
-      for (const p of b.lobes) bushBeds(g, { x: p.x, y: p.y, r: rr });
+      /* exact outline: the polygon is the bed. A ground shadow, the bed with a
+         darkened rim, then tall grass blades clipped to the outline. */
+      const rnd = rng((b.x * 31 + b.y * 17) | 0);
+      const path = (dx, dy) => { g.beginPath(); b.poly.forEach((p, i) => i ? g.lineTo(p.x + dx, p.y + dy) : g.moveTo(p.x + dx, p.y + dy)); g.closePath(); };
+      path(8, 12); g.fillStyle = 'rgba(6, 22, 8, 0.5)'; g.fill();
+      path(0, 0); g.fillStyle = '#2a6132'; g.fill();
+      g.save(); path(0, 0); g.clip();
+      g.strokeStyle = 'rgba(8, 34, 14, 0.6)'; g.lineWidth = 30; g.lineJoin = 'round'; path(0, 0); g.stroke();
+      const w = b.maxX - b.minX, h = b.maxY - b.minY;
+      const n = Math.round((w * h) / 150);
+      g.lineCap = 'round';
+      for (let i = 0; i < n; i++) {
+        const px = b.minX + rnd() * w, py = b.minY + rnd() * h;
+        if (!polyClosest(b.poly, px, py).inside) continue;
+        const hgt = 14 + rnd() * 22;
+        const lit = rnd() < 0.45;
+        g.strokeStyle = lit ? `rgba(${110 + rnd() * 60 | 0},${190 + rnd() * 40 | 0},${70 + rnd() * 30 | 0},0.85)`
+          : `rgba(${30 + rnd() * 30 | 0},${100 + rnd() * 50 | 0},${34 + rnd() * 20 | 0},0.85)`;
+        g.lineWidth = 2.2 + rnd() * 1.6;
+        g.beginPath(); g.moveTo(px, py + 3);
+        g.quadraticCurveTo(px + (rnd() - 0.5) * 10, py - hgt * 0.5, px + (rnd() - 0.5) * 16, py - hgt);
+        g.stroke();
+      }
+      g.restore();
       return;
     }
     bushBeds(g, b);
