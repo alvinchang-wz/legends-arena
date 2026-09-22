@@ -680,17 +680,20 @@ const PASSIVES = {
     },
   },
 
-  chambered: {
-    init(h) { h.pv = { shots: 0 }; },
-    onBasicHit(h, target) {
-      h.pv.shots++;
-      if (h.pv.shots < 4) return;
-      h.pv.shots = 0;
-      resolveDamage(h, target, {
-        amount: 55 + h.curAtk() * 0.45, type: 'true', noPassive: true,
-      });
-      h.gainMana(8);
-      Game.fx.ring(target.x, target.y, target.radius + 16, h.color, 0.35);
+  /* Vesper — basics and Deadeye Round on a hero under 40% HP deal +20%
+     (Fan the Hammer shots do not); a critical basic on a hero takes 1.0 s
+     off Fan the Hammer's running recharge (F8 refundRecharge), once per
+     2.5 s. */
+  lastlight: {
+    init(h) { h.pv = { refundT: -99 }; },
+    onDealDamage(h, target, amount, pkt) {
+      if (!pkt || target.type !== 'hero' || !(target.hpPct < 0.4)) return amount;
+      if (pkt.isBasic || (pkt.skill && (pkt.skill._base || pkt.skill) === h.skills[2])) return amount * 1.2;
+      return amount;
+    },
+    onBasicHit(h, target, dmg, pkt) {
+      if (!pkt || !pkt.crit || target.type !== 'hero' || Game.time - h.pv.refundT < 2.5) return;
+      if (refundRecharge(h, 0, 1.0)) h.pv.refundT = Game.time;
     },
   },
 

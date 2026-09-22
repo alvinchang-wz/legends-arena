@@ -402,7 +402,10 @@ const UI = {
   /* [label, value] rows. Pass a live hero for current-level numbers. */
   skillStats(s, hero) {
     const fmt = v => Array.isArray(v) ? v.join('/') : v;   // per-rank arrays (F1)
-    const rows = [['Cooldown', fmt(s.cd) + 's']];
+    // F8: a charge skill has no cooldown, only charges and a recharge (with a castDelay between shots)
+    const rows = s.charges
+      ? [['Charges', s.charges], ['Recharge', fmt(s.recharge) + 's' + (s.rechargeLv ? ` ${s.rechargeLv}/lv` : '')]]
+      : [['Cooldown', fmt(s.cd) + 's']];
     if (s.hpCost) rows.push(['Cost', Math.round(s.hpCost * 100) + '% HP']);
     else if (s.energy !== undefined) rows.push(['Energy', fmt(s.energy)]);
     else if (s.mana) rows.push(['Mana', fmt(s.mana)]);   // a free skill (Torren, Cinder) shows no cost row

@@ -2067,8 +2067,9 @@ class Hero extends Unit {
   }
   /* Is a non-hero enemy body (a creep) on the line from here to `t` within
      the shot's width? A non-pierce line is blocked by it. */
-  lineBlocked(t, s) {
-    const x0 = this.x, y0 = this.y, dx = t.x - x0, dy = t.y - y0, len2 = dx * dx + dy * dy;
+  lineBlocked(t, s) { return this.lineBlockedFrom(this.x, this.y, t, s); }
+  lineBlockedFrom(x0, y0, t, s) {
+    const dx = t.x - x0, dy = t.y - y0, len2 = dx * dx + dy * dy;
     if (len2 < 1) return false;
     const w = (s.radius || 24);
     for (const u of Game.enemyUnits(this.team, { neutral: true })) {
@@ -2542,6 +2543,30 @@ class Hero extends Unit {
     if (s.botKiteNoCharges && this.skillCharges[0] > 0) return null;
     return this.meleeThreat(s.botKite);
   }
+  /* F29 (Vesper's hint): is this bot in a fight around `t`? It dealt or
+     took damage in the last 2 s, or an ally has engaged near the target. */
+  inFight(t) { return Game.time - this.lastDmgT < 2 || (t && this.allyEngagedNear(t)); }
+  /* F29 (Lumen's hint): a unit that cannot run right now — slowed, rooted,
+     stunned, airborne, suppressed or channelling. */
+  unitHeld(u) { return !!(u && u.cc && (u.cc.has('slow') || !u.cc.canMove || u.channelS)); }
+  /* F29 (Vesper's hint): where a botClearLine dash should land so the
+     first skill (a charge shot that stops on the first unit) has a clear
+     line to `t`: only when it has a charge and the line from here is
+     blocked; six landings around the target are tried, nearest to the
+     current heading first, each inside the shot's range and off rock.
+     Null when nothing opens the line. */
+  clearLinePoint(s, t) {
+    const gun = this.skills[0];
+    if (!gun || !gun.charges || !(this.skillCharges[0] > 0) || !this.lineBlocked(t, gun)) return null;
+    const a0 = Math.atan2(t.y - this.y, t.x - this.x);
+    for (const off of [1.05, -1.05, 1.57, -1.57, 2.1, -2.1]) {
+      const a = a0 + off, lx = this.x + Math.cos(a) * s.dist, ly = this.y + Math.sin(a) * s.dist;
+      if (Game.wallAt(lx, ly, this.radius)) continue;
+      if (Math.hypot(t.x - lx, t.y - ly) >= gun.range * 0.95) continue;
+      if (!this.lineBlockedFrom(lx, ly, t, gun)) return { x: lx, y: ly };
+    }
+    return null;
+  }
   /* F29 (Zephyr's hint): the enemy heroes within `lr` of this hero and
      whether two of them stand roughly on one line from here (the second
      within 90 units of the ray through the first), which is what a
@@ -2581,6 +2606,9 @@ class Hero extends Unit {
     const ownLow = s.botOwnHpBelow ? this.hpPct < s.botOwnHpBelow : false;
     if (i === 2 && s.type !== 'basicMod') {
       if (!isHero) return 0;
+      // F29 (Vesper's / Lumen's hint): a pure execute (botExecuteOnly) waits for its threshold whatever the
+      // crowd; with botCcOk a slowed, rooted, stunned or channelling target qualifies too
+      if (s.botExecuteOnly && t.hpPct > (s.botExecuteHp || p.ultExecuteHp) && !(s.botCcOk && this.unitHeld(t))) return 0;
       const crowd = Game.heroes.filter(h => h.team !== this.team && h.alive && this.distTo(h) < 420).length;
       // F29 (Anchor's hint): Harbour also answers a tethered target slipping the line;
       // botExecuteHp: the skill's own execute threshold (Omen's End at 60%)
@@ -2596,6 +2624,10 @@ class Hero extends Unit {
       case 'skillshot':
         if (d >= s.range * 0.95 || !(isHero || farmOk)) return 0;
         if (s.heroOnly && !isHero) return 0;   // F20: it flies straight through creeps
+        // F29 (Vesper's hint): a shot that stops on the first unit is held while a creep is on the line to the hero
+        if (s.botClearLine && isHero && this.lineBlocked(t, s)) return 0;
+        // F29 (Vesper's hint): out of a fight keep botBank charges for the fight; in one, dump them
+        if (s.charges && s.botBank && this.skillCharges[i] <= s.botBank && !this.inFight(t)) return 0;
         if (s.hook) {     // F29 (Karn's hint): only an unblocked, isolated hero, carries first
           if (!isHero) return 0;
           const pick = this.hookPick(s);
@@ -2655,6 +2687,8 @@ class Hero extends Unit {
         if (s.dashBack) return isHero && d < (s.botKite || 260) ? 600 : 0;   // F22 / F29 (Lumen's hint): a hop away from whoever got close
         // F29 (Zephyr's / Vesper's hint): a marksman's dash goes away from a melee hero inside botKite
         if (s.botKite && this.kiteThreat(s)) return 800;
+        // F29 (Vesper's hint): Sidestep to a spot with a clear line when the hammer has a charge and a creep blocks it
+        if (s.botClearLine && isHero && this.clearLinePoint(s, t)) return 760;
         // F29 (Brass's hint): Shoulder any enemy hero attacking an allied hero within its reach
         if (s.botGuardAlly && isHero && this.guardTarget(s.dist)) return 800;
         // F29 (Omen's hint): fresh from a takedown, Pass onto the next-lowest hero in reach
@@ -2818,6 +2852,8 @@ class Hero extends Unit {
     // F29 (Zephyr's / Vesper's hint): a botKite dash flies away from the melee hero who got close
     if (s.botKite) { const m = this.kiteThreat(s); if (m) return this.escapeDashPoint(s, m); }
     if (!t || t.type !== 'hero') return t;
+    // F29 (Vesper's hint): Sidestep lands where the hammer has a clear line to the target
+    if (s.botClearLine) { const c = this.clearLinePoint(s, t); if (c) return c; }
     /* F29 (Torren's hint): a leap-to-point (F22) lands short of the
        lowest-HP-percent hero it can reach, so the slam covers the body. */
     if (s.dashToPoint) {

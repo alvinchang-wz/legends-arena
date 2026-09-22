@@ -44,9 +44,17 @@ function reset() {
     h.hp = h.maxHp;
   }
   G.projectiles.length = 0; G.tethers.length = 0; G.zones.length = 0; G.objects.length = 0;
+  for (let k = G.minions.length - 1; k >= 0; k--) if (G.minions[k]._test) { G.minions[k].alive = false; G.minions.splice(k, 1); }
 }
 reset();
 G.update(1 / 60);
+
+/* A creep of `team` parked at (x, y) for the rest of the test (reset removes it). */
+function creep(team, x, y) {
+  const m = new sim.context.Minion(team, 'mid', 'melee');
+  m._test = true; T.place(m, x, y); G.minions.push(m);
+  return m;
+}
 
 /* Fire one basic from `h` at `t` and let the arrow land. */
 function basic(h, t) {
@@ -179,6 +187,161 @@ T.test('Marksman bots kite: during attack recovery a marksman steps straight awa
   for (let k = 0; k < 12; k++) Hero.prototype.botControl.call(zephyr, 1 / 60);
   assert.ok(zephyr.combatPoint, 'orbit point chosen');
   assert.equal(zephyr.meleeThreat(250), null);
+});
+
+/* ---------------- Vesper ---------------- */
+
+T.test('Vesper: base stats and skill numbers match the spec; Fan the Hammer is the only charge skill', () => {
+  reset();
+  const d = vesper.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [535, 70, 190, 20, 66, 7.6, 12, 2.1, 10, 1.5, 330, 1.0, 252]);
+  assert.equal(d.passive.id, 'lastlight');
+  const [s1, s2, s3] = vesper.skills;
+  assert.deepEqual([s1.type, s1.charges, s1.recharge, s1.rechargeLv, s1.castDelay, s1.cd, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAd, s1.range, s1.speed, s1.radius, s1.pierce],
+    ['skillshot', 3, 9, -0.4, 0.6, undefined, 30, 3, 100, 14, 0.6, 560, 1300, 22, false]);
+  assert.equal(vesper.rechargeFor(s1, 6), 7); assert.equal(rankVal(s1, 'dmg', 6), 170); assert.equal(rankVal(s1, 'mana', 6), 45);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.buff], ['dash', 10, -0.3, 45, 250, 1150, undefined, undefined]);
+  assert.deepEqual(s2.endNova, { radius: 170, dmgType: 'physical', dmg: 70, dmgLv: 10, scaleAd: 0.45, slowPct: 0.3, slowDur: 1.0 });
+  assert.ok(Math.abs(vesper.cooldownFor(s2, 6) - 8.5) < 1e-9);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.dmg, s3.scaleAd, s3.range, s3.speed, s3.radius, s3.pierce],
+    ['skillshot', [40, 35, 30], [100, 120, 140], [280, 380, 480], 1.1, 820, 1500, 20, false]);
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.charges)).length, 1, 'the only charge skill in the roster');
+  for (const s of vesper.skills) assert.ok(s.desc && s.desc.length > 20);
+});
+
+T.test('Vesper: Fan the Hammer starts empty, refills one charge per 7 s ignoring cdr, fires one round per cast 0.6 s apart, and a creep blocks the round', () => {
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 300, open.y);
+  assert.equal(vesper.skillCharges[0], 0);
+  assert.equal(vesper.castSkill(0, grom), false, 'nothing banked');
+  T.seconds(G, 7.05);
+  assert.equal(vesper.skillCharges[0], 1, 'one charge after 7 s');
+  T.seconds(G, 14.1);
+  assert.equal(vesper.skillCharges[0], 3, 'full after 21 s');
+  vesper.items.push({ id: 'test-cdr', stats: { cdr: 0.3 } }); vesper.recalcStats(false);
+  vesper.mana = vesper.maxMana;
+  const mana0 = vesper.mana;
+  assert.ok(vesper.castSkill(0, grom));
+  assert.equal(vesper.skillCharges[0], 2);
+  assert.ok(Math.abs(vesper.mana - (mana0 - 45)) < 1e-9, 'rank-6 mana 45 per round');
+  assert.ok(Math.abs(vesper.skillRecharge[0] - 7) < 1e-9, 'the recharge ignores cdr');
+  assert.ok(Math.abs(vesper.skillCd[0] - 0.42) < 1e-9, 'castDelay 0.6 x (1 - cdr) between rounds');
+  assert.equal(vesper.castSkill(0, grom), false, 'inside the castDelay');
+  T.seconds(G, 0.45);
+  assert.ok(vesper.castSkill(0, grom)); T.seconds(G, 0.45); assert.ok(vesper.castSkill(0, grom));
+  assert.equal(vesper.skillCharges[0], 0, 'three separate casts');
+  T.frames(G, 30);
+  assert.ok(grom.stats.dmgTaken > 0, 'the rounds landed');
+  vesper.items.length = 0; vesper.recalcStats(false);
+  // a creep in front takes the round instead of the hero behind it
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 400, open.y);
+  const m = creep(0, open.x + 200, open.y);
+  vesper.skillCharges[0] = 3;
+  const mhp = m.hp;
+  assert.ok(vesper.castSkill(0, grom));
+  T.frames(G, 30);
+  assert.ok(m.hp < mhp, 'the creep took the round'); assert.equal(grom.stats.dmgTaken, 0, 'the hero behind it was not hit');
+});
+
+T.test('Vesper: Last Light adds 20% to basics and Deadeye on a hero under 40% (not to Fan the Hammer) and a critical basic refunds 1 s of the recharge once per 2.5 s', () => {
+  reset();
+  grom.hp = grom.maxHp * 0.3;
+  assert.ok(Math.abs(vesper.onDealDamage(grom, 100, { isBasic: true }) - 120) < 1e-9, 'a basic on a hero under 40%');
+  assert.ok(Math.abs(vesper.onDealDamage(grom, 100, { skill: vesper.skills[2] }) - 120) < 1e-9, 'Deadeye Round too');
+  assert.equal(vesper.onDealDamage(grom, 100, { skill: vesper.skills[0] }), 100, 'Fan the Hammer does not benefit');
+  grom.hp = grom.maxHp * 0.5;
+  assert.equal(vesper.onDealDamage(grom, 100, { isBasic: true }), 100, 'above 40%: nothing');
+  const m = creep(0, open.x + 200, open.y); m.hp = m.maxHp * 0.1;
+  assert.equal(vesper.onDealDamage(m, 100, { isBasic: true }), 100, 'creeps never');
+  // the refund
+  vesper.skillCharges[0] = 1; vesper.skillRecharge[0] = 5;
+  vesper.onBasicLanded(grom, 50, { isBasic: true, crit: false });
+  assert.equal(vesper.skillRecharge[0], 5, 'no crit: no refund');
+  vesper.onBasicLanded(grom, 50, { isBasic: true, crit: true });
+  assert.ok(Math.abs(vesper.skillRecharge[0] - 4) < 1e-9, 'a crit: 1.0 s off the running recharge');
+  vesper.onBasicLanded(grom, 50, { isBasic: true, crit: true });
+  assert.ok(Math.abs(vesper.skillRecharge[0] - 4) < 1e-9, 'once per 2.5 s');
+  vesper.onBasicLanded(m, 50, { isBasic: true, crit: true });
+  vesper.pv.refundT = -99;
+  vesper.onBasicLanded(m, 50, { isBasic: true, crit: true });
+  assert.ok(Math.abs(vesper.skillRecharge[0] - 4) < 1e-9, 'a crit on a creep refunds nothing');
+  vesper.onBasicLanded(grom, 50, { isBasic: true, crit: true });
+  assert.ok(Math.abs(vesper.skillRecharge[0] - 3) < 1e-9, 'after the lockout: again');
+  // a real critical arrow carries pkt.crit through resolveDamage
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 250, open.y);
+  vesper.items.push({ id: 'test-crit', stats: { critChance: 1 } }); vesper.recalcStats(false);
+  vesper.skillCharges[0] = 0; vesper.skillRecharge[0] = 6;
+  basic(vesper, grom);
+  assert.ok(vesper.skillRecharge[0] < 6 - 1 - 0.6 && vesper.skillRecharge[0] > 6 - 1 - 0.75, `the arrow's crit refunded 1 s (plus the frames elapsed): ${vesper.skillRecharge[0]}`);
+  vesper.items.length = 0; vesper.recalcStats(false);
+});
+
+T.test('Vesper: Sidestep slides 250 and bursts 170 around the landing (slow 30% for 1 s); Deadeye Round stops on the first unit for 480 (+110% ATK) at rank 3', () => {
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 350, open.y); T.place(ignis, open.x + 600, open.y);
+  assert.ok(vesper.castSkill(1, grom));
+  assert.ok(vesper.dashS && Math.abs(vesper.dashS.remaining - 250) < 1e-9 && vesper.dashS.dmg === 0, 'a 250 slide with no path damage');
+  assert.ok(Math.abs(vesper.skillCd[1] - 8.5) < 1e-9, 'rank-6 cooldown 8.5');
+  T.seconds(G, 0.3);
+  assert.equal(vesper.dashS, null);
+  assert.ok(grom.stats.dmgTaken > 0, 'the burst hit Grom (100 from the landing)');
+  assert.equal(ignis.stats.dmgTaken, 0, 'Ignis at 350 was outside 170');
+  assert.ok(Math.abs(grom.cc.slowPct - 0.3) < 1e-9 && grom.cc.t.slow > 0.7 && grom.cc.t.slow <= 1.0, `slow 30% for 1 s (the slide took 0.22 s of the 0.3): ${grom.cc.slowPct} ${grom.cc.t.slow}`);
+  // Deadeye: the first unit on the line takes it, the one behind does not
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(ignis, open.x + 500, open.y);
+  const mana0 = vesper.mana;
+  assert.ok(vesper.castSkill(2, ignis));
+  assert.equal(vesper.skillCd[2], 30); assert.ok(Math.abs(vesper.mana - (mana0 - 140)) < 1e-9);
+  const p = G.projectiles[G.projectiles.length - 1];
+  assert.ok(Math.abs(p.dmg - (480 + vesper.curAtk() * 1.1)) < 1e-6, 'rank-3 damage before mitigation');
+  assert.equal(p.pierce, false); assert.equal(p.maxDist, 820);
+  T.frames(G, 40);
+  assert.ok(grom.stats.dmgTaken > 0, 'Grom in front took it'); assert.equal(ignis.stats.dmgTaken, 0, 'Ignis behind him did not');
+});
+
+T.test('Vesper bot: rounds are held on a blocked line and banked to two out of a fight; Deadeye only under 45%; Sidestep opens the line, or away from a melee once the hammer is empty', () => {
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 400, open.y);
+  const [s1, s2] = vesper.skills;
+  vesper.skillCharges[0] = 3;
+  assert.ok(vesper.botSkillUrgency(0, grom, 400, true, false) > 0, 'three charges, clear line: poke');
+  vesper.skillCharges[0] = 2;
+  assert.equal(vesper.botSkillUrgency(0, grom, 400, true, false), 0, 'two charges out of a fight: banked');
+  vesper.lastDmgT = G.time;   // she traded a moment ago: in a fight
+  assert.ok(vesper.botSkillUrgency(0, grom, 400, true, false) > 0, 'in a fight: dump them');
+  vesper.skillCharges[0] = 1;
+  assert.ok(vesper.botSkillUrgency(0, grom, 400, true, false) > 0);
+  const m = creep(0, open.x + 200, open.y);
+  assert.equal(vesper.botSkillUrgency(0, grom, 400, true, false), 0, 'a creep on the line: held');
+  assert.equal(vesper.botSkillUrgency(2, grom, 400, true, false), 0, 'Deadeye too');
+  // Sidestep to a spot with a clear line, and it lands there
+  assert.equal(vesper.botSkillUrgency(1, grom, 400, true, false), 760, 'Sidestep for a clear line');
+  const pt = vesper.dashPick(s2, grom);
+  assert.ok(Math.abs(Math.hypot(pt.x - open.x, pt.y - open.y) - 250) < 1, 'a full slide');
+  assert.ok(!vesper.lineBlockedFrom(pt.x, pt.y, grom, s1), 'the line from the landing is clear');
+  vesper.skillCharges[0] = 0;
+  assert.equal(vesper.clearLinePoint(s2, grom), null, 'no charge to shoot with: no need');
+  // Deadeye: an execute only, whatever the crowd around her
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 400, open.y); T.place(ignis, open.x + 300, open.y + 200); T.place(torren, open.x - 300, open.y);
+  grom.hp = grom.maxHp * 0.6;
+  assert.equal(vesper.botSkillUrgency(2, grom, 400, true, false), 0, '60%: held even with three heroes about');
+  grom.hp = grom.maxHp * 0.44;
+  assert.ok(vesper.botSkillUrgency(2, grom, 400, true, false) > 0, 'under 45%: fire');
+  // a melee inside 220: Sidestep away only once the hammer is empty
+  reset();
+  T.place(vesper, open.x, open.y); T.place(grom, open.x + 400, open.y); T.place(torren, open.x - 180, open.y);
+  vesper.skillCharges[0] = 1;
+  assert.equal(vesper.kiteThreat(s2), null, 'a charge left: shoot him instead');
+  vesper.skillCharges[0] = 0;
+  assert.equal(vesper.kiteThreat(s2), torren);
+  assert.equal(vesper.botSkillUrgency(1, grom, 400, true, false), 800, 'empty: hop away');
+  const away = vesper.dashPick(s2, grom);
+  assert.ok(away.x > open.x + 150, `lands away from Torren: ${away.x - open.x}`);
 });
 
 T.done();

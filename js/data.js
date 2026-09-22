@@ -303,19 +303,27 @@ const HEROES = [
   },
   {
     id: 'vesper', name: 'Vesper', role: 'Marksman', icon: '🔫', color: '#f4bf4f', projColor: '#ffe08a',
-    desc: 'A dusk gunslinger who reloads violence into every fourth shot.',
-    difficulty: 2, damageStyle: 'physical',
-    hp: 528, hpLv: 70, mp: 190, mpLv: 20, atk: 61, atkLv: 7.2,
-    armor: 11, armorLv: 2.0, mr: 9, mrLv: 1.5,
-    range: 355, atkSpd: 1.08, speed: 268,
+    desc: 'A burst-crit skirmisher: three fanned shots, a sidestep, then one Deadeye round to end a low target.',
+    difficulty: 3, damageStyle: 'physical',
+    /* docs/design/heroes.md, Marksmen: Vesper. The roster's only charge
+       skill (F8): Fan the Hammer banks three charges that refill one at a
+       time, immune to cooldown reduction, learned empty; every shot in the
+       kit stops on the first unit. Bot fields: botClearLine holds a shot
+       (and aims the Sidestep) while a creep is on the line to the hero;
+       botBank keeps two charges out of a fight; botExecuteOnly makes
+       Deadeye a pure execute; botKite + botKiteNoCharges: Sidestep away
+       from a melee inside 220 once the hammer is empty. */
+    hp: 535, hpLv: 70, mp: 190, mpLv: 20, atk: 66, atkLv: 7.6,
+    armor: 12, armorLv: 2.1, mr: 10, mrLv: 1.5,
+    range: 330, atkSpd: 1.0, speed: 252,
     passive: {
-      name: 'Chambered', icon: '🪙', id: 'chambered',
-      desc: 'Every 4th basic attack deals 55 (+45% ATK) bonus true damage and refunds 8 mana.',
+      name: 'Last Light', icon: '🪙', id: 'lastlight',
+      desc: 'Basic attacks and Deadeye Round against heroes below 40% HP deal +20% damage. A critical basic on a hero refunds 1.0s of Fan the Hammer\'s recharge (once per 2.5s).',
     },
     skills: [
-      { name: 'Twin Report', icon: '💥', type: 'skillshot', cd: 7, mana: 40, dmgType: 'physical', dmg: 95, dmgLv: 12, scaleAd: 0.55, range: 640, speed: 1100, radius: 22, pierce: true, desc: 'Fire both pistols in a line, piercing every enemy.' },
-      { name: 'Sidestep', icon: '↷', type: 'dash', cd: 10, mana: 40, dist: 240, speed: 1050, buff: { asMult: 1.45, dur: 2.4 }, desc: 'Slide aside and fan the hammers for a burst of attack speed.' },
-      { name: 'Deadeye Round', icon: '🎯', type: 'skillshot', cd: 40, mana: 95, dmgType: 'physical', dmg: 300, dmgLv: 30, scaleAd: 1.0, range: 760, speed: 1500, radius: 20, desc: 'One long-range round for one target. No splash, no storm — the opposite of Zephyr.' },
+      { name: 'Fan the Hammer', icon: '💥', type: 'skillshot', charges: 3, recharge: 9, rechargeLv: -0.4, castDelay: 0.6, mana: 30, manaLv: 3, dmgType: 'physical', dmg: 100, dmgLv: 14, scaleAd: 0.6, range: 560, speed: 1300, radius: 22, pierce: false, botClearLine: true, botBank: 2, desc: 'One fast pistol round at the first enemy in a line. Three rounds banked, each a separate cast, refilling one at a time (9 -> 7s, no cooldown reduction).' },
+      { name: 'Sidestep', icon: '↷', type: 'dash', cd: 10, cdLv: -0.3, mana: 45, dist: 250, speed: 1150, endNova: { radius: 170, dmgType: 'physical', dmg: 70, dmgLv: 10, scaleAd: 0.45, slowPct: 0.3, slowDur: 1.0 }, botClearLine: true, botKite: 220, botKiteNoCharges: true, desc: 'Slide 250 units and detonate a powder burst on landing: 70+10/rank (+45% ATK) in 170, slowing 30% for 1s.' },
+      { name: 'Deadeye Round', icon: '🎯', type: 'skillshot', cd: [40, 35, 30], mana: [100, 120, 140], dmgType: 'physical', dmg: [280, 380, 480], scaleAd: 1.1, range: 820, speed: 1500, radius: 20, pierce: false, botExecuteHp: 0.45, botExecuteOnly: true, botClearLine: true, desc: 'One long-range round that stops on the first unit in its path; +20% against a hero under 40% HP (Last Light).' },
     ],
   },
   {
