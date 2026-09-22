@@ -2524,11 +2524,15 @@ class Hero extends Unit {
     if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
     if (s.charges && !(this.skillCharges[i] > 0)) return 0;   // F8
     if (s.botMinHp && this.hpPct < s.botMinHp) return 0;      // never below this HP (Grom's channel, Marrow's HP costs)
+    // botOwnHpBelow: the skill is for when the caster is hurt (Torren's Toll, Cinder's Furnace)
+    const ownLow = s.botOwnHpBelow ? this.hpPct < s.botOwnHpBelow : false;
     if (i === 2 && s.type !== 'basicMod') {
       if (!isHero) return 0;
       const crowd = Game.heroes.filter(h => h.team !== this.team && h.alive && this.distTo(h) < 420).length;
-      // F29 (Anchor's hint): Harbour also answers a tethered target slipping the line
-      if (t.hpPct > p.ultExecuteHp && crowd < 2 && !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
+      // F29 (Anchor's hint): Harbour also answers a tethered target slipping the line;
+      // botExecuteHp: the skill's own execute threshold (Omen's End at 60%)
+      if (t.hpPct > (s.botExecuteHp || p.ultExecuteHp) && crowd < 2 && !ownLow &&
+          !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
     const cc = this.skillHasHardCC(s);
@@ -2559,6 +2563,7 @@ class Hero extends Unit {
           if (h.team !== this.team && h.alive && this.distTo(h) < s.radius + h.radius) near++;
         }
         if (near >= 2) return 880;
+        if (ownLow && isHero) return 860;   // F29 (Torren's hint): Reaver's Toll under 50% HP with a hero inside
         if (locked && !cc) return 840;
         if (cc && isHero && !locked) return 800;
         return isHero ? 480 : 200;
@@ -2705,7 +2710,23 @@ class Hero extends Unit {
   /* F29 (Grom's bot hint): a stopOnHero dash is a pick, so it goes at the
      lowest-HP ranged hero it can reach (the backline), else at the target. */
   dashPick(s, t) {
-    if (!s.stopOnHero || !t || t.type !== 'hero') return t;
+    if (!t || t.type !== 'hero') return t;
+    /* F29 (Torren's hint): a leap-to-point (F22) lands short of the
+       lowest-HP-percent hero it can reach, so the slam covers the body. */
+    if (s.dashToPoint) {
+      let pick = t, bh = t.hpPct;
+      for (const e of Game.heroes) {
+        if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+        const d = this.distTo(e);
+        if (d > s.dist || d <= 150 || e.hpPct >= bh) continue;
+        bh = e.hpPct; pick = e;
+      }
+      const d = this.distTo(pick);
+      if (d <= 60) return pick;
+      const k = Math.max(0, d - 60) / d;
+      return { x: this.x + (pick.x - this.x) * k, y: this.y + (pick.y - this.y) * k };
+    }
+    if (!s.stopOnHero) return t;
     let best = null, bh = Infinity;
     for (const e of Game.heroes) {
       if (e.team === this.team || !e.alive || e.untargetable || !e.ranged || !Game.canSee(this.team, e)) continue;

@@ -405,7 +405,7 @@ const UI = {
     const rows = [['Cooldown', fmt(s.cd) + 's']];
     if (s.hpCost) rows.push(['Cost', Math.round(s.hpCost * 100) + '% HP']);
     else if (s.energy !== undefined) rows.push(['Energy', fmt(s.energy)]);
-    else if (s.mana !== undefined) rows.push(['Mana', fmt(s.mana)]);
+    else if (s.mana) rows.push(['Mana', fmt(s.mana)]);   // a free skill (Torren, Cinder) shows no cost row
     const reach = s.type === 'dash' ? s.dist : s.range;
     if (reach) rows.push([s.type === 'dash' ? 'Dash distance' : 'Cast range', reach]);
     const rad = (s.type === 'nova' || s.type === 'zone' || s.type === 'heal') ? s.radius

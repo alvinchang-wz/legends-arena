@@ -1816,7 +1816,7 @@ const Game = {
 /* The rule helpers of combat.js, reachable by name from outside the scripts
    (the headless tests in tests/ drive them directly; the browser never
    needs this table). Keep it in step with docs/design/heroes.md. */
-Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo,
+Game.rules = { COMBAT, rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo,
   markStacks, applyMark, consumeMark, refreshMark, clearMark, applyTaunt, refundRecharge, CHANNEL_BREAKERS };
 Game.PlacedObject = PlacedObject;
 Game.Tether = Tether;

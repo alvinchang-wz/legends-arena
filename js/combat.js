@@ -627,9 +627,14 @@ const PASSIVES = {
     },
   },
 
-  /* Torren — lifesteal that grows as he drops. */
+  /* Torren — 8% lifesteal plus 1% per 3% of missing HP, 35% at or below
+     20% HP. The stat only drains on basics (resolveDamage reads spellVamp
+     for skills). */
   bloodthirst: {
-    statMod(h) { return { lifesteal: 0.25 * (1 - h.hpPct) }; },
+    statMod(h) {
+      const pct = h.hpPct;
+      return { lifesteal: pct <= 0.2 ? 0.35 : Math.min(0.35, 0.08 + (1 - pct) / 0.03 * 0.01) };
+    },
   },
 
   /* Mira — stacking chill that freezes at four stacks. */

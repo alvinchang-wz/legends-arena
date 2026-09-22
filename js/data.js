@@ -229,19 +229,27 @@ const HEROES = [
   },
   {
     id: 'torren', name: 'Torren', role: 'Fighter', icon: '🪓', color: '#f87171', projColor: '#fca5a5',
-    desc: 'A berserker who thrives in extended brawls.',
+    desc: 'A resourceless reaver who hits harder the more of his own blood he has lost.',
     difficulty: 1, damageStyle: 'physical',
-    hp: 680, hpLv: 95, mp: 210, mpLv: 23, atk: 62, atkLv: 7.2,
-    armor: 18, armorLv: 3, mr: 14, mrLv: 2.2,
-    range: 95, atkSpd: 1.0, speed: 265,
+    /* docs/design/heroes.md, Fighters: Torren. No resource at all (F3 'none'):
+       no bar, every skill free, cooldowns are the only gate. The only kit
+       scaled on the caster's own missing HP (F21): Whirling Axe grows +1% per
+       2% lost (cap +40%), Reaver's Toll adds a slice of it as true damage,
+       computed once at cast. War Leap is the roster's only leap-to-point
+       (F22). botOwnHpBelow: bots also cast the ult on a single hero once
+       Torren himself is under 50%. */
+    resource: 'none',
+    hp: 690, hpLv: 96, mp: 0, mpLv: 0, atk: 63, atkLv: 7.4,
+    armor: 19, armorLv: 3.0, mr: 14, mrLv: 2.2,
+    range: 95, atkSpd: 1.02, speed: 262,
     passive: {
       name: 'Bloodthirst', icon: '🩸', id: 'bloodthirst',
-      desc: 'Gain up to 25% Lifesteal as your health drops — the lower your HP, the more you drain.',
+      desc: '8% Lifesteal plus 1% for every 3% of missing HP, capped at 35% at or below 20% HP. Basic attacks only.',
     },
     skills: [
-      { name: 'Whirling Axe', icon: '🌀', type: 'nova', cd: 7, mana: 45, dmgType: 'physical', radius: 220, dmg: 140, dmgLv: 16, scaleAd: 0.8, desc: 'Spin your axe, shredding everything nearby.' },
-      { name: 'War Leap', icon: '🦵', type: 'dash', cd: 10, mana: 50, dist: 340, speed: 1000, endNova: { radius: 180, dmgType: 'physical', dmg: 110, dmgLv: 13, scaleAd: 0.5, slowPct: 0.3, slowDur: 1.5 }, desc: 'Leap to a spot, slamming down to damage and slow.' },
-      { name: 'Rampage', icon: '😤', type: 'buff', cd: 48, mana: 100, atkMult: 1.28, spdAdd: 55, hotPct: 0.16, tenacityAdd: 0.35, dur: 5.5, desc: 'Go berserk: bonus attack, speed, regeneration, and resistance to crowd control.' },
+      { name: 'Whirling Axe', icon: '🌀', type: 'nova', cd: 7, cdLv: -0.3, mana: 0, dmgType: 'physical', radius: 220, dmg: 130, dmgLv: 16, scaleAd: 0.8, selfMissingBonus: { perPct: 0.01, per: 0.02, max: 0.4 }, desc: 'Spin the axe around Torren: +1% damage per 2% of his missing HP (max +40%).' },
+      { name: 'War Leap', icon: '🦵', type: 'dash', cd: 11, cdLv: -0.3, mana: 0, dashToPoint: true, dist: 340, speed: 950, endNova: { radius: 180, dmgType: 'physical', dmg: 110, dmgLv: 13, scaleAd: 0.6, slowPct: 0.3, slowDur: 1.2 }, desc: 'Leap to the aimed point up to 340 away and slam down, damaging and slowing 30% for 1.2s.' },
+      { name: 'Reaver\'s Toll', icon: '🪓', type: 'nova', cd: [42, 38, 34], mana: 0, botOwnHpBelow: 0.5, dmgType: 'true', radius: 260, dmg: [160, 220, 280], scaleAd: 0.7, selfMissingPct: [0.2, 0.25, 0.3], selfMissingCap: 0.5, desc: 'A true-damage cleave that adds 20/25/30% of Torren\'s own missing HP (cap 50% of his max HP).' },
     ],
   },
   {

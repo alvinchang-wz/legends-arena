@@ -503,12 +503,22 @@ const Icons = (() => {
     g.beginPath(); g.ellipse(68, 76, 13, 4.4, 0, 0, T2);
     g.fillStyle = 'rgba(248,113,113,0.4)'; g.fill();
   };
-  GLYPHS['skill:torren:2'] = g => {                               // Rampage
-    ring(g, 50, 56, 34, 4, 'rgba(248,113,113,0.4)', Math.PI * 1.1, Math.PI * 1.9);
-    ring(g, 50, 60, 42, 4, 'rgba(248,113,113,0.25)', Math.PI * 1.15, Math.PI * 1.85);
-    chevron(g, 50, 66, 17, 15, 8, '#dc2626');
-    chevron(g, 50, 48, 17, 15, 8, '#ef4444');
-    chevron(g, 50, 30, 17, 15, 8, '#fca5a5');
+  GLYPHS['skill:torren:2'] = g => {                               // Reaver's Toll: a bleeding cleave arc
+    ring(g, 50, 54, 40, 6, 'rgba(248,113,113,0.35)', Math.PI * 1.05, Math.PI * 1.95);
+    ring(g, 50, 54, 30, 7, 'rgba(239,68,68,0.75)', Math.PI * 1.1, Math.PI * 1.9);
+    tri(g, 84, 46, 11, Math.PI * 0.55, '#fca5a5');
+    // the axe head that cuts the arc, and the blood it costs
+    rot(g, 50, 46, -0.35, () => {
+      g.fillStyle = lg(g, -3, 0, 3, 0, [[0, '#a16b45'], [1, '#6b4226']]);
+      g.fillRect(-3, -6, 6, 42);
+      g.beginPath();
+      g.moveTo(3, -10); g.bezierCurveTo(28, -22, 36, 2, 24, 16); g.bezierCurveTo(16, 8, 8, 6, 3, 8);
+      g.closePath();
+      g.fillStyle = lg(g, 0, -20, 0, 16, [[0, '#fecaca'], [0.55, '#ef4444'], [1, '#b91c1c']]);
+      g.fill();
+      g.lineWidth = 2; g.strokeStyle = '#7f1d1d'; g.stroke();
+    });
+    for (const [x, y, r] of [[30, 74, 4], [40, 82, 3], [24, 84, 2.5]]) dot(g, x, y, r, '#dc2626');
   };
   /* ---------------- Mira skills ---------------- */
   GLYPHS['skill:mira:0'] = g => {                                 // Frost Shard
