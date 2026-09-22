@@ -434,7 +434,7 @@ const Game = {
     const walls = this.walls();
     if (!walls.length) return null;
     const dx = bx - ax, dy = by - ay;
-    const len = Math.hypot(dx, dy);
+    const len = hyp(dx, dy);
     const d = Math.min(len, maxDist);
     if (d < 1) return null;
     const ux = dx / len, uy = dy / len;
@@ -549,7 +549,7 @@ const Game = {
         const e = D[i], s = e.s;
         if (!s.alive) continue;
         const edge = e.edge;
-        const d = Math.hypot(x - s.x, y - s.y);
+        const d = hyp(x - s.x, y - s.y);
         if (d >= edge || e.covered()) continue;
         risk += 8 + (edge - d) / edge * 12;
       }
@@ -557,7 +557,7 @@ const Game = {
     if (opts.retreat) {
       for (const foe of this.heroes) {
         if (!foe.alive || foe.team === hero.team || !this.canSee(hero.team, foe)) continue;
-        const d = Math.hypot(x - foe.x, y - foe.y);
+        const d = hyp(x - foe.x, y - foe.y);
         if (d < 720) risk += (720 - d) / 90;
       }
     }
@@ -620,7 +620,7 @@ const Game = {
         let risk = 1;
         for (let k = 0; k < live.length; k++) {
           const e = live[k], s = e.s, edge = e.edge;
-          const d = Math.hypot(px - s.x, py - s.y);
+          const d = hyp(px - s.x, py - s.y);
           if (d >= edge) continue;
           risk += 8 + (edge - d) / edge * 12;
         }
@@ -643,7 +643,7 @@ const Game = {
         const py = grid.minY + cy * grid.cell;
         for (let cx = x0; cx <= x1; cx++) {
           const px = grid.minX + cx * grid.cell;
-          const d = Math.hypot(px - foe.x, py - foe.y);
+          const d = hyp(px - foe.x, py - foe.y);
           if (d < 720) out[cy * grid.cols + cx] += (720 - d) / 90;
         }
       }
@@ -653,7 +653,7 @@ const Game = {
 
   navSegmentClear(hero, a, b, opts = {}) {
     const pad = (hero ? hero.radius : 26) + 8;
-    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const length = hyp(b.x - a.x, b.y - a.y);
     if (this.wallOnSegment(a.x, a.y, b.x, b.y, pad, length + pad)) return false;
     if (!hero || (opts.avoidTowers === false && !opts.retreat)) return true;
     /* Do not let route smoothing erase A*'s safer path by drawing a long line
@@ -709,7 +709,7 @@ const Game = {
     const gx = goalId % cols, gy = Math.floor(goalId / cols);
     const heuristic = id => {
       const x = id % cols, y = Math.floor(id / cols);
-      return Math.hypot(gx - x, gy - y) * cell;
+      return hyp(gx - x, gy - y) * cell;
     };
     const push = (id, score) => {
       if (hn === hId.length) {
@@ -804,7 +804,7 @@ const Game = {
     if (!w) { u.slideDir = null; return null; }
     const c = wallClosest(w, nx, ny);
     let ox = nx - c.x, oy = ny - c.y;
-    const od = Math.hypot(ox, oy);
+    const od = hyp(ox, oy);
     if (od < 0.01) { u.slideDir = null; return { x: 0, y: 0 }; }  // on the centreline; separate() ejects
     ox /= od; oy /= od;
     const tx = -oy, ty = ox;                  // the wall's face, as a direction
@@ -1307,7 +1307,7 @@ const Game = {
       const b = this.fountain(team);
       for (const h of this.heroes) {
         if (!h.alive) continue;
-        const d = Math.hypot(h.x - b.x, h.y - b.y);
+        const d = hyp(h.x - b.x, h.y - b.y);
         if (d < 300) {
           if (h.team === team) {
             h.heal(h.maxHp * 0.10 * dt);

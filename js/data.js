@@ -14,6 +14,7 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp  = (a, b, t) => a + (b - a) * t;
 const dist  = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); };   // hot path: sqrt is several times faster than hypot
+const hyp   = (dx, dy) => Math.sqrt(dx * dx + dy * dy);   // Math.hypot for the loops that run thousands of times a frame
 const norm  = (x, y) => { const d = Math.hypot(x, y) || 1; return { x: x / d, y: y / d }; };
 const rand  = (a, b) => a + Math.random() * (b - a);
 const shuffle = arr => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };

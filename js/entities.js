@@ -57,7 +57,7 @@ class Unit {
   moveToward(tx, ty, dt) {
     if (!this.cc.canMove) return;
     const dx = tx - this.x, dy = ty - this.y;
-    const d = Math.hypot(dx, dy);
+    const d = hyp(dx, dy);
     if (d < 3) return;
     const step = Math.min(d, this.curSpeed() * dt);
     let ux = dx / d, uy = dy / d;
@@ -1090,7 +1090,7 @@ class Hero extends Unit {
   localFightPower(x = this.x, y = this.y, radius = this.p.fightRadius) {
     const out = { allies: 0, enemies: 0, allyPower: 0, enemyPower: 0 };
     for (const h of Game.heroes) {
-      if (!h.alive || Math.hypot(h.x - x, h.y - y) > radius) continue;
+      if (!h.alive || hyp(h.x - x, h.y - y) > radius) continue;
       if (h.team === this.team) { out.allies++; out.allyPower += this.botStrength(h); }
       else if (Game.canSee(this.team, h)) { out.enemies++; out.enemyPower += this.botStrength(h); }
     }
@@ -2081,8 +2081,8 @@ class Hero extends Unit {
   botMoveTo(gx, gy, dt, opts = {}) {
     const nav = this.nav;
     nav.repath -= dt;
-    const goalD = Math.hypot(gx - this.x, gy - this.y);
-    const movedGoal = !Number.isFinite(nav.gx) || Math.hypot(gx - nav.gx, gy - nav.gy) > 110;
+    const goalD = hyp(gx - this.x, gy - this.y);
+    const movedGoal = !Number.isFinite(nav.gx) || hyp(gx - nav.gx, gy - nav.gy) > 110;
     const direct = Game.navSegmentClear(this, this, { x: gx, y: gy }, opts);
 
     if (direct && Game.navRisk(this, gx, gy, opts) <= Math.max(2, Game.navRisk(this, this.x, this.y, opts) + 0.5)) {
@@ -2096,7 +2096,11 @@ class Hero extends Unit {
     if (goalD < nav.lastD - 0.6) nav.stalled = Math.max(0, nav.stalled - dt * 2);
     else nav.stalled += dt;
     nav.lastD = goalD;
-    const pathDone = !nav.path.length || nav.index >= nav.path.length;
+    /* A consumed route asks for the next one at once. An empty result (the
+       goal is unreachable, or start and goal share a cell and the straight
+       line is unsafe) is not retried every frame: the bot heads straight for
+       the goal until the repath clock, a stall or a moved goal says otherwise. */
+    const pathDone = nav.path.length > 0 && nav.index >= nav.path.length;
     if (movedGoal || pathDone || nav.repath <= 0 || nav.stalled > 0.45) {
       nav.path = Game.findNavPath(this, { x: gx, y: gy }, opts);
       nav.index = 0; nav.gx = gx; nav.gy = gy;
@@ -2350,7 +2354,7 @@ class Minion extends Unit {
   /* Aim a step beside the road, but never into rock — offset into a crater
      wall is how a Caldera wave starts sliding and never reaches the waypoint. */
   minionSteer(tx, ty) {
-    const dx = tx - this.x, dy = ty - this.y, m = Math.hypot(dx, dy) || 1;
+    const dx = tx - this.x, dy = ty - this.y, m = hyp(dx, dy) || 1;
     const ax = tx - dy / m * this.formSide * this.formOff;
     const ay = ty + dx / m * this.formSide * this.formOff;
     if (Game.wallAt(ax, ay, this.radius + 6)) return { x: tx, y: ty };
