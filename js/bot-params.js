@@ -12,7 +12,7 @@
    ============================================================ */
 
 const BOT_PARAMS = {
-  retreatHp: 0.28,        // retreat below this HP fraction
+  retreatHp: 0.18,        // retreat floor; the live threshold adds the burst aimed at you (bot-ai.md §5.1)
   reengageHp: 0.72,       // resume pushing above this HP fraction
   acquireRange: 700,      // notice-enemy radius
   chaseRange: 980,        // give-up-chase radius
@@ -46,18 +46,30 @@ const BOT_PARAMS = {
   /* Epic objectives (Turtle / Lord) and buff camps. These are live values,
      not dormant experiments: an objective nobody contests is scenery. */
   objectiveRange: 2200,   // notice Turtle/Lord from this far
-  objectiveHp: 0.46,      // don't start an epic below this HP fraction
+  objectiveHp: 0.50,      // don't start an epic below this HP fraction
   objectiveCommitHp: 0.24, // ...but stay in a contest already under way to here
-  objectiveMinAllies: 1,  // allies nearby (excluding self) needed to commit
+  objectiveMinAllies: 2,  // allies nearby (excluding self) needed to commit (Lord adds lordExtraAllies)
   objectiveEnemyRatio: 1.28, // don't start into a visibly stronger enemy contest
   campRange: 640,         // laners steal a nearby buff — junglers use pickJungleCamp
   campHp: 0.48,           // ...and above this HP fraction
 
-  /* Optional behaviours — thresholds below enable them (see comments). */
-  kiteBuffer: 78,         // >10 : ranged heroes back off during attack recovery
-  jungleRange: 520,       // >80 : take jungle camps when idle, within this range
-  groupAfterMin: 8,       // <28 : regroup with allies after this many minutes
-  outnumberMargin: 2.4,   // <3.9: flee when outnumbered locally by this many
+  /* Spacing and grouping. `kiteStep` is a step directly away from the
+     nearest melee threat during attack recovery, not an orbit around the
+     target (bot-ai.md §5.4); grouping is a team plan now, not a clock. */
+  kiteStep: 120,          // units stepped away from a diver while the swing recharges
+  kiteMax: 0.35,          // seconds of that step per swing, at most
+  jungleRange: 0,         // laners no longer wander into camps; the jungler has a route
+  outnumberMargin: 2,     // flee when outnumbered locally by this many (always on)
+
+  /* Macro (bot-ai.md §4-5). */
+  engageAllies: 1,        // allies within 600 of the target needed to dive a live turret
+  turretHitsMax: 2,       // turret shots taken before the leash pulls you out
+  gankWindow: 15,         // seconds a gank goal lives
+  prepWindow: 45,         // seconds before an epic spawns that the team prepares
+  bushWait: 25,           // seconds before spawn the roamer sits in the pit bush
+  /* §5.3 target value by archetype, as a score bonus: a marksman is worth
+     killing, a tank is a wall you have to go through to reach one. */
+  roleValue: { Marksman: 130, Mage: 100, Assassin: 70, Support: 50, Fighter: 25, Tank: 0 },
 };
 
 /* Fresh copy per hero so nothing can accidentally share/mutate the table. */

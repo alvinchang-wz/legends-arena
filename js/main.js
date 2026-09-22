@@ -112,6 +112,28 @@ const Game = {
     return out.map(h => h || pool[pi++] || HEROES[0]);
   },
 
+  /* Build one 5v5 side. Positions come from assignLanes (bot-ai.md §7):
+     the five archetypes are matched to gold / exp / mid / jungle / roam over
+     all 120 permutations instead of being handed out by slot index, which is
+     what put Supports in the jungle and Marksmen on roam. `playerIndex` is
+     the slot the human takes (-1 for an all-bot side); the player keeps a
+     null lane and drives itself, but it still occupies a position so the
+     four bots around it do not double up. Returns the player's Hero. */
+  draftTeam(roster, team, playerIndex) {
+    const defs = roster.slice(0, 5);
+    const positions = assignLanes(defs);
+    let player = null;
+    defs.forEach((def, i) => {
+      const pos = positions[i];
+      const isPlayer = i === playerIndex;
+      const hero = new Hero(def, team, isPlayer, isPlayer ? null : POSITION_LANE[pos]);
+      hero.role = pos;
+      if (isPlayer) player = hero;
+      this.heroes.push(hero);
+    });
+    return player;
+  },
+
   /* ---------- setup (heroDef = null -> spectator mode, all 10 are bots) ---------- */
   start(heroDef) {
     this.state = 'play';
@@ -188,26 +210,25 @@ const Game = {
     } else if (this.spectate) {
       this.player = null;
       const blue = this.experiment ? this.experiment.lineup : this.rosterFor(drafted(TEAM_BLUE));
-      const specLanes = this.isTen()
-        ? ['roam', 'dusk', 'west', 'jungle', 'east', 'dawn', 'jungle', 'roam', 'west', 'east']
-        : ['roam', 'top', 'jungle', 'mid', 'bot'];
-      specLanes.forEach((lane, i) =>
-        this.heroes.push(new Hero(blue[i % blue.length], TEAM_BLUE, false, lane)));
+      if (this.isTen()) {
+        ['roam', 'dusk', 'west', 'jungle', 'east', 'dawn', 'jungle', 'roam', 'west', 'east']
+          .forEach((lane, i) => this.heroes.push(new Hero(blue[i % blue.length], TEAM_BLUE, false, lane)));
+      } else this.draftTeam(blue, TEAM_BLUE, -1);
     } else {
       const blue = this.rosterFor([heroDef].concat((drafted(TEAM_BLUE) || []).slice(1)));
-      this.player = new Hero(blue[0], TEAM_BLUE, true, null);
-      this.heroes.push(this.player);
-      const allyLanes = this.isTen()
-        ? ['dusk', 'west', 'east', 'dawn', 'jungle', 'jungle', 'roam', 'roam', 'west']
-        : ['top', 'jungle', 'mid', 'bot'];
-      allyLanes.forEach((lane, i) => this.heroes.push(new Hero(blue[i + 1], TEAM_BLUE, false, lane)));
+      if (this.isTen()) {
+        this.player = new Hero(blue[0], TEAM_BLUE, true, null);
+        this.heroes.push(this.player);
+        ['dusk', 'west', 'east', 'dawn', 'jungle', 'jungle', 'roam', 'roam', 'west']
+          .forEach((lane, i) => this.heroes.push(new Hero(blue[i + 1], TEAM_BLUE, false, lane)));
+      } else this.player = this.draftTeam(blue, TEAM_BLUE, 0);
     }
     if (!this.isDuel()) {
       const red = this.experiment ? this.experiment.lineup : this.rosterFor(drafted(TEAM_RED));
-      const enemyLanes = this.isTen()
-        ? ['dusk', 'west', 'east', 'dawn', 'jungle', 'jungle', 'roam', 'roam', 'west', 'east']
-        : ['top', 'jungle', 'mid', 'bot', 'roam'];
-      enemyLanes.forEach((lane, i) => this.heroes.push(new Hero(red[i % red.length], TEAM_RED, false, lane)));
+      if (this.isTen()) {
+        ['dusk', 'west', 'east', 'dawn', 'jungle', 'jungle', 'roam', 'roam', 'west', 'east']
+          .forEach((lane, i) => this.heroes.push(new Hero(red[i % red.length], TEAM_RED, false, lane)));
+      } else this.draftTeam(red, TEAM_RED, -1);
     }
     if (this.experiment) {
       const ex = this.experiment;
@@ -251,6 +272,14 @@ const Game = {
       }
       this.goldHistory = [{ t: 0, blue: this.teamGold(TEAM_BLUE), red: this.teamGold(TEAM_RED) }];
     }
+
+    /* One macro brain per team (bot-ai.md §3.2), created last so every
+       structure, camp and hero it tabulates already exists. Blue ticks on
+       whole seconds and red on the half, so the two never share a frame. */
+    this.botCounters = {};
+    this.lastEpicDeadT = -99;
+    this.lastEpicTeam = null;
+    this.brains = this.isDuel() ? null : [new TeamBrain(TEAM_BLUE), new TeamBrain(TEAM_RED)];
 
     UI.buildMinimapStatic();
     /* 5v5: the reference game shows 106 map px of ground across the screen
@@ -338,6 +367,14 @@ const Game = {
       r.kind = this.SHRINE_KINDS[++r.n % this.SHRINE_KINDS.length];
       return;                     // first hero to reach it takes it outright
     }
+  },
+
+  /* Behaviour counters the headless metrics read (recalls started and
+     cancelled, turret leashes). Plain integers on Game, because the headless
+     runtime's UI stub is fixed and cannot take new events. */
+  botTally(key) {
+    if (!this.botCounters) this.botCounters = {};
+    this.botCounters[key] = (this.botCounters[key] || 0) + 1;
   },
 
   /* ---------- queries ---------- */
@@ -1098,7 +1135,7 @@ const Game = {
     // only mean walking around looking for each other.
     if (this.isDuel()) return true;
     if (u.concealT > 0 && this.concealedFrom(team, u)) return false;   // F13
-    if (typeof Mlbb !== 'undefined' && Mlbb.bushHiddenFrom(team, u)) return false;
+    if (bushHides(team, u)) return false;                             // core rule (combat.js), so headless sees it too
     return this.visible(team, u.x, u.y);
   },
   /* F13 conceal (Ashara's Sand Veil): hidden like a bush from enemies beyond
@@ -1376,6 +1413,13 @@ const Game = {
 
     // Every canSee below this line — bots, targeting, rendering — reads the grid.
     this.updateVision();
+
+    /* The macro layer: two ticks a second in total, never per hero and never
+       per frame (bot-ai.md §4). Everything it writes is read by the micro
+       layer at 10 Hz and by botControl at 60 Hz without re-deriving it. */
+    if (this.brains) {
+      for (const brain of this.brains) if (this.time >= brain.tickT) brain.tick();
+    }
 
     // Fountains heal allies in every mode. Standard-mode fountains also zap
     // intruders; duel bases are recovery zones without defensive structures.

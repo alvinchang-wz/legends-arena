@@ -12,6 +12,755 @@
 const LANE_WAVE_INDEX = { top: 0, mid: 1, bot: 2, dusk: 3, west: 4, east: 5, dawn: 6 };
 const LANE_WAVE_LANES = new Set(Object.keys(LANE_WAVE_INDEX));
 
+/* The two navigation option sets every bot move uses. Shared constants
+   rather than fresh object literals, because botMoveTo runs per hero per
+   frame and these never change. */
+const MOVE_SAFE = { avoidTowers: true };
+const MOVE_RETREAT = { retreat: true, avoidTowers: true };
+
+/* ============================================================
+   Macro layer — one TeamBrain per team, 1 Hz (docs/design/bot-ai.md §4)
+   ============================================================
+   Everything a bot would otherwise re-derive from the whole world every
+   frame is derived here once per team per second: where the enemies were
+   last seen, which ground is dangerous, what each wave is doing, which
+   structure is under pressure, when the next epic lands, and — out of all
+   that — one team plan and one goal per hero.
+
+   The layer below (Hero.microThink, 10 Hz) reads those goals and never
+   scans the map for strategy again; Hero.botControl (60 Hz) only walks and
+   swings. Cost is bounded by the vision grid (4,096 cells) and the unit
+   lists, not by heroes x frames. */
+
+/* Draft preference per archetype and position. Used by assignLanes over all
+   120 permutations, so a team of five Fighters still fields one of each
+   position instead of four junglers. */
+const LANE_PREF = {
+  Marksman: { gold: 10, mid: 5, jungle: 2, exp: 1, roam: 0 },
+  Mage:     { mid: 10, gold: 4, jungle: 3, exp: 2, roam: 2 },
+  Fighter:  { exp: 10, jungle: 7, gold: 3, roam: 3, mid: 2 },
+  Assassin: { jungle: 10, exp: 4, mid: 4, gold: 2, roam: 1 },
+  Tank:     { roam: 9, exp: 6, jungle: 3, mid: 1, gold: 0 },
+  Support:  { roam: 10, mid: 3, gold: 1, exp: 1, jungle: 1 },
+};
+const POSITIONS = ['gold', 'exp', 'mid', 'jungle', 'roam'];
+/* The Turtle pit sits beside the physical `bot` polyline and the Lord pit
+   beside `top` for both teams, so `top` is the gold lane and `bot` the EXP
+   lane on both sides (Minion.die already pays them that way). */
+const POSITION_LANE = { gold: 'top', exp: 'bot', mid: 'mid', jungle: 'jungle', roam: 'roam' };
+const LANE_POSITION = { top: 'gold', bot: 'exp', mid: 'mid', jungle: 'jungle', roam: 'roam' };
+
+/* Every ordering of the five positions, built once. */
+const POSITION_PERMS = (() => {
+  const out = [];
+  const walk = (left, acc) => {
+    if (!left.length) { out.push(acc); return; }
+    for (let i = 0; i < left.length; i++) {
+      walk(left.slice(0, i).concat(left.slice(i + 1)), acc.concat(left[i]));
+    }
+  };
+  walk(POSITIONS, []);
+  return out;
+})();
+
+/* Positions for one roster of five hero definitions, maximising the summed
+   preference. Ties break on the tables' own terms: the faster hero jungles
+   and the longer-ranged hero takes the gold lane. Deterministic — no RNG,
+   so a seeded match always drafts the same way. */
+function assignLanes(defs) {
+  let best = null, bestScore = -Infinity;
+  for (const perm of POSITION_PERMS) {
+    let score = 0;
+    for (let i = 0; i < defs.length && i < 5; i++) {
+      const pref = LANE_PREF[defs[i] && defs[i].role] || LANE_PREF.Fighter;
+      score += (pref[perm[i]] || 0) * 100;
+    }
+    for (let i = 0; i < defs.length && i < 5; i++) {
+      if (perm[i] === 'jungle') score += (defs[i].speed || 250) * 0.02;
+      if (perm[i] === 'gold') score += (defs[i].range || 100) * 0.01;
+    }
+    if (score > bestScore) { bestScore = score; best = perm; }
+  }
+  return best || POSITIONS;
+}
+
+class TeamBrain {
+  constructor(team) {
+    this.team = team;
+    this.tickT = team === TEAM_BLUE ? 0 : 0.5;
+    this.plan = 'lane';
+    this.planUntil = 0;
+    this.rally = null;              // {x, y} the plan's meeting point
+    this.pushLane = 'mid';
+    this.memory = new Map();        // enemy Hero -> {x, y, t, hpPct}
+    this.heat = new Map();          // own structure -> enemy pressure
+    this.waves = {};                // physical lane -> wave state (§4.4)
+    this.objective = { kind: null, phase: 'none', at: 0, tToSpawn: Infinity, pos: null, bush: null, lane: null, unit: null };
+    this.killsAt = [0, 0];          // Game.kills at the tick 12 s ago
+    this.killsHistory = [];
+    this.alive = [0, 0];
+    this.goalsAssigned = 0;
+    const N = Game.VIS_N;
+    this.cellSize = Game.worldSize() / N;
+    this.n = N;
+    this.danger = new Float32Array(N * N);
+    this.dangerNoTurret = new Float32Array(N * N);
+    this.buildStatics();
+  }
+
+  /* ---------- 4.1 static tables (once per match) ---------- */
+  buildStatics() {
+    const G = Game;
+    const home = G.basePoint(this.team), foe = G.basePoint(1 - this.team);
+    this.home = home;
+    this.lanes = {};
+    for (const lane of G.pushLanes()) {
+      const own = [], enemy = [];
+      for (const s of G.structures()) {
+        const sl = s.isBase ? null : s.lane;
+        if (sl !== lane) continue;
+        (s.team === this.team ? own : enemy).push(s);
+      }
+      const d = s => hyp(s.x - home.x, s.y - home.y);
+      own.sort((a, b) => d(a) - d(b));
+      enemy.sort((a, b) => d(a) - d(b));
+      this.lanes[lane] = { own, enemy };
+      this.waves[lane] = { ours: 0, theirs: 0, front: null, state: 'empty', nextEnemy: enemy[0] || null, nextOwn: own[own.length - 1] || null };
+    }
+    /* Pit bushes: the three BUSHES entries nearest each pit, ours first.
+       Chosen by distance so a regenerated map does not break the table. */
+    this.pits = {};
+    for (const [kind, pit] of [['turtle', TURTLE_PIT], ['lord', LORD_PIT]]) {
+      if (!pit) continue;
+      const near = G.bushes().map(b => ({ b, d: hyp(b.x - pit.x, b.y - pit.y) }))
+        .sort((a, b) => a.d - b.d).slice(0, 3).map(e => e.b);
+      near.sort((a, b) => hyp(a.x - home.x, a.y - home.y) - hyp(b.x - home.x, b.y - home.y));
+      this.pits[kind] = { pos: pit, bushes: near };
+    }
+    /* Camps split by side, and the opening route: the buff nearest our gold
+       lane, the two small camps beside it, the other buff, the rest. */
+    this.ownCamps = []; this.enemyCamps = [];
+    for (const c of G.camps) {
+      (hyp(c.x - home.x, c.y - home.y) <= hyp(c.x - foe.x, c.y - foe.y) ? this.ownCamps : this.enemyCamps).push(c);
+    }
+    const goldOuter = (this.lanes.top && this.lanes.top.own[this.lanes.top.own.length - 1]) || home;
+    const buffs = this.ownCamps.filter(c => c.kind === 'blueBuff' || c.kind === 'redBuff');
+    const smalls = this.ownCamps.filter(c => c.kind !== 'blueBuff' && c.kind !== 'redBuff');
+    buffs.sort((a, b) => hyp(a.x - goldOuter.x, a.y - goldOuter.y) - hyp(b.x - goldOuter.x, b.y - goldOuter.y));
+    const route = [];
+    if (buffs[0]) {
+      route.push(buffs[0]);
+      const bySide = smalls.slice().sort((a, b) =>
+        hyp(a.x - buffs[0].x, a.y - buffs[0].y) - hyp(b.x - buffs[0].x, b.y - buffs[0].y));
+      route.push(...bySide.slice(0, 2));
+      if (buffs[1]) route.push(buffs[1]);
+      route.push(...bySide.slice(2));
+    } else route.push(...smalls);
+    this.openingRoute = route;
+  }
+
+  /* ---------- helpers ---------- */
+  cell(x, y) {
+    const n = this.n, c = this.cellSize;
+    const gx = clamp(Math.floor(x / c), 0, n - 1), gy = clamp(Math.floor(y / c), 0, n - 1);
+    return gy * n + gx;
+  }
+  dangerAt(x, y) { return this.danger[this.cell(x, y)]; }
+  dangerNoTurretAt(x, y) { return this.dangerNoTurret[this.cell(x, y)]; }
+  heroes() { return Game.heroes.filter(h => h.team === this.team && h.alive); }
+  sight(h) {
+    if (!h || h.team === this.team) return;
+    this.memory.set(h, { x: h.x, y: h.y, t: Game.time, hpPct: h.hpPct });
+  }
+  seen(h) { return this.memory.get(h) || null; }
+  /* Visible enemy power around a point, plus a discounted share for enemies
+     remembered there in the last 6 s. Never map-hacking: only memory. */
+  enemyPowerAt(x, y, r) {
+    let p = 0;
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive) continue;
+      if (Game.canSee(this.team, h)) {
+        if (hyp(h.x - x, h.y - y) < r) p += heroStrength(h);
+        continue;
+      }
+      const m = this.memory.get(h);
+      if (m && Game.time - m.t < 6 && hyp(m.x - x, m.y - y) < r) p += heroStrength(h) * 0.6;
+    }
+    return p;
+  }
+  allyPowerAt(x, y, r) {
+    let p = 0;
+    for (const h of Game.heroes) {
+      if (h.team !== this.team || !h.alive) continue;
+      if (hyp(h.x - x, h.y - y) < r) p += heroStrength(h);
+    }
+    return p;
+  }
+  aliveCount(team) {
+    let n = 0;
+    for (const h of Game.heroes) if (h.team === team && h.alive) n++;
+    return n;
+  }
+  liveCamp(camp) {
+    if (!camp) return null;
+    for (const m of Game.monsters) if (m.alive && !m.epic && m.home === camp) return m;
+    return null;
+  }
+
+  /* ---------- the tick ---------- */
+  tick() {
+    this.tickT += 1;
+    this.updateMemory();
+    this.buildDanger();
+    this.updateWaves();
+    this.updateObjective();
+    this.decide();
+  }
+
+  /* 4.2 enemy memory — replaces Features.lastSeen, which is not core code */
+  updateMemory() {
+    for (const h of Game.heroes) {
+      if (h.team === this.team) continue;
+      if (h.alive && Game.canSee(this.team, h)) this.sight(h);
+      else if (!h.alive) this.memory.delete(h);
+    }
+  }
+
+  /* 4.3 danger map: extra path cost per vision cell, 0 = free ground */
+  buildDanger() {
+    const D = this.danger, DN = this.dangerNoTurret;
+    D.fill(0); DN.fill(0);
+    const n = this.n, c = this.cellSize;
+    const stamp = (grids, x, y, r, peak, floorValue) => {
+      const cx = x / c, cy = y / c, cr = r / c, cr2 = cr * cr;
+      const x0 = Math.max(0, Math.floor(cx - cr)), x1 = Math.min(n - 1, Math.ceil(cx + cr));
+      const y0 = Math.max(0, Math.floor(cy - cr)), y1 = Math.min(n - 1, Math.ceil(cy + cr));
+      for (let gy = y0; gy <= y1; gy++) {
+        const dy = gy + 0.5 - cy, dy2 = dy * dy;
+        if (dy2 > cr2) continue;
+        for (let gx = x0; gx <= x1; gx++) {
+          const dx = gx + 0.5 - cx, d2 = dx * dx + dy2;
+          if (d2 > cr2) continue;
+          const v = floorValue + peak * (1 - Math.sqrt(d2) / cr);
+          const id = gy * n + gx;
+          for (let k = 0; k < grids.length; k++) if (grids[k][id] < v) grids[k][id] = v;
+        }
+      }
+    };
+    const both = [D, DN], turretOnly = [D];
+    for (const s of Game.structures()) {
+      if (!s.alive || s.team === this.team) continue;
+      if (s.type !== 'tower' && !s.isBase) continue;
+      const covered = minionCoverFor(this.team, s);
+      const mult = covered ? 0.5 : 1;
+      stamp(turretOnly, s.x, s.y, s.range + s.radius + 70, 12 * mult, 8 * mult);
+    }
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive) continue;
+      if (Game.canSee(this.team, h)) stamp(both, h.x, h.y, 720, 3 * heroStrength(h), 0);
+      else {
+        const m = this.memory.get(h);
+        if (!m) continue;
+        const age = Game.time - m.t;
+        if (age > 12) continue;
+        stamp(both, m.x, m.y, 720 + 260 * age / 12, 2 * (1 - age / 12), 0);
+      }
+    }
+    const f = Game.fountain(1 - this.team);
+    if (f) stamp(both, f.x, f.y, 600, 0, 40);
+  }
+
+  /* 4.4 wave states and structure heat: one pass over the minions */
+  updateWaves() {
+    const home = this.home;
+    const lanes = Game.pushLanes();
+    const acc = {};
+    for (const lane of lanes) acc[lane] = { ours: 0, theirs: 0, lead: null, leadWp: -1, cluster: null };
+    for (const m of Game.minions) {
+      if (!m.alive) continue;
+      const a = acc[m.lane];
+      if (!a) continue;
+      if (m.team === this.team) {
+        a.ours++;
+        const wp = m.wpIdx || 0;
+        if (wp > a.leadWp) { a.leadWp = wp; a.lead = m; }
+      } else a.theirs++;
+    }
+    for (const lane of lanes) {
+      const a = acc[lane], w = this.waves[lane];
+      w.ours = a.ours; w.theirs = a.theirs;
+      if (a.lead) {
+        let sx = 0, sy = 0, k = 0;
+        for (const m of Game.minions) {
+          if (!m.alive || m.team !== this.team || m.lane !== lane) continue;
+          if (Math.abs((m.wpIdx || 0) - a.leadWp) > 1 || dist(m, a.lead) > 260) continue;
+          sx += m.x; sy += m.y; k++;
+        }
+        w.front = k ? { x: sx / k, y: sy / k } : { x: a.lead.x, y: a.lead.y };
+      } else w.front = null;
+      const set = this.lanes[lane];
+      w.nextEnemy = null; w.nextOwn = null;
+      if (set) {
+        for (const s of set.enemy) if (s.alive) { w.nextEnemy = s; break; }
+        for (let i = set.own.length - 1; i >= 0; i--) if (set.own[i].alive) { w.nextOwn = set.own[i]; break; }
+      }
+      if (!a.ours) w.state = 'empty';
+      else if (w.front && w.nextEnemy && hyp(w.front.x - w.nextEnemy.x, w.front.y - w.nextEnemy.y) < 520) w.state = 'crashed';
+      else if (a.ours >= a.theirs + 2) w.state = 'pushing';
+      else if (a.theirs >= a.ours + 2) w.state = 'pushed';
+      else w.state = 'even';
+      w.frac = w.front ? hyp(w.front.x - home.x, w.front.y - home.y) : 0;
+    }
+    /* Pressure on our own structures: enemy heroes in the ring count 3, their
+       minions 1. Only our side needs it (the `defend` plan reads it). */
+    this.heat.clear();
+    this.hottest = null;
+    let hottestScore = 0;
+    for (const s of Game.structures()) {
+      if (!s.alive || s.team !== this.team) continue;
+      let heat = 0;
+      const hr = (s.range || 400) + 90, hr2 = hr * hr;
+      for (const h of Game.heroes) {
+        if (h.team === this.team || !h.alive) continue;
+        const dx = h.x - s.x, dy = h.y - s.y;
+        if (dx * dx + dy * dy < hr2) heat += 3;
+      }
+      for (const m of Game.minions) {
+        if (!m.alive || m.team === this.team) continue;
+        const dx = m.x - s.x, dy = m.y - s.y;
+        if (dx * dx + dy * dy < 280 * 280) heat++;
+      }
+      this.heat.set(s, heat);
+      if (heat >= 3) {
+        // inner turrets, inhibitors and the base are worth defending; outers are not
+        const deep = s.isBase || s.type === 'inhibitor' || (s.frac !== undefined && s.frac <= 0.27);
+        const score = heat + (deep ? 10 : 0) + (1 - s.hpPct) * 4;
+        if (deep && score > hottestScore) { hottestScore = score; this.hottest = s; }
+      }
+    }
+  }
+
+  /* 4.5 objective clock. Both teams read it; it is on the HUD. */
+  updateObjective() {
+    const o = this.objective;
+    const E = Game.epics;
+    if (!E) { o.kind = null; o.phase = 'none'; o.tToSpawn = Infinity; o.unit = null; return; }
+    const kind = Game.time < Game.LORD_AT ? 'turtle' : 'lord';
+    const e = E[kind];
+    const pit = this.pits[kind] || { pos: e.pos, bushes: [] };
+    o.kind = kind;
+    o.unit = e.unit && e.unit.alive ? e.unit : null;
+    o.at = e.next;
+    o.tToSpawn = e.next - Game.time;
+    o.pos = e.pos || pit.pos;
+    o.bush = pit.bushes[0] || null;
+    o.lane = kind === 'turtle' ? 'bot' : 'top';
+    if (o.unit) o.phase = 'contest';
+    else if (o.tToSpawn > 0 && o.tToSpawn <= (BOT_PARAMS.prepWindow || 45)) o.phase = 'prep';
+    else if (Game.time - (Game.lastEpicDeadT || -99) < 30) o.phase = 'done';
+    else o.phase = 'none';
+  }
+
+  /* ---------- 4.6 plan and goals ---------- */
+  chooseLane() {
+    let best = 'mid', bestScore = -Infinity;
+    for (const lane of Game.pushLanes()) {
+      const set = this.lanes[lane];
+      if (!set) continue;
+      let left = 0, outerHp = 1;
+      for (const s of set.enemy) {
+        if (!s.alive || s.isBase) continue;
+        left++;
+        if (s.frac !== undefined && s.frac >= 0.39) outerHp = s.hpPct;
+      }
+      const score = -left * 10 - outerHp + (lane === 'mid' ? 0.001 : 0) +
+        (this.waves[lane] && this.waves[lane].state === 'pushing' ? 2 : 0);
+      if (score > bestScore) { bestScore = score; best = lane; }
+    }
+    return best;
+  }
+
+  /* A point `back` units on our side of a structure or place. */
+  ourSideOf(p, back) {
+    const home = this.home;
+    const d = hyp(home.x - p.x, home.y - p.y) || 1;
+    return { x: p.x + (home.x - p.x) / d * back, y: p.y + (home.y - p.y) / d * back };
+  }
+
+  decide() {
+    const G = Game;
+    const mine = this.aliveCount(this.team), theirs = this.aliveCount(1 - this.team);
+    this.alive = [mine, theirs];
+    // a 12 s window on kills and deaths, for "we just won a fight"
+    this.killsHistory.push({ t: G.time, mine: G.kills[this.team], theirs: G.kills[1 - this.team] });
+    while (this.killsHistory.length && G.time - this.killsHistory[0].t > 12) this.killsHistory.shift();
+    const old = this.killsHistory[0];
+    const wonFight = old ? (G.kills[this.team] - old.mine) - (G.kills[1 - this.team] - old.theirs) >= 2 : false;
+
+    const o = this.objective;
+    const held = G.time < this.planUntil;
+    let plan = this.plan, rally = this.rally;
+
+    const skip = this.objectiveSkipped();
+    const pick = () => {
+      if (this.hottest) {
+        this.planUntil = G.time + 8;
+        rally = this.ourSideOf(this.hottest, 300);
+        return 'defend';
+      }
+      if (this.endable(mine, theirs)) {
+        this.planUntil = G.time + 20;
+        this.pushLane = this.chooseLane();
+        const ne = this.waves[this.pushLane] && this.waves[this.pushLane].nextEnemy;
+        rally = ne ? this.ourSideOf(ne, 300) : G.basePoint(1 - this.team);
+        return 'end';
+      }
+      if ((o.phase === 'prep' || o.phase === 'contest') && !skip) {
+        this.planUntil = G.time + (o.phase === 'contest' ? 10 : 6);
+        rally = o.phase === 'contest' ? o.pos : (o.bush || o.pos);
+        return 'objective';
+      }
+      const ourLord = G.minions.some(m => m.alive && m.team === this.team && m.kind === 'lord');
+      if (wonFight || ourLord || mine - theirs >= 2 || (skip && (o.phase === 'prep' || o.phase === 'contest'))) {
+        this.planUntil = G.time + (skip ? 30 : 20);
+        this.pushLane = skip ? this.laneFarFrom(o.pos) : this.chooseLane();
+        const ne = this.waves[this.pushLane] && this.waves[this.pushLane].nextEnemy;
+        rally = ne ? this.ourSideOf(ne, 300) : G.basePoint(1 - this.team);
+        return 'push';
+      }
+      const pushing = G.pushLanes().some(l => this.waves[l] && this.waves[l].state === 'pushing');
+      if ((G.time >= 600 && !pushing) || theirs - mine >= 2) {
+        this.planUntil = G.time + 15;
+        const mid = this.lanes.mid;
+        let anchor = null;
+        if (mid) for (let i = mid.own.length - 1; i >= 0; i--) if (mid.own[i].alive) { anchor = mid.own[i]; break; }
+        rally = anchor ? this.ourSideOf(anchor, 200) : this.home;
+        return 'group';
+      }
+      this.planUntil = G.time + 4;
+      rally = null;
+      return 'lane';
+    };
+
+    if (!held || this.plan === 'lane' || this.hottest) plan = pick();
+    this.plan = plan;
+    this.rally = rally;
+
+    for (const h of Game.heroes) {
+      if (h.team !== this.team || h.isPlayer) continue;
+      this.goalFor(h);
+    }
+  }
+
+  laneFarFrom(p) {
+    let best = 'mid', bd = -Infinity;
+    for (const lane of Game.pushLanes()) {
+      const w = this.waves[lane];
+      const s = w && w.nextEnemy;
+      if (!s) continue;
+      const d = hyp(s.x - p.x, s.y - p.y);
+      if (d > bd) { bd = d; best = lane; }
+    }
+    return best;
+  }
+
+  endable(mine, theirs) {
+    for (const lane of Game.pushLanes()) {
+      const set = this.lanes[lane];
+      if (!set) continue;
+      const towersLeft = set.enemy.filter(s => s.alive && s.type === 'tower').length;
+      const inhib = set.enemy.find(s => s.type === 'inhibitor');
+      if (towersLeft === 0 && inhib && !inhib.alive) {
+        if (mine - theirs >= 2 || Game.time > 1500) { this.pushLane = lane; return true; }
+      }
+    }
+    return false;
+  }
+
+  /* 4.6.2 skip or trade: never walk into a pit we are going to lose */
+  objectiveSkipped() {
+    const o = this.objective;
+    if (!o.pos || (o.phase !== 'prep' && o.phase !== 'contest')) return false;
+    if (this.aliveCount(this.team) < 3) return true;
+    const gold = this.lanes.top;
+    if (gold) {
+      for (const s of gold.own) {
+        if (s.alive && (this.heat.get(s) || 0) >= 3 && s.frac !== undefined && s.frac >= 0.39) return true;
+      }
+    }
+    return this.enemyPowerAt(o.pos.x, o.pos.y, 1000) > this.allyPowerAt(o.pos.x, o.pos.y, 1000) * 1.35;
+  }
+
+  /* ---------- 4.6.1 goals per position ---------- */
+  goalFor(h) {
+    const G = Game, o = this.objective, p = h.p;
+
+    if (!h.alive) { this.assign(h, 'recall', null, null, 'hold', false, null); return; }
+
+    /* Common: reset when hurt or dry, but crash the wave first so nothing is
+       lost by leaving (§4.6.1 "crash before recalling"). */
+    const dry = h.usesMana() && h.maxMana > 0 && h.mana / h.maxMana < p.manaRecallPct;
+    const enemyNear = this.enemyPowerAt(h.x, h.y, p.recallSafeDist) > 0;
+    const w = this.waves[h.lane];
+    const laneFree = !w || w.state === 'crashed' || w.state === 'empty' || w.state === 'pushed';
+    const wantReset = (h.hpPct < 0.35 || dry) && !enemyNear && h.items.length < ITEM_SLOTS;
+    const shopReady = h.items.length < ITEM_SLOTS && h.gold >= p.shopRecallMinGold &&
+      (() => { const next = ItemAI.recommend(h); return !!next && h.gold >= next.cost; })();
+    const canLeave = laneFree || this.plan === 'group' || o.tToSpawn > 60 || h.lane === 'jungle' || h.lane === 'roam';
+    if ((wantReset || (shopReady && !enemyNear && h.hpPct < 0.85)) &&
+        dist(h, G.fountain(h.team)) > 420 && G.time > 40) {
+      if (canLeave) { this.assign(h, 'recall', null, null, 'hold', false, null); return; }
+      this.assign(h, 'lane', h.lane, null, 'crash', false, null);
+      return;
+    }
+
+    const plan = this.plan;
+    /* 10v10 and the player's own hero never went through assignLanes, so a
+       missing position is read off the lane the hero was given. */
+    const role = h.role || LANE_POSITION[h.lane] || 'mid';
+
+    if (plan === 'objective') {
+      const prep = o.phase === 'prep';
+      const far = o.pos ? dist(h, o.pos) : Infinity;
+      if (role === 'jungle') {
+        if (!prep || o.tToSpawn <= 15) {
+          this.assign(h, prep ? 'rally' : 'objective', null, prep ? null : o.unit, 'hold', true, prep ? o.pos : null);
+        } else this.assign(h, 'jungle', null, this.routeCamp(h), 'hold', o.tToSpawn < 35, null);
+        return;
+      }
+      if (role === 'roam') {
+        const spot = prep && o.bush ? o.bush : o.pos;
+        this.assign(h, prep ? 'rally' : 'objective', null, prep ? null : o.unit, 'hold', false, spot);
+        return;
+      }
+      if (prep) {
+        /* Laners crash the wave first and only leave for the pit at the
+           last moment, and only if they are near enough to get there:
+           five heroes standing in a pit for 45 s is not preparation, it is
+           three lanes of free farm for the other team. */
+        const close = o.pos && dist(h, o.pos) < 2600;
+        if ((o.tToSpawn > 12 || !close) && role !== 'mid') {
+          this.assign(h, 'lane', h.lane, null, o.tToSpawn > 20 ? 'slow' : 'crash', false, null);
+          return;
+        }
+        if (role === 'mid' && (!w || w.state !== 'crashed') && o.tToSpawn > 12) {
+          this.assign(h, 'lane', 'mid', null, 'fast', false, null); return;
+        }
+        this.assign(h, 'rally', null, null, 'hold', false, o.bush || o.pos);
+        return;
+      }
+      /* Contest: a laner too far from the pit to arrive before it is decided
+         keeps its lane instead of walking across the map into a fight that
+         is already over. */
+      if ((role === 'gold' || role === 'exp') && far > 2600) {
+        this.assign(h, 'lane', h.lane, null, 'fast', false, null); return;
+      }
+      this.assign(h, 'objective', null, o.unit, 'hold', false, o.pos);
+      return;
+    }
+
+    if (plan === 'defend') {
+      const s = this.hottest;
+      if (s) {
+        const near = this.heroes().sort((a, b) => dist(a, s) - dist(b, s)).slice(0, 3);
+        if (near.includes(h)) { this.assign(h, 'rally', null, null, 'hold', false, this.rally); return; }
+      }
+      this.assign(h, 'lane', h.lane, null, 'fast', false, null);
+      return;
+    }
+
+    if (plan === 'push' || plan === 'end') {
+      const lordMinion = G.minions.find(m => m.alive && m.team === this.team && m.kind === 'lord');
+      const squad = this.heroes();
+      squad.sort((a, b) => (b.botRole() === 'Tank' || b.botRole() === 'Support' ? 1 : 0) - (a.botRole() === 'Tank' || a.botRole() === 'Support' ? 1 : 0) || b.hpPct - a.hpPct);
+      const rank = squad.indexOf(h);
+      /* Four on the objective lane and the jungler taking the enemy camps
+         beside it: a 3-2 split reads as five heroes wandering, and the
+         closeness measurement (check 8) is what a fight feels like. */
+      if (plan === 'end' || rank < 4 || !this.rally) {
+        if (lordMinion && rank >= 2 && rank <= 3 && plan !== 'end') {
+          this.assign(h, 'escort', null, lordMinion, 'fast', false, null); return;
+        }
+        this.assign(h, 'rally', this.pushLane, null, 'fast', false, this.rally);
+        return;
+      }
+      if (role === 'jungle') { this.assign(h, 'jungle', null, this.routeCamp(h, true), 'hold', false, null); return; }
+      const other = Game.pushLanes().find(l => l !== this.pushLane && l !== 'mid') || 'mid';
+      this.assign(h, 'lane', other, null, 'fast', false, null);
+      return;
+    }
+
+    if (plan === 'group') {
+      this.assign(h, 'rally', null, null, 'hold', false, this.rally);
+      return;
+    }
+
+    /* ---- plan `lane` (the default) ---- */
+    if (role === 'jungle') {
+      const camp = this.routeCamp(h);
+      const gank = this.gankLane(h);
+      if (gank && o.tToSpawn > 40) { this.assign(h, 'gank', gank.lane, gank.target, 'hold', false, gank.point); return; }
+      if (!camp) {
+        // no camp up: stand with whoever is under the most pressure
+        const ally = h.shadowAlly();
+        this.assign(h, ally ? 'escort' : 'lane', null, ally, 'hold', o.tToSpawn < 35, null);
+        return;
+      }
+      this.assign(h, 'jungle', null, camp, 'hold', o.tToSpawn < 35, null);
+      return;
+    }
+    if (role === 'roam') {
+      if (G.time < 90) {
+        const jungler = this.heroes().find(a => a.role === 'jungle');
+        const camp = jungler && jungler.goal && jungler.goal.target;
+        if (camp) { this.assign(h, 'escort', null, jungler, 'hold', false, { x: camp.x, y: camp.y }); return; }
+      }
+      if (o.phase === 'prep' && o.tToSpawn <= (BOT_PARAMS.bushWait || 25) && o.bush) {
+        this.assign(h, 'rally', null, null, 'hold', false, o.bush); return;
+      }
+      const gank = this.gankLane(h);
+      if (gank) { this.assign(h, 'gank', gank.lane, gank.target, 'hold', false, gank.point); return; }
+      const ally = h.roamAnchor();
+      if (ally) {
+        const bush = G.time < 360 ? this.bushNear(ally) : null;
+        this.assign(h, 'escort', ally.lane, ally, 'hold', false, bush);
+        return;
+      }
+      this.assign(h, 'lane', 'mid', null, 'hold', false, null);
+      return;
+    }
+    if (role === 'mid') {
+      const mw = this.waves.mid;
+      if (mw && mw.state === 'crashed' && G.time > 55 && o.tToSpawn > 30) {
+        const gank = this.gankLane(h, true);
+        if (gank) { this.assign(h, 'gank', gank.lane, gank.target, 'hold', false, gank.point); return; }
+      }
+      this.assign(h, 'lane', 'mid', null, 'fast', false, null);
+      return;
+    }
+    if (role === 'gold') {
+      /* Freeze while the roamer is still with them, then shove: the gold
+         lane's siege minions pay `goldLaneMult` until laneBonusEnd and the
+         carry has to be first on the gold curve for any of it to matter. */
+      let intent = 'fast';
+      if (G.time < 60) intent = 'freeze';
+      else if (G.time > BALANCE.laneBonusEnd) intent = 'slow';
+      this.assign(h, 'lane', 'top', null, intent, false, null);
+      return;
+    }
+    // exp
+    let intent = 'hold';
+    if (h.level < 4) intent = 'freeze';
+    else {
+      const foe = this.laneOpponent('bot');
+      if (!foe) intent = 'fast';
+      else if (o.phase === 'prep') intent = 'slow';
+    }
+    this.assign(h, 'lane', 'bot', null, intent, false, null);
+  }
+
+  /* The enemy laner assigned to a lane, if we can see them or remember them
+     recently enough to count. */
+  laneOpponent(lane) {
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive || h.lane !== lane) continue;
+      if (Game.canSee(this.team, h)) return h;
+      const m = this.memory.get(h);
+      if (m && Game.time - m.t < 6) return h;
+    }
+    return null;
+  }
+
+  /* A lane worth ganking: a visible enemy laner past the river with either a
+     hurt bar or no escape ready. */
+  gankLane(h, midRotation) {
+    if (Game.time < 55 || h.hpPct < 0.55) return null;
+    let best = null, bd = -Infinity;
+    for (const lane of Game.pushLanes()) {
+      if (midRotation && lane === 'mid') continue;
+      const foe = this.laneOpponent(lane);
+      if (!foe || !Game.canSee(this.team, foe)) continue;
+      const frac = hyp(foe.x - this.home.x, foe.y - this.home.y);
+      const theirBase = Game.basePoint(1 - this.team);
+      const pushedToUs = frac < hyp(foe.x - theirBase.x, foe.y - theirBase.y);
+      if (!pushedToUs) continue;
+      const escapeReady = foe.skills.some((s, i) => s && (s.type === 'dash' || s.type === 'blinkstrike') &&
+        foe.skillRank[i] > 0 && foe.skillCd[i] <= 0);
+      if (foe.hpPct > 0.7 && escapeReady) continue;
+      const d = dist(h, foe);
+      if (d > 3200) continue;
+      const score = (1 - foe.hpPct) * 400 - d * 0.08;
+      if (score > bd) { bd = score; best = { lane, target: foe, point: { x: foe.x, y: foe.y } }; }
+    }
+    return best;
+  }
+
+  /* The jungler's camp: the opening route until it is done, then the old
+     scorer (which is a good camp chooser, it just never had a route). */
+  routeCamp(h, enemySide) {
+    if (!enemySide && Game.time < 115) {
+      for (const c of this.openingRoute) {
+        const m = this.liveCamp(c);
+        if (m) return m;
+      }
+    }
+    if (enemySide) {
+      let best = null, bd = Infinity;
+      const anchor = this.rally || this.home;
+      for (const c of this.enemyCamps) {
+        const m = this.liveCamp(c);
+        if (!m) continue;
+        const d = hyp(c.x - anchor.x, c.y - anchor.y);
+        if (d < bd) { bd = d; best = m; }
+      }
+      if (best) return best;
+    }
+    return h.pickJungleCamp();
+  }
+
+  bushNear(u) {
+    let best = null, bd = 700;
+    for (const b of Game.bushes()) {
+      const d = hyp(b.x - u.x, b.y - u.y);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
+  }
+
+  /* 4.6.3 hand-off: bump the sequence only on a real change, so micro drops
+     its target and route once per decision, not once per second. */
+  assign(hero, kind, lane, target, wave, holdSpell, point) {
+    const g = hero.goal;
+    const changed = g.kind !== kind || g.lane !== lane || g.target !== target || g.wave !== wave;
+    g.kind = kind; g.lane = lane; g.target = target; g.wave = wave; g.holdSpell = !!holdSpell;
+    g.point = point || null;
+    g.plan = this.plan;
+    if (changed) { g.seq++; this.goalsAssigned++; }
+  }
+}
+
+/* Power estimate shared by the brain and the micro layer: health first,
+   then level, gear and ready skills. Reads only what is visible. */
+function heroStrength(h) {
+  const health = clamp(h.hpPct, 0.08, 1);
+  const level = 0.72 + h.level * 0.05;
+  const gear = 1 + h.items.length * 0.08;
+  let ready = 0;
+  for (let i = 0; i < 3; i++) if (h.skillRank[i] > 0 && h.skillCd[i] <= 0 && h.mana >= h.skills[i].mana) ready++;
+  return health * level * gear * (0.9 + ready * 0.06);
+}
+
+/* Is one of `team`'s minions close enough to a structure to soak its shots?
+   One scan, shared by the danger map and the engage gate. */
+function minionCoverFor(team, s) {
+  for (const m of Game.minions) {
+    if (m.team !== team || !m.alive) continue;
+    const dx = m.x - s.x, dy = m.y - s.y;
+    if (dx * dx + dy * dy < 330 * 330) return true;
+  }
+  return false;
+}
+
 class Unit {
   constructor(x, y, team) {
     this.x = x; this.y = y; this.team = team;
@@ -313,6 +1062,18 @@ class Hero extends Unit {
     this.recallT = 0; this.respawnT = 0;
     this.recentDmg = [];      // [{h, t}] recent hero damagers for assists
     this.aiTimer = rand(0, 0.3); this.aiState = 'push'; this.aiTarget = null;
+    /* Macro hand-off (docs/design/bot-ai.md §3.1). `role` is the position the
+       draft gave this hero ('gold' | 'exp' | 'mid' | 'jungle' | 'roam');
+       def0.role stays the archetype. `goal` is written once per second by
+       TeamBrain and read by microThink; `micro` is what microThink leaves for
+       botControl to execute every frame. */
+    this.role = null;
+    this.goal = { kind: 'lane', lane: lane || null, x: 0, y: 0, point: null, target: null,
+      wave: 'hold', holdSpell: false, plan: 'lane', seq: 0 };
+    this.goalSeq = -1;
+    this.micro = { movePoint: null, moveOpts: null, holdFire: false, kiteUntil: 0 };
+    this.turretHits = 0;      // turret shots taken since leaving a turret ring
+    this.recallBrokenT = -99;
     this.wpIdx = 0;
     /* Per-bot navigation and combat positioning. The route is regenerated when
        its goal moves, not every frame; side gives otherwise identical bots a
@@ -1066,9 +1827,18 @@ class Hero extends Unit {
     this.hitFlash = 0.14;
     this.lastDmgT = Game.time;
     this.lastHurtT = Game.time;   // taken only (lastDmgT also counts dealt): F29 (Sylva's hint) links the ally hurt most recently
-    if (this.recallT > 0) { this.recallT = 0; if (this.isPlayer) UI.announce('Recall interrupted!', 'minor'); }
+    if (this.recallT > 0) {
+      this.recallT = 0;
+      this.recallBrokenT = Game.time;      // microGate falls back to a turret before trying again
+      Game.botTally('recallCancel');
+      if (this.isPlayer) UI.announce('Recall interrupted!', 'minor');
+    }
+    this.revealT = Math.max(this.revealT, BUSH_REVEAL_T);    // a hit from a bush gives your position away (core rule)
     if (typeof Mlbb !== 'undefined') Mlbb.onDamaged(this);
     if (src instanceof Hero && src.team !== this.team) {
+      // a hit out of the fog is a sighting: the macro brain remembers where it came from
+      const brain = Game.brains && Game.brains[this.team];
+      if (brain) brain.sight(src);
       const prev = this.recentDmg.find(r => r.h === src && Game.time - r.t < 8);
       if (prev) { prev.amt = (prev.amt || 0) + dmg; prev.t = Game.time; }
       else {
@@ -1720,17 +2490,32 @@ class Hero extends Unit {
       this.botControl(dt);
     } else if (this.isPlayer) this.playerControl(dt);
     else {
+      /* One cadence now (§5): the macro brain already decided what this hero
+         is doing, so the think tick only has to gate, focus, place a move
+         point and cast. 10 Hz with a jitter so ten bots never all think in
+         the same frame. */
       this.aiTimer -= dt;
       if (this.aiTimer <= 0) {
-        const hot = !!(this.aiTarget && this.aiTarget.type === 'hero') || this.fleeT > 0 ||
-          this.aiState === 'retreat';
-        this.aiTimer = hot ? 0.06 + rand(0, 0.04) : 0.12 + rand(0, 0.08);
+        this.aiTimer = 0.10 + rand(-0.02, 0.02);
         this.botThink();
       }
       this.botControl(dt);
-      if (this.attackOnMove && this.atkCd <= 0) this.opportunityAttack();
+      if (this.attackOnMove && this.atkCd <= 0 && this.opportunityOk()) this.opportunityAttack();
     }
     this.trackVelocity(dt);
+  }
+
+  /* Shooting whatever walks past is how every lane pushed permanently (§2.2.4).
+     It is on when the wave intent is to shove, when a hero is the target, or
+     when an enemy hero is close enough that free damage matters; a freezing
+     or holding laner only hits what microTarget chose. */
+  opportunityOk() {
+    if (this.micro.holdFire) return false;
+    const w = this.goal.wave;
+    if (w === 'fast' || w === 'crash') return true;
+    if (this.aiTarget && this.aiTarget.type === 'hero') return true;
+    if (this.goal.kind !== 'lane') return true;
+    return false;
   }
 
   opportunityAttack() {
@@ -1853,10 +2638,23 @@ class Hero extends Unit {
     if (pick) this.botCast(pick);
   }
 
-  heuristicThink() {
-    if (this.heuristicStateStep()) return;
-    const best = this.heuristicSelectTarget();
+  /* The micro tick (docs/design/bot-ai.md §5), in order: gate (retreat,
+     flee, recall), focus, move point, cast. `heuristicThink` keeps its name
+     because the neural path and the tests call into this chain. */
+  heuristicThink() { this.microThink(); }
+  microThink() {
+    if (this.goalSeq !== this.goal.seq) {
+      // a real macro decision: drop the committed target and the stale route
+      this.goalSeq = this.goal.seq;
+      this.aiTarget = null;
+      this.combatPoint = null; this.combatPointT = 0;
+      this.nav.gx = this.nav.gy = NaN;
+    }
+    this.micro.holdFire = false;
+    if (this.microGate()) return;
+    const best = this.microTarget();
     this.aiTarget = best;
+    this.microMove(best);
     if (best) this.botCast(best);
     if (!best || best.type !== 'hero') this.botIdlePlant();
   }
@@ -1918,8 +2716,21 @@ class Hero extends Unit {
       (s.type === 'tower' || s.isBase) && dist(s, u) < s.range + 65) || null;
   }
 
-  hasMinionCover(s) {
-    return Game.minions.some(m => m.team === this.team && m.alive && dist(m, s) < 330);
+  hasMinionCover(s) { return minionCoverFor(this.team, s); }
+
+  /* The enemy turret or base whose fire covers this hero right now. The same
+     580/690 ring the danger map stamps (§4.3), read from the structures so
+     it does not inherit the map's minion-cover discount: a hero sieging
+     behind its wave is still standing in front of a turret. */
+  turretOnMe() {
+    for (const s of Game.structures()) {
+      if (!s.alive || s.team === this.team) continue;
+      if (s.type !== 'tower' && !s.isBase) continue;
+      const r = s.range + s.radius + 70;
+      const dx = s.x - this.x, dy = s.y - this.y;
+      if (dx * dx + dy * dy < r * r) return s;
+    }
+    return null;
   }
 
   /* Burst estimate used to decide "stay and finish" vs "walk away". Skills
@@ -1985,59 +2796,39 @@ class Hero extends Unit {
     return best;
   }
 
+  /* The structure under the most enemy pressure, from the heat table the
+     team brain fills once per second (§4.4) instead of every bot measuring
+     every structure every frame. */
   alliedTowerInTrouble() {
     if (Game.isDuel()) return null;
-    /* the pressure on every structure is the same for all ten bots: measured
-       once per frame, not once per bot */
-    if (Game._heatT !== Game.time) {
-      Game._heatT = Game.time; Game._heat = Game._heat || new Map(); Game._heat.clear();
-      for (const s of Game.structures()) {
-        if (!s.alive) continue;
-        let heat = 0;
-        const hr = (s.range || 400) + 90, hr2 = hr * hr;
-        for (const h of Game.heroes) {
-          if (h.team === s.team || !h.alive) continue;
-          const dx = h.x - s.x, dy = h.y - s.y;
-          if (dx * dx + dy * dy < hr2) heat += 3;
-        }
-        Game._heat.set(s, heat);
-      }
-      /* minion pressure: each minion can only be near the few structures its
-         grid cell lists, rather than every structure testing every minion */
-      const useGrid = !Game.isDuel() && !Game.isTen();
-      for (const m of Game.minions) {
-        if (!m.alive) continue;
-        const near = useGrid ? Game.structuresNear(m.x, m.y, Game.STRUCT_HEAT_PAD) : Game.structures();
-        for (let k = 0; k < near.length; k++) {
-          const s = near[k];
-          if (!s.alive || m.team === s.team) continue;
-          const dx = m.x - s.x, dy = m.y - s.y;
-          if (dx * dx + dy * dy < 280 * 280) Game._heat.set(s, Game._heat.get(s) + 1);
-        }
-      }
-    }
+    const brain = Game.brains && Game.brains[this.team];
+    if (!brain) return null;
     let best = null, bd = Infinity;
-    for (const s of Game.structures()) {
-      if (!s.alive || s.team !== this.team) continue;
-      const heat = Game._heat.get(s) || 0;
+    for (const [s, heat] of brain.heat) {
+      if (!s.alive || heat < 1) continue;
       if (heat < 2 && s.hpPct > 0.72) continue;
-      if (heat < 1) continue;
       const d = dist(this, s);
       if (d < 2000 && d < bd) { bd = d; best = s; }
     }
     return best;
   }
 
+  /* Where an enemy who has walked into the fog probably is. The sightings
+     come from TeamBrain.memory (§4.2), which is core code, so the headless
+     bots have the same memory the browser ones do — Features.lastSeen is
+     not loaded there and this used to be a no-op in every measurement. */
   lastSeenHunt() {
-    if (typeof Features === 'undefined' || Game.isDuel()) return null;
+    if (Game.isDuel()) return null;
+    const brain = Game.brains && Game.brains[this.team];
+    if (!brain) return null;
     const role = this.botRole();
-    if (role !== 'Assassin' && this.lane !== 'jungle' && this.lane !== 'roam') return null;
+    if (role !== 'Assassin' && this.role !== 'jungle' && this.role !== 'roam') return null;
     if (this.hpPct < 0.5) return null;
     let best = null, bestScore = -Infinity;
     for (const h of Game.heroes) {
       if (h.team === this.team || !h.alive) continue;
       if (Game.canSee(this.team, h)) continue;
-      const seen = Features.lastSeen.get(h);
+      const seen = brain.memory.get(h);
       if (!seen) continue;
       const age = Game.time - seen.t;
       if (age < 1.2 || age > 7) continue;
@@ -2049,34 +2840,13 @@ class Hero extends Unit {
     return best;
   }
 
+  /* Both of these are now one rule, `canEngage` (§5.2). They keep their
+     names because the neural controller and the kit code call them. */
   botTargetSafe(u) {
-    if (u.isStructure && u.shieldedByOuter) return false;   // immune while the tier in front stands
+    if (!u) return false;
+    if (u.isStructure) return !u.shieldedByOuter && minionCoverFor(this.team, u);
     if (!this.advancedAI) return true;
-    const tower = this.enemyTowerCovering(u);
-    if (!tower || this.hasMinionCover(tower)) return true;
-    if (u.isStructure) return false;
-    if (u.type === 'hero' && (u.hpPct < 0.18 || this.botCanKill(u)) && this.hpPct > 0.55) {
-      const f = this.localFightPower(u.x, u.y, 460);
-      return f.enemies <= 2 && f.enemyPower < f.allyPower * 1.15;
-    }
-    return false;
-  }
-
-  shouldEconomyRecall() {
-    if (!this.advancedAI || Game.isDuel() || Game.time < 45 || this.items.length >= ITEM_SLOTS ||
-        dist(this, Game.fountain(this.team)) < 420) return false;
-    for (const h of Game.heroes) {
-      if (h.team !== this.team && h.alive && Game.canSee(this.team, h) && dist(this, h) < this.p.recallSafeDist) return false;
-    }
-    if (this.recentDmg.some(r => Game.time - r.t < 4)) return false;
-    // Do not abandon a live contest just because an item became affordable.
-    if (Game.monsters.some(m => m.epic && m.alive && m.hpPct < 0.95 && dist(this, m) < this.p.objectiveRange)) return false;
-    if (this.lane === 'jungle' && this.aiTarget && this.aiTarget.type === 'monster' && this.aiTarget.alive)
-      return false;
-    const next = ItemAI.recommend(this);
-    const canFinishItem = next && this.gold >= Math.max(this.p.shopRecallMinGold, next.cost);
-    const lowMana = this.usesMana() && this.maxMana > 0 && this.mana / this.maxMana < this.p.manaRecallPct && this.hpPct < 0.9;
-    return canFinishItem || lowMana;
+    return this.canEngage(u);
   }
 
   lowestHealTarget(radius) {
@@ -2146,13 +2916,16 @@ class Hero extends Unit {
   }
 
   /* Dashes and blinks that land under an uncovered turret, or into a lost
-     1v3, are how assassins and marksmen donate kills. Tanks may still go. */
+     1v3, are how assassins and marksmen donate kills — and Tanks and
+     Fighters no longer get an exemption from that (§5.2). */
   gapCloseLegal(t) {
     if (!t) return false;
+    if (t.type !== 'hero') return true;
     const tower = this.enemyTowerCovering(t);
-    if (tower && !this.hasMinionCover(tower) && this.hpPct < 0.88 && !this.botCanKill(t)) return false;
-    const role = this.botRole();
-    if (role === 'Tank' || role === 'Fighter') return true;
+    if (tower && !minionCoverFor(this.team, tower)) {
+      // a dive is a group move or it is a donation (§5.2)
+      return this.botCanKill(t) && !!this.allyWithin(600) && this.turretHits === 0 && this.hpPct > 0.6;
+    }
     if (this.botCanKill(t) && this.hpPct > 0.32) return true;
     const f = this.localFightPower(t.x, t.y, 420);
     if (f.enemies >= 3 && this.hpPct < 0.75) return false;
@@ -2196,24 +2969,6 @@ class Hero extends Unit {
       if (score > bestScore) { bestScore = score; best = foe; }
     }
     return best;
-  }
-
-  shouldRotateTo(fight) {
-    if (!fight || !fight.alive) return false;
-    if (this.lane === 'jungle') {
-      // Opening clear beats a screen-away skirmish on the bigger board.
-      if (Game.time < 80 && dist(this, fight) > 560 && !this.botCanKill(fight)) return false;
-      return true;
-    }
-    if (this.lane === 'roam') return true;
-    if (Game.time > (this.p.groupAfterMin || 12) * 60) return true;
-    if (Game.time < 90) return false;
-    const wave = this.laneWaveAnchor();
-    if (!wave) return dist(this, fight) < 720;
-    const home = Game.basePoint(this.team);
-    const enemyBase = Game.basePoint(1 - this.team);
-    const pushed = dist(wave, enemyBase) < dist(wave, home);
-    return pushed && dist(this, fight) < 1100;
   }
 
   /* Position-specific macro. A jungler needs a route that exists even when no
@@ -2288,14 +3043,47 @@ class Hero extends Unit {
     return allies.find(h => h.lane === lane) || allies.reduce((a, h) => dist(this, h) < dist(this, a) ? h : a);
   }
 
-  heuristicStateStep() {
+  /* §5.1 retreat threshold. A flat 28% dies to burst and runs from pokes, so
+     the live threshold is the floor plus what the three nearest enemies can
+     actually put into this hero right now, plus the turret's next (ramped)
+     shot when one is already shooting. */
+  retreatThreshold() {
     const p = this.p;
-    let retreatAt = clamp(p.retreatHp + this.adapt.caution, 0.08, 0.6);
+    let burst = 0, counted = 0;
+    const near = [];
+    for (const h of Game.heroes) {
+      if (h.team === this.team || !h.alive || !Game.canSee(this.team, h)) continue;
+      const d = dist(this, h);
+      if (d < 700) near.push({ h, d });
+    }
+    near.sort((a, b) => a.d - b.d);
+    for (const e of near) {
+      if (counted++ >= 3) break;
+      burst += e.h.botBurstVs(this);
+    }
+    let turret = 0;
+    if (this.turretHits >= 1 && this.turretOnMe()) {
+      // the next shot, already ramped: Tower.attackPacket's own formula
+      turret = 190 * (1 + BALANCE.towerRamp * Math.min(BALANCE.towerRampCap, this.turretHits));
+    }
+    /* botBurstVs counts every ready skill, which is more than ever lands, so
+       the threshold takes a little over half of it: at the full 0.9 the bar
+       clamps to its ceiling in any three-hero fight and the whole team spends
+       the match retreating from 62%. */
+    let at = clamp(p.retreatHp + 0.55 * (burst + turret) / Math.max(1, this.maxHp) + this.adapt.caution, p.retreatHp, 0.5);
     // botRetreatWhenDown (F29, Omen's hint): with the escape on cooldown, fall back earlier
     for (let i = 0; i < 3; i++) {
       const s = this.skills[i];
-      if (s && s.botRetreatWhenDown && this.skillRank[i] >= 1 && this.skillCd[i] > 0 && s.botRetreatWhenDown > retreatAt) retreatAt = s.botRetreatWhenDown;
+      if (s && s.botRetreatWhenDown && this.skillRank[i] >= 1 && this.skillCd[i] > 0 && s.botRetreatWhenDown > at) at = s.botRetreatWhenDown;
     }
+    return at;
+  }
+
+  heuristicStateStep() { return this.microGate(); }
+  microGate() {
+    const p = this.p;
+    const brain = Game.brains && Game.brains[this.team];
+    const retreatAt = this.retreatThreshold();
     const nearest = (() => {
       let n = null, bd = Infinity;
       for (const h of Game.heroes) {
@@ -2312,63 +3100,216 @@ class Hero extends Unit {
     if (en && en.botRetreatBelow && this.resource === 'energy' && this.mana < en.botRetreatBelow && !finishing &&
         this.fleeT <= 0 && this.aiState !== 'retreat' && nearest && dist(this, nearest) < 400) {
       this.fleeT = 1.5; this.aiTarget = null; this.botEscapeCast();
+      this.retreatPoint();
+      return true;
+    }
+
+    /* Turret leash (§5.1). The turret's ramp is real damage: two shots with
+       no minion in front of it and the dive is over, whatever the HP bar
+       says. This is what the 7-14% turret deaths were. */
+    /* The ring is read off the turrets themselves, not off the danger map:
+       the map halves a covered turret's value, so a hero sieging behind its
+       wave read as "out of the ring" and never counted the shots it was
+       taking once that wave died. */
+    const ring = this.turretOnMe();
+    const leashMax = p.turretHitsMax || 2;
+    if (!ring) this.turretHits = 0;
+    else if (this.turretHits >= leashMax ||
+             (this.turretHits >= 1 && !finishing) ||
+             (!finishing && this.hpPct < 0.45 && !minionCoverFor(this.team, ring))) {
+      this.fleeT = Math.max(this.fleeT, 1.5);
+      this.aiTarget = null;
+      Game.botTally('turretFlee');
+      this.botEscapeCast();
+      this.retreatPoint();
       return true;
     }
 
     if (this.aiState === 'retreat') {
-      if (this.hpPct > p.reengageHp || finishing) this.aiState = 'push';
+      const safeEnough = this.hpPct > 0.55 && (this.goal.kind === 'rally' || this.goal.kind === 'objective') &&
+        !this.enemyHeroWithin(700);
+      if (this.hpPct > p.reengageHp || finishing || safeEnough) this.aiState = 'push';
     } else if (this.hpPct < retreatAt && !finishing) {
-      const wasPushing = this.aiState !== 'retreat';
       this.aiState = 'retreat'; this.aiTarget = null;
-      const danger = Game.heroes.some(h => h.team !== this.team && h.alive && dist(this, h) < p.recallSafeDist);
-      if (wasPushing && Math.random() < 0.5) {
-        Game.ping(danger ? 'help' : 'retreat', this.x, this.y, this);
-      }
-      if (!danger) this.startRecall();
+      const danger = this.enemyHeroWithin(p.recallSafeDist);
+      if (Math.random() < 0.5) Game.ping(danger ? 'help' : 'retreat', this.x, this.y, this);
       this.botEscapeCast();
+      this.retreatPoint();
       return true;
     }
-    if (this.aiState === 'retreat' && !finishing) { this.botEscapeCast(); return true; }
+    if (this.aiState === 'retreat' && !finishing) { this.botEscapeCast(); this.retreatPoint(); return true; }
 
-    if (this.fleeT > 0 && !finishing) { this.aiTarget = null; this.botEscapeCast(); return true; }
+    if (this.fleeT > 0 && !finishing) { this.aiTarget = null; this.botEscapeCast(); this.retreatPoint(); return true; }
     if (finishing) this.fleeT = 0;
 
-    if (this.advancedAI) {
-      const f = this.localFightPower();
-      if (!finishing && f.enemies > 0 && f.enemyPower > f.allyPower * p.fightPowerRatio && this.hpPct < 0.82) {
-        this.fleeT = 2.4; this.aiTarget = null; this.botEscapeCast();
-        if (Math.random() < 0.35) Game.ping('retreat', this.x, this.y, this);
-        return true;
-      }
-      // won the fight: cash the gold and reset instead of lingering at 40%
-      if (this.shouldEconomyRecall() ||
-          (Game.time - (this.lastKillT || -99) < 5 && this.hpPct < 0.52 && this.hpPct > 0.22 &&
-           f.enemies === 0 && dist(this, Game.fountain(this.team)) > 520)) {
-        this.aiTarget = null; this.startRecall();
-        return this.recallT > 0;
-      }
-    } else if (p.outnumberMargin < 3.9 && !finishing) {
+    /* Outnumbered locally: a count rule and a power rule, both live (§5.1).
+       1v3 is never a fight however healthy the bar looks. */
+    if (!finishing) {
       let e = 0, a = 0;
       for (const h of Game.heroes) {
         if (!h.alive || dist(this, h) > 620) continue;
-        if (h.team === this.team) a++; else e++;
+        if (h.team === this.team) a++;
+        else if (Game.canSee(this.team, h)) e++;
       }
-      if (e - a >= Math.round(p.outnumberMargin)) { this.fleeT = 3; this.aiTarget = null; return true; }
+      if (e - a >= Math.round(p.outnumberMargin)) {
+        this.fleeT = 2.4; this.aiTarget = null; this.botEscapeCast(); this.retreatPoint(); return true;
+      }
+      if (this.advancedAI) {
+        const f = this.localFightPower();
+        if (f.enemies > 0 && f.enemyPower > f.allyPower * p.fightPowerRatio && this.hpPct < 0.82) {
+          this.fleeT = 2.4; this.aiTarget = null; this.botEscapeCast();
+          if (Math.random() < 0.35) Game.ping('retreat', this.x, this.y, this);
+          this.retreatPoint();
+          return true;
+        }
+      }
+    }
+
+    /* Recall is a macro decision now (§5.7): the brain sets goal.kind, and
+       the channel starts only somewhere safe, with nothing shooting. */
+    if (this.goal.kind === 'recall' && this.alive) {
+      if (this.recallT > 0) { this.micro.movePoint = null; return true; }
+      const hurtRecently = Game.time - (this.lastHurtT || -99) < 3;
+      if (!this.enemyHeroWithin(p.recallSafeDist) && !hurtRecently &&
+          Game.time - this.recallBrokenT > 2) {
+        this.startRecall();
+        if (this.recallT > 0) {
+          Game.botTally('recallStart');
+          const w = brain && brain.waves[this.lane];
+          // "crash before recalling": nothing is lost by leaving this lane now
+          if (!w || w.state === 'crashed' || w.state === 'empty' || w.state === 'pushed') Game.botTally('recallStartFree');
+          this.micro.movePoint = null;
+          return true;
+        }
+      }
+      this.aiTarget = null;
+      this.micro.movePoint = this.recallSpot();
+      this.micro.moveOpts = { retreat: true, avoidTowers: true };
+      return true;
     }
     return false;
   }
 
-  heuristicSelectTarget() {
+  /* Where a retreating bot runs: the fountain, except that a hero next to an
+     allied turret runs to the turret instead of across open ground. */
+  retreatPoint() {
+    const f = Game.fountain(this.team);
+    let best = f, bd = dist(this, f);
+    for (const s of Game.structures()) {
+      if (!s.alive || s.team !== this.team) continue;
+      const d = dist(this, s);
+      if (d < bd && d < 1400) { bd = d; best = s; }
+    }
+    this.micro.movePoint = { x: best.x, y: best.y };
+    this.micro.moveOpts = { retreat: true, avoidTowers: true };
+  }
+
+  /* §5.7: channel where nothing can see you. Close to the fountain, walk. */
+  recallSpot() {
+    const f = Game.fountain(this.team);
+    if (dist(this, f) < 1400) return { x: f.x, y: f.y };
+    const brain = Game.brains && Game.brains[this.team];
+    let best = null, bd = Infinity;
+    for (const b of Game.bushes()) {
+      const d = dist(this, b);
+      if (d > 500 || d > bd) continue;
+      if (brain && brain.dangerAt(b.x, b.y) > 0) continue;
+      bd = d; best = b;
+    }
+    return best ? { x: best.x, y: best.y } : { x: this.x, y: this.y };
+  }
+
+  /* §5.2 engage gate. One rule for target choice, dashes, blinks and
+     Flicker, replacing botTargetSafe's dive clause and gapCloseLegal's
+     "Tanks may still go" exemption: a dive under a live turret is a group
+     move or it is a donation. */
+  canEngage(t) {
+    if (!t || !t.alive) return false;
+    if (t.type !== 'hero') return true;
+    const p = this.p;
+    let alliesNear = 0, enemiesNear = 0;
+    for (const h of Game.heroes) {
+      if (!h.alive || h === t) continue;
+      const d = dist(h, t);
+      if (d > 600) continue;
+      if (h.team === this.team) { if (h !== this) alliesNear++; }
+      else if (Game.canSee(this.team, h)) enemiesNear++;
+    }
+    const finishing = this.botCanKill(t);
+    const tower = this.enemyTowerCovering(t);
+    if (tower && !minionCoverFor(this.team, tower)) {
+      return finishing && alliesNear >= (p.engageAllies || 1) && this.turretHits === 0 && this.hpPct > 0.6;
+    }
+    if (enemiesNear >= 2 && alliesNear < 1 && !finishing) return false;
+    const arch = this.botRole();
+    if (this.role === 'roam' && (arch === 'Tank' || arch === 'Support') && alliesNear < 1 && !finishing) return false;
+    if (!finishing) {
+      const brain = Game.brains && Game.brains[this.team];
+      if (brain && brain.enemyPowerAt(t.x, t.y, 600) > brain.allyPowerAt(t.x, t.y, 600) * p.fightPowerRatio) return false;
+    }
+    return true;
+  }
+
+  /* §5.6 wave intent. Minions come from the goal, not from a bias competing
+     with `heroBias` inside one score — which is what made laners walk off a
+     killable creep to poke a full-HP hero and back. */
+  incomingAllyDps(m) {
+    let dps = 0;
+    for (const a of Game.minions) {
+      if (!a.alive || a.team !== this.team || a.target !== m) continue;
+      dps += a.curAtk() * a.curAtkSpd();
+    }
+    return dps;
+  }
+  waveMinion() {
+    const intent = this.goal.wave || 'hold';
+    const reach = this.range + this.radius;
+    const walk = intent === 'fast' || intent === 'crash' || intent === 'freeze' || intent === 'slow';
+    const limit = walk ? this.p.acquireRange : reach + 60;
+    let best = null, bestScore = Infinity;
+    for (const m of Game.minions) {
+      if (!m.alive || m.team === this.team) continue;
+      const d = dist(this, m);
+      if (d > limit) continue;
+      if (!Game.canSee(this.team, m)) continue;
+      let score = d;
+      if (intent === 'freeze') {
+        // only the last hit, so the wave does not walk toward their turret
+        const travel = this.ranged ? d / 900 : 0;
+        if (Game.basicAttackDamage(this, m) < m.hp - this.incomingAllyDps(m) * travel) continue;
+        score -= 2000;
+      } else if (intent === 'slow') {
+        if (!m.ranged && m.hpPct > 0.6) continue;
+        if (m.ranged) score -= 800;
+        if (Game.canLastHit(this, m)) score -= 1200;
+      } else if (intent === 'fast' || intent === 'crash') {
+        score = m.hp * 0.2 + d * 0.4;
+        if (Game.canLastHit(this, m)) score -= 900;
+      } else {
+        if (d > reach + 60) continue;
+        if (Game.canLastHit(this, m)) score -= 900;
+      }
+      if (score < bestScore) { bestScore = score; best = m; }
+    }
+    return best;
+  }
+
+  heuristicSelectTarget() { return this.microTarget(); }
+  microTarget() {
     const p = this.p;
     const role = this.botRole();
+    const goal = this.goal;
     const notice = p.acquireRange;
     const collapse = p.collapseRange || 860;
+    const pushing = goal.wave === 'fast' || goal.wave === 'crash' ||
+      goal.plan === 'push' || goal.plan === 'end' || goal.plan === 'defend';
     let best = null, bestScore = Infinity;
-    for (const u of Game.enemyUnits(this.team, { structures: true })) {
+    for (const u of Game.heroes) {
+      if (u.team === this.team || !u.alive || u.untargetable) continue;
       const d = dist(this, u);
       if (d > collapse) continue;
       if (!Game.canSee(this.team, u)) continue;
-      if (!this.botTargetSafe(u)) continue;
+      if (!this.canEngage(u)) continue;
       if (d > notice) {
         /* Join a fight an ally is already in, but do not wander off a last-hit
            to a hero nobody is contesting — unless they are isolated, recalling,
@@ -2382,13 +3323,18 @@ class Hero extends Unit {
           if (a === u || a.team !== u.team || !a.alive) continue;
           if (dist(a, u) < 580) { alone = false; break; }
         }
-        const roam = this.lane === 'jungle' || this.lane === 'roam' || Game.time > (p.groupAfterMin || 8) * 60;
+        const roam = this.role === 'jungle' || this.role === 'roam' || goal.kind === 'gank' ||
+          goal.plan === 'group' || goal.plan === 'push' || goal.plan === 'end';
         if (!helping && !juicy && !(alone && roam)) continue;
       }
       let score = d;
       if (d > notice) score += (d - notice) * 1.15;
-      if (u.type === 'hero') {
+      {
         score -= p.heroBias + (1 - u.hpPct) * p.lowHpBias;
+        /* §5.3 role value: a marksman is worth killing, a tank is a wall.
+           A %-max-HP kit (botTargetMaxHp) reads the opposite way and keeps
+           its own rule below. */
+        if (p.roleValue && !this.def0.botTargetMaxHp) score -= p.roleValue[u.def0.role] || 0;
         if (this.advancedAI) {
           const hit = Game.basicAttackDamage(this, u);
           if (u.hp <= hit * 2) score -= p.killBias;
@@ -2424,57 +3370,66 @@ class Hero extends Unit {
           if (ourTower) score -= (p.siegeBias || 190);
         }
       }
-      if (this.advancedAI && u.type === 'minion' && Game.canLastHit(this, u)) score -= p.lastHitBias;
-      if (u.isStructure) score += p.structPenalty;
-      if (this.advancedAI && u === this.aiTarget) score -= p.stickyBias;
+      if (u === this.aiTarget) score -= p.stickyBias;
       if (score < bestScore) { bestScore = score; best = u; }
     }
-    if (best && best.isStructure) {
-      const cover = Game.minions.some(m => m.team === this.team && m.alive && dist(m, best) < 320);
-      if (!cover && (this.advancedAI || this.hpPct < clamp(p.diveHp + this.adapt.caution, 0.4, 1))) best = null;
+    /* A hero only beats the lane job when this bot can actually reach it:
+       otherwise a laner abandons its wave to walk at someone under a turret. */
+    if (best && dist(this, best) > this.range + 120 && !this.botCanKill(best) &&
+        goal.kind === 'lane' && (goal.wave === 'freeze' || goal.wave === 'hold')) {
+      if (!this.allyEngagedNear(best)) best = null;
     }
-
-    if (this.lane === 'jungle' && Game.time < 80 && best && best.type === 'hero' &&
+    if (this.role === 'jungle' && Game.time < 80 && best &&
         dist(this, best) > 560 && !this.botCanKill(best)) {
       best = null;
     }
+    if (best) return best;
 
     const punish = this.recallingEnemy();
-    if (punish && this.botTargetSafe(punish) && (!best || best.type !== 'hero' || best.hpPct > 0.22))
-      return punish;
+    if (punish && this.canEngage(punish)) return punish;
 
     /* Epic objectives outrank a lane target. A bot that keeps farming its
        wave while the Lord is up loses the game in a way no amount of good
-       laning recovers from, so this check comes before the idle fallbacks
-       and can override a minion or structure pick — but never a hero, since
-       being caught mid-objective is exactly how teams throw. */
+       laning recovers from. */
+    if (goal.kind === 'objective' && goal.target && goal.target.alive) {
+      const epic = this.pickEpicTarget();
+      if (epic) return epic;
+    }
     const epic = this.pickEpicTarget();
-    if (epic && (!best || best.type !== 'hero')) return epic;
+    if (epic) return epic;
 
-    // A designated jungler clears a real route rather than waiting until it
-    // accidentally walks within lane-bot camp range.
-    if (this.lane === 'jungle' && (!best || best.type !== 'hero')) {
+    if (goal.kind === 'jungle') {
       const sticky = this.aiTarget && this.aiTarget.type === 'monster' && this.aiTarget.alive &&
         !this.aiTarget.epic && dist(this, this.aiTarget) < 460;
-      const camp = sticky ? this.aiTarget : this.pickJungleCamp();
+      const camp = sticky ? this.aiTarget : (goal.target && goal.target.alive ? goal.target : this.pickJungleCamp());
       if (camp) return camp;
     }
+    if (goal.kind === 'escort' && goal.target && goal.target.type === 'monster' && goal.target.alive) {
+      // the roamer leashing the jungler's first camp
+      if (dist(this, goal.target) < 420) return goal.target;
+    }
 
-    /* Buff camps when there is nothing to fight. Distinct from the nearby
-       jungleRange farm below — this one only takes camps that grant a rune,
-       and laners only walk if the buff is actually next to them. */
-    if (!best && this.hpPct > p.campHp) {
-      let bd = this.lane === 'jungle' ? Infinity : p.campRange;
+    /* Structures: only while the goal says shove, and only behind a wave. */
+    if (pushing && this.hpPct > 0.45 && this.turretHits < (p.turretHitsMax || 2)) {
+      let struct = null, sd = Infinity;
+      for (const s of Game.structures()) {
+        if (!s.alive || s.team === this.team || s.shieldedByOuter) continue;
+        const d = dist(this, s);
+        if (d > this.range + this.radius + s.radius + 220 || d > sd) continue;
+        if (!minionCoverFor(this.team, s)) continue;   // never trade with a turret alone
+        sd = d; struct = s;
+      }
+      if (struct) return struct;
+    }
+
+    const minion = this.waveMinion();
+    if (minion) return minion;
+
+    /* Buff camps when there is nothing to fight and the goal leaves room. */
+    if (this.hpPct > p.campHp && (goal.kind === 'lane' || goal.kind === 'jungle')) {
+      let bd = this.role === 'jungle' ? Infinity : p.campRange;
       for (const mo of Game.monsters) {
         if (!mo.alive || mo.epic || (mo.kind !== 'blueBuff' && mo.kind !== 'redBuff')) continue;
-        const d = dist(this, mo);
-        if (d < bd) { bd = d; best = mo; }
-      }
-    }
-    if (!best && p.jungleRange > 80 && this.hpPct > 0.6 && this.lane !== 'jungle') {
-      let bd = p.jungleRange;
-      for (const mo of Game.monsters) {
-        if (!mo.alive || mo.epic) continue;
         const d = dist(this, mo);
         if (d < bd) { bd = d; best = mo; }
       }
@@ -3570,6 +4525,8 @@ class Hero extends Unit {
       const damage = retributionDamage(this);
       for (const m of Game.monsters) {
         if (!m.alive || dist(this, m) > 380) continue;
+        // §4.6.1: hold the secure for the epic that is about to spawn
+        if (!m.epic && this.goal.holdSpell) continue;
         if (m.hp > damage) continue;
         const score = m.hp - (m.epic ? 10000 : 0);
         if (score < bestScore) { bestScore = score; best = m; }
@@ -3716,35 +4673,28 @@ class Hero extends Unit {
   /* The live lane position is the allied wave, not a time-coded coordinate.
      Following its leading cluster makes laners pause, crash and regroup with
      the actual state of the road instead of marching through fixed waypoints. */
-  laneWaveAnchor() {
-    if (!LANE_WAVE_LANES.has(this.lane)) return null;
-    /* The wave's leading cluster is a fact about the lane, not the bot, and
-       every idle laner asks for it every frame: find it once per frame per
-       lane, keyed so that a minion dying or spawning mid-frame invalidates it. */
-    const key = `${Game.time}:${Game.minions.length}:${Game._minionDeaths || 0}`;
-    let cache = Game._waveCache;
-    if (!cache || cache.key !== key) cache = Game._waveCache = { key, lanes: new Map() };
-    const laneKey = this.team * 16 + LANE_WAVE_INDEX[this.lane];
-    let lead = cache.lanes.get(laneKey);
-    if (lead === undefined) {
-      lead = null;
-      const wave = Game.minions.filter(m => m.alive && m.team === this.team && m.lane === this.lane);
-      if (wave.length) {
-        let front = wave[0];
-        for (const m of wave) if ((m.wpIdx || 0) > (front.wpIdx || 0)) front = m;
-        const cluster = wave.filter(m => Math.abs((m.wpIdx || 0) - (front.wpIdx || 0)) <= 1 && dist(m, front) < 260);
-        const x = cluster.reduce((s, m) => s + m.x, 0) / cluster.length;
-        const y = cluster.reduce((s, m) => s + m.y, 0) / cluster.length;
-        lead = { x, y };
-      }
-      cache.lanes.set(laneKey, lead);
+  /* Where to stand in a lane. The leading allied cluster is a fact about the
+     lane, not about this bot, so TeamBrain.updateWaves finds it once per team
+     per second and this only applies the hero's own standing offset (§4.4).
+     `lane` defaults to the goal's lane, so a rotating laner reads the lane it
+     is rotating to, not the one it was drafted into. */
+  laneWaveAnchor(lane) {
+    lane = lane || this.goal.lane || this.lane;
+    if (!LANE_WAVE_LANES.has(lane)) return null;
+    const brain = Game.brains && Game.brains[this.team];
+    const w = brain && brain.waves[lane];
+    let lead = w && w.front;
+    if (!lead) {
+      /* No brain (duel, 10v10, a unit test driving a hero by hand): fall back
+         to the polyline point the wave would be marching from. */
+      const path = Game.lanesFor(this.team)[lane];
+      if (!path) return null;
+      lead = pathPoint(path, 0.5);
     }
-    if (!lead) return null;
-    const x = lead.x, y = lead.y;
     const home = Game.basePoint(this.team);
-    const d = Math.hypot(home.x - x, home.y - y) || 1;
+    const d = Math.hypot(home.x - lead.x, home.y - lead.y) || 1;
     const behind = this.ranged ? 175 : 105;
-    return { x: x + (home.x - x) / d * behind, y: y + (home.y - y) / d * behind };
+    return { x: lead.x + (home.x - lead.x) / d * behind, y: lead.y + (home.y - lead.y) / d * behind };
   }
 
   /* Sample several legal positions around a fight. Ranged heroes value their
@@ -3869,163 +4819,182 @@ class Hero extends Unit {
     this.moveToward(aim.x, aim.y, dt);
   }
 
+  /* §5.4 — the move point for the next 100 ms. Everything expensive about
+     positioning (the combat-point sampler, the wave anchor, the rally) is
+     decided here, at 10 Hz; botControl only walks toward whatever this left
+     behind. */
+  microMove(t) {
+    const p = this.p, goal = this.goal;
+    const m = this.micro;
+    m.moveOpts = MOVE_SAFE;
+    /* F29 (Lumen's hint): a battery hero under botChargeBelow with nobody
+       near plants and charges; she still shoots whatever is in reach. */
+    const bat = this.def0.energy;
+    if (bat && bat.stillRegen && bat.botChargeBelow && this.mana < bat.botChargeBelow &&
+        !this.enemyHeroWithin(bat.botChargeSafe || 500)) { m.movePoint = null; return; }
+
+    if (t) {
+      if (t.type === 'hero') { this.heroMovePoint(t); return; }
+      if (t.type === 'monster') {
+        const dest = t.home && (t.leashed || dist(t, t.home) > 40) ? t.home : t;
+        m.movePoint = { x: dest.x, y: dest.y };
+        return;
+      }
+      m.movePoint = { x: t.x, y: t.y };
+      return;
+    }
+
+    /* No target: walk the goal. */
+    switch (goal.kind) {
+      case 'rally':
+      case 'gank':
+      case 'objective': {
+        const q = goal.point || (goal.target && { x: goal.target.x, y: goal.target.y }) ||
+          this.laneWaveAnchor(goal.lane) || this.laneWaveAnchor('mid');
+        m.movePoint = q ? { x: q.x, y: q.y } : null;
+        /* Waiting in a bush before a pit fight is only a wait if you do not
+           shoot the first creep that walks past it (§5.4). */
+        if (goal.kind !== 'objective' && q && dist(this, q) < 260 && !this.enemyHeroWithin(620)) m.holdFire = true;
+        return;
+      }
+      case 'escort': {
+        const a = goal.point || goal.target;
+        if (!a) { m.movePoint = null; return; }
+        const near = goal.point ? 120 : 240;
+        m.movePoint = dist(this, a) > near ? { x: a.x, y: a.y } : null;
+        return;
+      }
+      case 'jungle': {
+        const c = goal.target;
+        const dest = c ? (c.home && (c.leashed || dist(c, c.home) > 40) ? c.home : c) : null;
+        m.movePoint = dest ? { x: dest.x, y: dest.y }
+          : this.laneWaveAnchor('mid') || this.laneWaveAnchor('top') || this.lanePoint();
+        return;
+      }
+      case 'recall':
+        m.movePoint = this.recallSpot();
+        m.moveOpts = MOVE_RETREAT;
+        return;
+      default: {
+        /* Lane. A hero whose plan lets it leave the lane collapses on a
+           recalling, isolated or already-fighting enemy first; these used to
+           run every frame for every bot and now run at 10 Hz for the bots
+           whose goal allows it. */
+        const rove = this.role === 'jungle' || this.role === 'roam' ||
+          goal.plan === 'push' || goal.plan === 'end' || goal.plan === 'group';
+        if (rove) {
+          const punish = this.recallingEnemy();
+          if (punish && dist(this, punish) > 80) { m.movePoint = { x: punish.x, y: punish.y }; return; }
+          const lone = this.isolatedEnemy(p.collapseRange);
+          if (lone && dist(this, lone) > 160) { m.movePoint = { x: lone.x, y: lone.y }; return; }
+          const fight = this.nearbySkirmish();
+          if (fight && dist(this, fight) > 180) { m.movePoint = { x: fight.x, y: fight.y }; return; }
+          const hunt = this.lastSeenHunt();
+          if (hunt && dist(this, hunt) > 140) { m.movePoint = { x: hunt.x, y: hunt.y }; return; }
+        }
+        /* Stand behind the wave; with no wave of ours in the lane yet, walk
+           the polyline out to where it will meet theirs. */
+        const w = this.laneWaveAnchor();
+        if (w && dist(this, w) > 150) { m.movePoint = w; return; }
+        if (Game.duelRune && Game.duelRune.up && this.hpPct > p.campHp) {
+          m.movePoint = { x: DUEL_MAP.shrine.x, y: DUEL_MAP.shrine.y };
+          return;
+        }
+        m.movePoint = w || this.lanePoint();
+      }
+    }
+  }
+
+  /* The next waypoint along this hero's own lane polyline. */
+  lanePoint() {
+    const lane = this.goal.lane || this.lane;
+    const path = (lane && Game.lanesFor(this.team)[lane]) || this.path;
+    if (!path) return null;
+    let wp = path[this.wpIdx];
+    if (!wp || this.distTo(wp) > 900) {
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < path.length; i++) {
+        const d = this.distTo(path[i]);
+        if (d < bd) { bd = d; bi = i; }
+      }
+      this.wpIdx = Math.min(bi + 1, path.length - 1);
+      wp = path[this.wpIdx];
+    }
+    while (wp && this.distTo(wp) < 80 && this.wpIdx < path.length - 1) { this.wpIdx++; wp = path[this.wpIdx]; }
+    return wp ? { x: wp.x, y: wp.y } : null;
+  }
+
+  /* Spacing against a hero: the kite step during attack recovery, the hold
+     point when out of range, the intercept when melee. */
+  heroMovePoint(t) {
+    const m = this.micro;
+    const brain = Game.brains && Game.brains[this.team];
+    const inRange = this.inAttackRange(t);
+    if (inRange) {
+      /* §5.4: a kite steps away from the nearest MELEE threat, not around
+         the target — the diver is not where the target is. */
+      if (this.ranged && this.atkCd > 0.9 / this.curAtkSpd()) {
+        m.kiteUntil = Game.time + Math.min(this.p.kiteMax || 0.35, Math.max(0, this.atkCd - 0.12));
+      }
+      const hold = this.botHoldNow();
+      const role = this.botRole();
+      const melee = this.ranged && !(hold && hold < 250) ? this.meleeThreat(420) : null;
+      if (melee && Game.time < m.kiteUntil) {
+        const step = this.p.kiteStep || 120;
+        const d = Math.max(1, this.distTo(melee));
+        const kx = this.x + (this.x - melee.x) / d * step, ky = this.y + (this.y - melee.y) / d * step;
+        const keepsTarget = melee !== t || hyp(kx - t.x, ky - t.y) <= this.range + this.radius + t.radius;
+        // the only ground a kite refuses is a turret ring it is not already in
+        const safer = !brain || brain.dangerAt(kx, ky) < 8 || brain.dangerAt(this.x, this.y) >= 8;
+        if (keepsTarget && safer && !Game.wallAt(kx, ky, this.radius + 4)) { m.movePoint = { x: kx, y: ky }; return; }
+      }
+      if (!this.ranged && role !== 'Tank' && !melee) { m.movePoint = null; return; }
+      if (this.combatPointStale(t)) {
+        this.combatPoint = this.chooseCombatPoint(t);
+        this.combatPointT = 0.28 + rand(0, 0.14);
+      }
+      m.movePoint = this.combatPoint && dist(this, this.combatPoint) > 36 ? this.combatPoint : null;
+      return;
+    }
+    /* Out of range. A ranged hero closes to its hold point, never to melee;
+       a melee hero cuts the corner. Nobody walks past the wave front into a
+       turret to chase someone stepping back under it. */
+    if (this.ranged && (this.botHoldNow() || (t.hpPct > 0.42 && !this.botCanKill(t))) && t.recallT <= 0) {
+      if (this.combatPointStale(t)) {
+        this.combatPoint = this.chooseCombatPoint(t);
+        this.combatPointT = 0.28 + rand(0, 0.14);
+      }
+      m.movePoint = this.combatPoint;
+    } else {
+      const cut = this.interceptPoint(t);
+      m.movePoint = { x: cut.x, y: cut.y };
+    }
+    if (m.movePoint && brain && !this.canEngage(t) && brain.dangerAt(m.movePoint.x, m.movePoint.y) >= 8 &&
+        brain.dangerAt(this.x, this.y) < 8) {
+      m.movePoint = null;      // that step is into a turret ring we may not dive
+    }
+  }
+
+  combatPointStale(t) {
+    return !this.combatPoint || this.combatPointT <= 0 ||
+      dist(this.combatPoint, t) > Math.max(220, this.range * 1.15);
+  }
+
+  /* Every frame: dodge, walk to the micro move point, swing at the micro
+     target. No scans, no allocations (§5). */
   botControl(dt) {
-    const p = this.p;
     this.combatPointT -= dt;
     if (this.dodgeZones(dt)) return;
     if (this.dodgeProjectiles(dt)) return;
-    if (this.fleeT > 0) {
-      const b = Game.fountain(this.team);
-      this.botMoveTo(b.x, b.y, dt, { retreat: true, avoidTowers: true });
-      return;
+    if (this.recallT > 0) return;
+    const m = this.micro;
+    const t = this.aiTarget;
+    if (t && !t.alive) { this.aiTarget = null; m.movePoint = null; }
+    if (m.movePoint) this.botMoveTo(m.movePoint.x, m.movePoint.y, dt, m.moveOpts || MOVE_SAFE);
+    if (!m.holdFire && t && t.alive && this.inAttackRange(t) &&
+        (t.epic || t.isStructure || t.type === 'monster' || Game.canSee(this.team, t))) {
+      this.tryAttack(t);
     }
-    if (this.aiState === 'retreat') {
-      if (this.recallT > 0) return;
-      const b = Game.fountain(this.team);
-      if (dist(this, b) > 200) this.botMoveTo(b.x, b.y, dt, { retreat: true, avoidTowers: true });
-      return;
-    }
-    const twr = Game.structures().find(s => s.alive && s.team !== this.team && dist(this, s) < s.range + 80);
-    if (twr) {
-      const cover = Game.minions.some(m => m.team === this.team && m.alive && dist(m, twr) < 320);
-      if (!cover && this.hpPct < clamp(p.diveHp + this.adapt.caution, 0.4, 1)) {
-        const b = Game.basePoint(this.team);
-        this.botMoveTo(b.x, b.y, dt, { retreat: true, avoidTowers: true });
-        if (this.aiTarget && this.aiTarget.isStructure) this.aiTarget = null;
-        return;
-      }
-    }
-    let t = this.aiTarget;
-    // Turtle and Lord sit in known pits: you do not need vision on them to
-    // walk there, and the chase cutoff would drop them before arrival
-    const isEpic = t && t.epic;
-    const isJungleRoute = t && t.type === 'monster' && this.lane === 'jungle';
-    if (t && (!t.alive || (this.advancedAI && !this.botTargetSafe(t)) ||
-        (!isEpic && !isJungleRoute && (!Game.canSee(this.team, t) || this.distTo(t) > p.chaseRange)))) {
-      t = this.aiTarget = null;
-    }
-    /* F29 (Lumen's hint): a battery hero (F4 stillRegen) under botChargeBelow
-       with no visible enemy hero inside botChargeSafe plants and charges;
-       she still shoots whatever is in reach. */
-    const bat = this.def0.energy;
-    const charging = !!(bat && bat.stillRegen && bat.botChargeBelow && this.mana < bat.botChargeBelow &&
-      !this.enemyHeroWithin(bat.botChargeSafe || 500));
-    if (t) {
-      if (charging) { if (this.inAttackRange(t)) this.tryAttack(t); return; }
-      if (this.inAttackRange(t)) {
-        this.tryAttack(t);
-        /* Move during attack recovery instead of freezing in a firing line.
-           Only heroes provoke tactical orbiting; waves and objectives should
-           still be cleared efficiently. */
-        if (t.type === 'hero' && p.kiteBuffer > 10 &&
-            this.atkCd > (this.ranged ? 0.18 : 0.4) / this.curAtkSpd()) {
-          /* A marksman with a melee hero inside 250 steps straight away from
-             him during attack recovery (the orbit below is chosen around the
-             target, which is not where the diver is). Rock behind: orbit. */
-          const role = this.botRole(), hold = this.botHoldNow();
-          // a mage walking in for a mark payoff (the hold shrunk under 250, Ignis) does not step back from the melee it is walking at
-          const melee = this.ranged && (role === 'Marksman' || role === 'Mage') && !(hold && hold < 250) ? this.meleeThreat(250) : null;
-          const kx = melee ? this.x + (this.x - melee.x) / Math.max(1, this.distTo(melee)) * 120 : 0;
-          const ky = melee ? this.y + (this.y - melee.y) / Math.max(1, this.distTo(melee)) * 120 : 0;
-          if (melee && !Game.wallAt(kx, ky, this.radius + 4)) {
-            this.botMoveTo(kx, ky, dt, { avoidTowers: true });
-          } else {
-            if (!this.combatPoint || this.combatPointT <= 0 || dist(this.combatPoint, t) > this.range * 1.15) {
-              this.combatPoint = this.chooseCombatPoint(t);
-              this.combatPointT = 0.28 + rand(0, 0.14);
-            }
-            if (this.combatPoint && dist(this, this.combatPoint) > 36)
-              this.botMoveTo(this.combatPoint.x, this.combatPoint.y, dt, { avoidTowers: true });
-          }
-        }
-      } else if (t.type === 'hero') {
-        const cut = this.interceptPoint(t);
-        /* a botHold hero (the mages, Lumen) always closes to its hold point, never to melee,
-           whatever the target's health; the walk-in for a mark payoff shrinks the hold instead */
-        if (this.ranged && (this.botHoldNow() || (t.hpPct > 0.42 && !this.botCanKill(t))) && t.recallT <= 0) {
-          if (!this.combatPoint || this.combatPointT <= 0) {
-            this.combatPoint = this.chooseCombatPoint(t);
-            this.combatPointT = 0.28 + rand(0, 0.14);
-          }
-          this.botMoveTo(this.combatPoint.x, this.combatPoint.y, dt, { avoidTowers: true });
-        } else this.botMoveTo(cut.x, cut.y, dt, { avoidTowers: true });
-      } else if (t.type === 'monster') {
-        const dest = t.home && (t.leashed || dist(t, t.home) > 40) ? t.home : t;
-        this.botMoveTo(dest.x, dest.y, dt, { avoidTowers: true });
-      } else this.botMoveTo(t.x, t.y, dt, { avoidTowers: true });
-      return;
-    }
-    if (charging) return;   // F29 (Lumen's hint): nothing to shoot, nobody near: stand and charge
-    const punish = this.recallingEnemy();
-    if (punish && dist(this, punish) > 80) {
-      this.botMoveTo(punish.x, punish.y, dt, { avoidTowers: true });
-      return;
-    }
-    const pick = this.isolatedEnemy(this.p.collapseRange);
-    if (pick && this.shouldRotateTo(pick) && dist(this, pick) > 160) {
-      this.botMoveTo(pick.x, pick.y, dt, { avoidTowers: true });
-      return;
-    }
-    const hold = this.alliedTowerInTrouble();
-    if (hold && dist(this, hold) > 180) {
-      this.botMoveTo(hold.x, hold.y, dt, { avoidTowers: true });
-      return;
-    }
-    const fight = this.nearbySkirmish();
-    if (fight && this.shouldRotateTo(fight) && dist(this, fight) > 180) {
-      this.botMoveTo(fight.x, fight.y, dt, { avoidTowers: true });
-      return;
-    }
-    const hunt = this.lastSeenHunt();
-    if (hunt && dist(this, hunt) > 140) {
-      this.botMoveTo(hunt.x, hunt.y, dt, { avoidTowers: true });
-      return;
-    }
-    if (Game.time <= p.groupAfterMin * 60 && this.lane === 'roam') {
-      const ally = this.roamAnchor();
-      if (ally && dist(this, ally) > 220) this.botMoveTo(ally.x, ally.y, dt);
-      return;
-    }
-    if (Game.time <= p.groupAfterMin * 60 && this.lane === 'jungle') {
-      const ally = this.shadowAlly();
-      if (ally && dist(this, ally) > 380) this.botMoveTo(ally.x, ally.y, dt);
-      return;
-    }
-    if (Game.time > p.groupAfterMin * 60) {
-      let ally = null, bd = Infinity;
-      for (const h of Game.heroes) {
-        if (h === this || h.team !== this.team || !h.alive) continue;
-        const d = dist(this, h);
-        if (d < bd) { bd = d; ally = h; }
-      }
-      if (ally && bd > 900) { this.botMoveTo(ally.x, ally.y, dt); return; }
-    }
-    /* Duel shrine. With nothing to fight, a live rune is the only thing on the
-       arena worth walking to, and a bot that strolls the lane past it loses to
-       one that does not. Health-gated like a buff camp: contesting the open
-       centre at 20% health is just handing over the rune and the kill. */
-    if (Game.duelRune && Game.duelRune.up && this.hpPct > p.campHp) {
-      this.botMoveTo(DUEL_MAP.shrine.x, DUEL_MAP.shrine.y, dt);
-      return;
-    }
-    const wave = this.laneWaveAnchor();
-    if (wave && dist(this, wave) > 150) {
-      this.botMoveTo(wave.x, wave.y, dt, { avoidTowers: true });
-      return;
-    }
-    if (!this.path) return;
-    let wp = this.path[this.wpIdx];
-    if (!wp || this.distTo(wp) > 900) {
-      let bi = 0, bd = Infinity;
-      for (let i = 0; i < this.path.length; i++) {
-        const d = this.distTo(this.path[i]);
-        if (d < bd) { bd = d; bi = i; }
-      }
-      this.wpIdx = Math.min(bi + 1, this.path.length - 1);
-      wp = this.path[this.wpIdx];
-    }
-    while (wp && this.distTo(wp) < 80 && this.wpIdx < this.path.length - 1) { this.wpIdx++; wp = this.path[this.wpIdx]; }
-    if (wp) this.botMoveTo(wp.x, wp.y, dt);
   }
 }
 
@@ -4259,7 +5228,7 @@ class Minion extends Unit {
       for (let i = 0; i < sharers.length; i += 2) {
         const h = sharers[i], w = sharers[i + 1];
         let g = pool / n * w;
-        if (h === src) g += gold * BALANCE.lastHitBonus;
+        if (h === src) { g += gold * BALANCE.lastHitBonus; h.cs++; }   // core, so headless counts CS too
         h.gainGold(g);
         h.gainXp(xp / n * w);
         if (h === src && typeof Features !== 'undefined') Features.onMinionDeath(this, src, g);
@@ -4319,6 +5288,8 @@ class Tower extends Unit {
       ramp += Math.min(BALANCE.towerRampCap, this.focusHits) * BALANCE.towerRamp;
       this.focusHits++;
       this.focusT = Game.time;
+      // the bot's turret leash counts shots taken, not health lost (§5.1)
+      target.turretHits = (target.turretHits || 0) + 1;
     }
     return { amount: this.curAtk() * ramp, type: 'true', isBasic: false };
   }
