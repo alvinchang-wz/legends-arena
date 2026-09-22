@@ -7,9 +7,11 @@ name: Deploy GitHub Pages
 
 # The site is built from main; the overnight branch is built too and served
 # under /preview/ (same gate) so work in progress can be played remotely.
+# Only main may deploy to the github-pages environment, so the preview is
+# refreshed by a push to main (an empty commit is enough).
 on:
   push:
-    branches: [main, overnight]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
