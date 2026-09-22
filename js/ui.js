@@ -492,7 +492,7 @@ const UI = {
         <div><div class="infoName" style="color:${h.color}">${h.name}</div>
         <div class="infoRole">${h.role} · ${h.range > 150 ? 'Ranged' : 'Melee'} ·
           <span style="color:${DMG_COLORS[h.damageStyle]}">${h.damageStyle} damage</span> ·
-          ${'★'.repeat(h.difficulty)}${'☆'.repeat(3 - h.difficulty)}</div></div></div>
+          ${'★'.repeat(h.difficulty)}${'☆'.repeat(Math.max(0, 4 - h.difficulty))}</div></div></div>
       <p class="infoDesc">${h.desc}</p>
       ${this.heroStatBars(h)}
       ${h.passive ? `<div class="infoSkill passiveRow">
