@@ -163,20 +163,18 @@ _t_left = (X0 - _p0[0]) / _u[0]; _t_top = (Y0 - _p0[1]) / _u[1]
 VOID_A = [(X0 - 40, Y0 - 40), (float(_p0[0] + _u[0] * _t_top), Y0 - 40), (float(_p0[0] + _u[0] * _t_top), Y0),
           (X0, float(_p0[1] + _u[1] * _t_left)), (X0 - 40, float(_p0[1] + _u[1] * _t_left))]
 VOID_B = [rot(*p) for p in VOID_A]
-corner_zone = np.zeros((N, N), np.uint8)
-cv2.fillPoly(corner_zone, [np.array([to_r(*q) for q in [(X0, Y0), (X0 + 170, Y0), (X0, Y0 + 170)]], np.int32)], 1)
-corner_zone |= corner_zone[::-1, ::-1]
+corner_zone = np.zeros((N, N), np.uint8)          # only the void itself (plus 2 px), nothing inside the board
+for v in (VOID_A, VOID_B): fill_poly(corner_zone, v)
+corner_zone = cv2.dilate(corner_zone, disk(2.0))
 
 # ---------------------------------------------------------------- walls (minimap layer)
 wall = LAY['wall'].astype(np.uint8).copy()
 wall = symmetrise(wall)
 wall &= 1 - corner_zone
-free_fixed = np.zeros((N, N), np.uint8)
-for pts in LANES.values(): stroke(free_fixed, pts, LANE_W / 2 - 1.0)
+free_fixed = np.zeros((N, N), np.uint8)          # the picture already keeps lanes and turret pads clear; only guarantee the plazas and camp floors
 for c in (BASE_A, BASE_B): circle(free_fixed, c, 30)
 for c in (FOUNTAIN_A, FOUNTAIN_B): circle(free_fixed, c, 22)
 for cp in CAMPS: circle(free_fixed, (cp['x'], cp['y']), 6 if cp['kind'] in ('blueBuff', 'redBuff') else 5)
-for t in TOWERS: circle(free_fixed, (t['x'], t['y']), 8)
 wall &= 1 - free_fixed
 wall = remove_small(wall, 12)
 # unreachable pockets become rock; every corridor gets at least MIN_CORRIDOR
@@ -213,6 +211,71 @@ for c in (BASE_A, BASE_B): circle(bush, c, 30, 0)
 bush = remove_small(bush, 25)
 bush = symmetrise(bush)
 BUSHES = [{'poly': b['poly'], 'x': b['x'], 'y': b['y'], 'r': round(max(3.0, math.sqrt(b['area'] / math.pi)), 1)} for b in polygons(bush, 0.7, 25)]
+
+# ---------------------------------------------------------------- measured corrections (phone survey)
+# walls_measured.json: per-rock translation fitted from wall-contact marks (mlbb_survey.reconcile);
+# bushes_measured.json: bush polygons from the in-bush icon walk (mlbb_survey.bushfit).
+# Rocks are paired with their 180-degree partners so both halves share the evidence.
+MEAS_W, MEAS_B = REF + 'walls_measured.json', REF + 'bushes_measured.json'
+MEASURED = {'rocks_shifted': 0, 'bushes_added': 0, 'bushes_shifted': 0}
+def _rot_poly(poly): return [[round(2 * CX - x, 1), round(2 * CY - y, 1)] for x, y in poly]
+def _shift_poly(poly, dx, dy): return [[round(x + dx, 1), round(y + dy, 1)] for x, y in poly]
+def _centroid(poly):
+    m = cv2.moments(np.array(poly, np.float32).reshape(-1, 1, 2)); return (m['m10'] / m['m00'], m['m01'] / m['m00'])
+if os.path.exists(MEAS_W):
+    mw = json.load(open(MEAS_W))
+    per = {r['rock']: r for r in mw['rocks'] if 'shift' in r and r['n'] >= 25 and r['rms_after'] <= 3.0}
+    vis = [i for i, w in enumerate(WALLS) if not w.get('hidden')]
+    cents = {i: _centroid(WALLS[i]['poly']) for i in vis}
+    done = set()
+    for i in vis:
+        if i in done: continue
+        cx_, cy_ = cents[i]; rx, ry = 2 * CX - cx_, 2 * CY - cy_
+        j = min(vis, key=lambda k: (cents[k][0] - rx) ** 2 + (cents[k][1] - ry) ** 2)
+        a_, b_ = per.get(i), per.get(j if j != i else -1)
+        if a_ is None and b_ is None: done.update({i, j}); continue
+        # a shift measured on the partner appears rotated on this rock
+        if a_ and b_:
+            wa, wb = a_['n'], b_['n']
+            dx = (a_['shift'][0] * wa - b_['shift'][0] * wb) / (wa + wb); dy = (a_['shift'][1] * wa - b_['shift'][1] * wb) / (wa + wb)
+        elif a_: dx, dy = a_['shift']
+        else: dx, dy = -b_['shift'][0], -b_['shift'][1]
+        WALLS[i]['poly'] = _shift_poly(WALLS[i]['poly'], dx, dy); MEASURED['rocks_shifted'] += 1
+        if j != i: WALLS[j]['poly'] = _shift_poly(WALLS[j]['poly'], -dx, -dy); MEASURED['rocks_shifted'] += 1
+        done.update({i, j})
+    built[:] = 0
+    for w in WALLS:
+        if not w.get('hidden'): fill_poly(built, w['poly'])
+if os.path.exists(MEAS_B):
+    mb = json.load(open(MEAS_B))
+    def _mask(poly):
+        m_ = np.zeros((N, N), np.uint8); fill_poly(m_, poly); return m_
+    measured = []
+    for b in mb['bushes']:
+        measured.append(b['poly']); measured.append(_rot_poly(b['poly']))     # both halves
+    for poly in measured:
+        mm = _mask(poly)
+        best, bi = 0.0, None
+        for k, b in enumerate(BUSHES):
+            bm = _mask(b['poly']); inter = (mm & bm).sum(); uni = (mm | bm).sum()
+            if uni and inter / uni > best: best, bi = inter / uni, k
+        if bi is not None and best >= 0.25:
+            # the minimap shape is cleaner; move it onto the measured position
+            mx_, my_ = _centroid(poly); bx_, by_ = _centroid(BUSHES[bi]['poly'])
+            dx, dy = mx_ - bx_, my_ - by_
+            if abs(dx) + abs(dy) > 0.6:
+                BUSHES[bi]['poly'] = _shift_poly(BUSHES[bi]['poly'], dx, dy); BUSHES[bi]['x'] = round(BUSHES[bi]['x'] + dx, 1); BUSHES[bi]['y'] = round(BUSHES[bi]['y'] + dy, 1)
+                MEASURED['bushes_shifted'] += 1
+        elif (mm & (1 - built)).sum() >= 12 * R * R:
+            # a bush no minimap draws (lane bushes): take the measured outline, clipped to free ground
+            cnts, _ = cv2.findContours(mm & (1 - built), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            c = max(cnts, key=cv2.contourArea); simp = cv2.approxPolyDP(c, 1.0, True).reshape(-1, 2)
+            if len(simp) >= 3:
+                pts = [[round(x, 1), round(y, 1)] for x, y in (from_r(float(px), float(py)) for px, py in simp)]
+                cx_, cy_ = _centroid(pts)
+                BUSHES.append({'poly': pts, 'x': round(cx_, 1), 'y': round(cy_, 1), 'r': round(max(3.0, math.sqrt(cv2.contourArea(c) / (R * R) / math.pi)), 1), 'measured': True})
+                MEASURED['bushes_added'] += 1
+print('measured corrections:', MEASURED)
 
 # ---------------------------------------------------------------- reachability
 free = (1 - built).astype(np.uint8)
