@@ -1008,7 +1008,7 @@ class Hero extends Unit {
      caster unless `all`; on the same ally the larger tick wins. */
   linkTo(ally, s, rank) {
     const lk = s.link;
-    if (!lk || !ally || !ally.alive || ally === this) return null;
+    if (!lk || !ally || !ally.alive || (ally === this && !lk.all)) return null;   // Canopy (all) links the caster too
     const h = this, r = rank || this.skillRankOf(s);
     const tickHeal = (rankVal(lk, 'tickHeal', r) || 0) + this.magicPower() * (lk.tickScaleAp || 0);
     for (const t of Game.tethers) {
@@ -1499,7 +1499,7 @@ class Hero extends Unit {
           if (s.shieldPct) h.addShield(h.maxHp * s.shieldPct, 3);
           Game.fx.healFx(h, Math.round(amt));
           this.fire('onHealAlly', h, healed);
-          if (s.link && s.link.all && h !== this) this.linkTo(h, s, rank);   // Sylva's Canopy
+          if (s.link && s.link.all) this.linkTo(h, s, rank);   // Sylva's Canopy: every ally healed is linked, herself included
         }
         Game.fx.ring(this.x, this.y, s.radius, THEME.heal, 0.5);
         break;
@@ -2837,6 +2837,11 @@ class Hero extends Unit {
     }
     return best;
   }
+  /* F29 (Sylva's hint): is `t` on one of our heroes (its current or chosen target an allied hero)? */
+  chasingAlly(t) {
+    const ct = t && (t.curTarget || t.aiTarget);
+    return !!(ct && ct.type === 'hero' && ct.team === this.team && ct.alive);
+  }
   /* F29 (Wick's hint): this hero's live pulse object (her lantern), or null. */
   ownPulseObject() {
     for (const o of Game.objects) if (!o.dead && o.owner === this && o.mode === 'pulse') return o;
@@ -2941,6 +2946,10 @@ class Hero extends Unit {
         }
         if (locked && !cc) return 860;
         if (cc && isHero && !locked) return 820;
+        // F29 (Sylva's hint): Thorn Volley at an enemy hero chasing an ally
+        if (s.botChasing && isHero && this.chasingAlly(t)) return 700;
+        // F29 (Pact's hint): Let at enemy heroes while an ally within botAllyHurt.range is under botAllyHurt.hp (Tithe feeds them)
+        if (s.botAllyHurt && isHero && this.alliesBelow(s.botAllyHurt.range || 520, s.botAllyHurt.hp || 0.6) > 0) return 700;
         // F29 (Volt's hint): a bouncing shot is best when a second enemy unit stands inside its bounce range of the target
         if (s.bounce && s.botBounce && isHero && this.bounceCompany(s, t)) return 720;
         // F29 (Mira's hint): Frost Shard into the field: a hero standing in one of her lingering patches
@@ -3749,9 +3758,19 @@ class Hero extends Unit {
       const fear = this.hpPct < 0.4 ? 55 : this.hpPct < 0.55 ? 25 : 0;
       if (role === 'Tank') return Math.max(48, this.range * 0.52);
       if (role === 'Support') {
-        return this.ranged
+        let want = this.ranged
           ? Math.max(170, Math.min(this.range * 0.88, this.range + this.radius + target.radius - 20)) + fear
           : Math.max(70, this.range + this.radius + target.radius - 10);
+        /* F29 (Sylva's hint): a botBehindAlly support stands that far behind the allied hero
+           nearest the target, inside her first skill's reach so the poke still lands */
+        const behind = this.def0.botBehindAlly;
+        if (behind) {
+          let ad = Infinity;
+          for (const a of Game.heroes) if (a !== this && a.team === this.team && a.alive) { const d = a.distTo(target); if (d < ad) ad = d; }
+          const reach = (this.skills[0] && this.skills[0].range) || 640;
+          if (ad < 700) want = Math.max(want, Math.min(ad + behind, reach - 40));
+        }
+        return want;
       }
       if (role === 'Assassin') {
         return target.hpPct < 0.42 || this.botCanKill(target)

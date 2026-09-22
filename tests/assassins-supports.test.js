@@ -742,4 +742,150 @@ T.test('Bell bot: she shadows the allied marksman; Carillon when an ally in reac
   rook.def0 = def0; bell.lane = lane0;
 });
 
+/* ---------------- Sylva ---------------- */
+
+T.test('Sylva: base stats and skill numbers match the spec (the only single-ally targeted skill and the only friendly tether)', () => {
+  reset();
+  const d = sylva.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [545, 70, 330, 36, 48, 4.4, 12, 2.4, 15, 2.3, 330, 0.95, 242, 2]);
+  assert.equal(d.passive.id, 'verdant');
+  const [s1, s2, s3] = sylva.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.slowPct, s1.slowDur],
+    ['skillshot', 7, -0.4, 45, 4, 130, 16, 0.6, 680, 850, 26, 0.3, 1.5]);
+  assert.equal(rankVal(s1, 'dmg', 6), 210); near(rankVal(s1, 'cd', 6), 5, 1e-9, 'Thorn Volley cd at rank 6');
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.allyTarget, s2.heal, s2.healLv, s2.scaleAp],
+    ['link', 11, -0.6, 70, 5, { range: 520, self: false }, 110, 18, 0.55]);
+  assert.deepEqual(s2.link, { dur: 4, interval: 0.5, tickHeal: 25, tickHealLv: 4, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 });
+  assert.equal(rankVal(s2, 'heal', 6), 200); near(rankVal(s2, 'cd', 6), 8, 1e-9, 'Vine Link cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 95);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius], ['heal', [55, 48, 41], [120, 150, 180], [150, 210, 270], 0.5, 420]);
+  assert.deepEqual(s3.link, { all: true, dur: 6, interval: 0.5, tickHeal: [16, 22, 28], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 });
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'link')).length, 1, 'the only ally link');
+  assert.ok(!sylva.skills.some(s => s.stun || s.immobilize || s.silence || s.airborne || s.shieldPct), 'no hard CC, no shield');
+  for (const s of sylva.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Sylva: Vine Link heals the chosen ally at once (Verdant Gift: +60 speed, 12 mana back), then ticks 8 times over 4 s without the passive, hastens them and armours her while they stay within 650; recasting replaces it', () => {
+  reset();
+  T.place(sylva, open.x, open.y);
+  T.place(pact, open.x + 200, open.y);
+  T.place(wraith, open.x + 250, open.y + 60);
+  pact.hp = pact.maxHp * 0.4;
+  sylva.mana = 200;   // below the cap, so the refund (which lands before the cost is paid) is visible
+  const mana0 = sylva.mana, armor0 = sylva.armorValue(), mr0 = sylva.mrValue(), psp0 = pact.attrs.get('speed');
+  let heals = 0;
+  const fire = sylva.fire.bind(sylva);
+  sylva.fire = (hook, ...a) => { if (hook === 'onHealAlly') heals++; return fire(hook, ...a); };
+  assert.ok(sylva.castSkill(1, null), 'no aim: the lowest ally');
+  const heal = 200 + sylva.magicPower() * 0.55;
+  near(pact.hp, pact.maxHp * 0.4 + heal, 1e-6, 'healed 200 (+55% MAGIC) at once');
+  near(sylva.mana, mana0 - 95 + 12, 1e-6, '95 mana paid, 12 back from Verdant Gift');
+  assert.ok(pact.buffs.speed && pact.buffs.speed.value >= 60, 'Verdant Gift: +60 move speed');
+  assert.equal(heals, 1);
+  const link = G.tethers.find(t => !t.dead && t.src === sylva);
+  assert.ok(link && !link.hostile && link.target === pact && Math.abs(link.t - 4) < 1e-9, 'a 4 s friendly link');
+  const tick = 25 + 4 * 5 + sylva.magicPower() * 0.15;
+  const hp1 = pact.hp;
+  T.frames(G, 33);
+  assert.ok(pact.hp >= hp1 + tick - 1, `a tick of 45 (+15% MAGIC): ${pact.hp - hp1}`);
+  assert.equal(heals, 1, 'link ticks skip the passive');
+  assert.ok(pact.attrs.get('speed') >= psp0 + 40, 'the ally +40 speed while linked');
+  assert.ok(sylva.armorValue() >= armor0 + 12 - 1e-6 && sylva.mrValue() >= mr0 + 12 - 1e-6, 'Sylva +12 armor and MR while linked');
+  const hp2 = pact.hp;
+  T.seconds(G, 3.6);
+  assert.ok(link.dead, 'ran its course');
+  assert.ok(pact.hp - hp2 >= 6 * tick - 2 || pact.hp >= pact.maxHp - 1, 'the remaining ticks landed');
+  // breakRange: the ally walking off snaps it quietly
+  sylva.skillCd[1] = 0; pact.hp = pact.maxHp * 0.5; sylva.mana = sylva.maxMana;
+  assert.ok(sylva.castSkill(1, null));
+  T.place(pact, open.x + 900, open.y);
+  G.update(1 / 60);
+  assert.ok(!G.tethers.some(t => !t.dead && t.src === sylva), 'snapped past 650');
+  // recasting replaces: the aim picks the ally nearest the point
+  T.place(pact, open.x + 200, open.y);
+  sylva.skillCd[1] = 0;
+  assert.ok(sylva.castSkill(1, null));
+  const first = G.tethers.find(t => !t.dead && t.src === sylva);
+  sylva.skillCd[1] = 0; wraith.hp = wraith.maxHp * 0.9;
+  assert.ok(sylva.castSkill(1, { x: wraith.x, y: wraith.y }));
+  assert.ok(first.dead, 'the old vine is gone');
+  const second = G.tethers.find(t => !t.dead && t.src === sylva);
+  assert.ok(second && second.target === wraith, 'the new one on the aimed ally');
+  assert.equal(G.tethers.filter(t => !t.dead && t.src === sylva).length, 1, 'one vine at a time');
+  // no ally in reach: no cast, no cost
+  T.place(pact, FAR.x, FAR.y); T.place(wraith, FAR.x, FAR.y);
+  sylva.skillCd[1] = 0; const m = sylva.mana;
+  assert.equal(sylva.castSkill(1, null), false);
+  assert.equal(sylva.mana, m);
+  sylva.fire = fire;
+});
+
+T.test('Sylva: Canopy heals every allied hero within 420 and links them all, herself included, for 6 s of 28 (+8% MAGIC) ticks; a Canopy vine never replaces a stronger Vine Link', () => {
+  reset();
+  T.place(sylva, open.x, open.y);
+  T.place(pact, open.x + 200, open.y);
+  T.place(wraith, open.x + 300, open.y + 50);
+  T.place(bastion, open.x + 600, open.y);
+  for (const h of [sylva, pact, wraith, bastion]) h.hp = h.maxHp * 0.5;
+  pact.hp = pact.maxHp * 0.4;   // the lowest: the Vine Link goes on him
+  assert.ok(sylva.castSkill(1, null), 'a Vine Link on the lowest first');
+  const vine = G.tethers.find(t => !t.dead && t.src === sylva);
+  assert.equal(vine.target, pact);
+  const mana0 = sylva.mana;
+  assert.ok(sylva.castSkill(2, null));
+  near(sylva.mana, mana0 - 180 + 12 * 3, 1e-6, '180 mana at rank 3, Verdant Gift per hero healed (herself included)');
+  const heal = 270 + sylva.magicPower() * 0.5;
+  assert.ok(Math.abs(pact.hp - Math.min(pact.maxHp, pact.maxHp * 0.4 + (200 + sylva.magicPower() * 0.55) + heal)) < 1e-6, `the vined ally healed again: ${pact.hp} of ${pact.maxHp}`);
+  near(wraith.hp, wraith.maxHp * 0.5 + heal, 1e-6, '270 (+50% MAGIC) to an ally in 420');
+  assert.ok(Math.abs(sylva.hp - (sylva.maxHp * 0.5 + heal)) < 1e-6, 'and herself');
+  assert.equal(bastion.hp, bastion.maxHp * 0.5, 'past 420: nothing');
+  const links = G.tethers.filter(t => !t.dead && t.src === sylva);
+  assert.equal(links.length, 3, 'a vine on each ally healed, herself included');
+  assert.ok(links.some(t => t.target === sylva), 'self linked');
+  assert.ok(!vine.dead && links.includes(vine), 'the stronger Vine Link on the first ally was kept');
+  const canopy = links.find(t => t.target === wraith);
+  near(canopy.tickHeal, 28 + sylva.magicPower() * 0.08, 1e-6, 'Canopy ticks 28 (+8% MAGIC) at rank 3');
+  near(canopy.t, 6, 1e-9, 'for 6 s'); assert.equal(canopy.breakRange, 550);
+  const w0 = wraith.hp; wraith.hp = wraith.maxHp * 0.5;
+  T.frames(G, 33);
+  assert.ok(wraith.hp >= wraith.maxHp * 0.5 + canopy.tickHeal - 1, 'a tick landed');
+  void w0;
+});
+
+T.test('Sylva bot: she stands 350 behind the ally nearest her target; Vine Link goes on the ally hurt most recently (lowest HP first); Thorn Volley at an enemy chasing an ally; Canopy when 2+ allies within 420 are under 55%', () => {
+  reset();
+  T.place(sylva, open.x, open.y);
+  T.place(pact, open.x + 300, open.y);
+  T.place(wraith, open.x + 250, open.y + 80);
+  T.place(grom, open.x + 400, open.y);
+  sylva.aiTarget = grom;
+  const cp = sylva.chooseCombatPoint(grom);
+  near(Math.hypot(cp.x - grom.x, cp.y - grom.y), 450, 45, '100 from the ally to the target: she holds about 450 (350 behind him)');
+  // Vine Link: the lowest ally, or the one hurt just now
+  assert.equal(sylva.botSkillUrgency(1, grom, 400, true, false), 0, 'everyone healthy: no vine');
+  pact.hp = pact.maxHp * 0.6;
+  assert.equal(sylva.botSkillUrgency(1, grom, 400, true, false), 620, 'an ally at 60%: vine');
+  pact.hp = pact.maxHp * 0.4;
+  assert.equal(sylva.botSkillUrgency(1, grom, 400, true, false), 900, 'an ally at 40%: vine now');
+  wraith.hp = wraith.maxHp * 0.7; wraith.lastHurtT = G.time; pact.lastHurtT = G.time - 10;
+  assert.equal(sylva.hurtAllyWithin(520, 0.8), wraith, 'the one hurt most recently');
+  sylva.botFireSkill(1, grom, 400, true, false);
+  const link = G.tethers.find(t => !t.dead && t.src === sylva);
+  assert.ok(link && link.target === wraith, 'the vine went on the ally hurt most recently');
+  // Thorn Volley
+  assert.equal(sylva.botSkillUrgency(0, grom, 400, true, false), 500, 'an enemy minding his own business: a poke');
+  grom.curTarget = pact;
+  assert.equal(sylva.botSkillUrgency(0, grom, 400, true, false), 700, 'an enemy chasing an ally: the thorn');
+  grom.curTarget = null;
+  // Canopy
+  wraith.hp = wraith.maxHp; pact.hp = pact.maxHp;
+  assert.equal(sylva.botSkillUrgency(2, grom, 400, true, false), 0, 'everyone healthy: held');
+  pact.hp = pact.maxHp * 0.5;
+  assert.equal(sylva.botSkillUrgency(2, grom, 400, true, false), 0, 'one ally at 50%: held for the crowd');
+  wraith.hp = wraith.maxHp * 0.5;
+  assert.equal(sylva.botSkillUrgency(2, grom, 400, true, false), 920, 'two allies within 420 under 55%: Canopy');
+  wraith.hp = wraith.maxHp; pact.hp = pact.maxHp * 0.3;
+  assert.equal(sylva.botSkillUrgency(2, grom, 400, true, false), 980, 'one ally under 35%: a lifeline is still a lifeline');
+});
+
 T.done();

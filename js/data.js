@@ -239,19 +239,38 @@ const HEROES = [
   },
   {
     id: 'sylva', name: 'Sylva', role: 'Support', icon: '🌿', color: '#4ade80', projColor: '#86efac',
-    desc: 'A forest guardian who keeps allies standing.',
+    desc: 'The lifeline healer: picks one ally and keeps them alive through a visible vine, then opens the whole canopy in a team fight. No hard CC, no shield; her value is choosing the right ally.',
     difficulty: 2, damageStyle: 'magic',
-    hp: 540, hpLv: 70, mp: 320, mpLv: 36, atk: 48, atkLv: 4.5,
-    armor: 12, armorLv: 2.4, mr: 14, mrLv: 2.4,
-    range: 320, atkSpd: 0.95, speed: 258,
+    /* docs/design/heroes.md, Supports: Sylva. Vine Link is the roster's
+       only single-ally targeted skill (F17 allyTarget) and its only
+       friendly tether (F16 link): an instant heal, then eight ticks over
+       4 s while the ally stays within 650, +40 speed on them and +12
+       armor/MR on her; recasting replaces it. Canopy heals everyone within
+       420 and links them all, herself included, for 6 s; on the same ally
+       the larger tick wins, so a Vine Link is never weakened by it.
+       Verdant Gift fires on cast heals only (link ticks skip the passive).
+       No escape, no CC beyond a slow, no shield. Bot fields: botBehindAlly
+       keeps her 350 behind the ally nearest her target (chooseCombatPoint,
+       inside Thorn Volley's reach); Thorn Volley rates 700 at an enemy
+       chasing an ally (botChasing); Vine Link goes on the ally hurt most
+       recently, lowest HP first (the link rule); Canopy when 2+ allied
+       heroes within 420 are under 55% (botHealCount), or one under 35%. */
+    botBehindAlly: 350,
+    hp: 545, hpLv: 70, mp: 330, mpLv: 36, atk: 48, atkLv: 4.4,
+    armor: 12, armorLv: 2.4, mr: 15, mrLv: 2.3,
+    range: 330, atkSpd: 0.95, speed: 242,
     passive: {
       name: 'Verdant Gift', icon: '🌱', id: 'verdant',
-      desc: 'Healing an ally grants them +60 move speed for 2s and restores 12 mana to Sylva.',
+      desc: 'Healing an ally with a cast grants them +60 move speed for 2s and restores 12 mana to Sylva (link ticks do not trigger this).',
     },
     skills: [
-      { name: 'Thorn Volley', icon: '🌱', type: 'skillshot', cd: 6, mana: 45, dmgType: 'magic', dmg: 140, dmgLv: 16, scaleAp: 0.55, range: 680, speed: 850, radius: 26, slowPct: 0.3, slowDur: 1.5, desc: 'Launch a thorn that damages and slows the first enemy hit.' },
-      { name: 'Healing Bloom', icon: '🌸', type: 'heal', cd: 11, mana: 65, heal: 130, healLv: 20, scaleAp: 0.5, radius: 320, shieldPct: 0.06, desc: 'Bloom with life, healing nearby allies and shielding them briefly.' },
-      { name: 'Entangling Grove', icon: '🍃', type: 'zone', cd: 42, mana: 110, dmgType: 'magic', range: 600, radius: 250, delay: 0.75, dmg: 170, dmgLv: 18, scaleAp: 0.55, immobilize: 1.4, desc: 'Roots burst from the ground, binding enemies in place.' },
+      { name: 'Thorn Volley', icon: '🌱', type: 'skillshot', cd: 7, cdLv: -0.4, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 130, dmgLv: 16, scaleAp: 0.6, range: 680, speed: 850, radius: 26, slowPct: 0.3, slowDur: 1.5, botChasing: true, desc: 'A thorn (680 range at 850, radius 26) that damages the first enemy hit for 130+16/rank (+60% MAGIC) and slows it 30% for 1.5s.' },
+      { name: 'Vine Link', icon: '🌿', type: 'link', cd: 11, cdLv: -0.6, mana: 70, manaLv: 5, allyTarget: { range: 520, self: false }, heal: 110, healLv: 18, scaleAp: 0.55,
+        link: { dur: 4, interval: 0.5, tickHeal: 25, tickHealLv: 4, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 },
+        desc: 'Bind a vine to the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim): heal 110+18/rank (+55% MAGIC) at once, then 8 ticks of 25+4/rank (+15% MAGIC) over 4s while they stay within 650; the ally gains +40 move speed and Sylva +12 armor and magic resist while linked. Recasting replaces the vine. No ally in reach, no cost.' },
+      { name: 'Canopy', icon: '🌳', type: 'heal', cd: [55, 48, 41], mana: [120, 150, 180], heal: [150, 210, 270], scaleAp: 0.5, radius: 420, botHealCount: { n: 2, hp: 0.55 }, botHealHp: 0.35,
+        link: { all: true, dur: 6, interval: 0.5, tickHeal: [16, 22, 28], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 },
+        desc: 'Heal every allied hero within 420 for 150/210/270 (+50% MAGIC), then link all of them (herself included) for 6s: 12 ticks of 16/22/28 (+8% MAGIC) and +40 move speed, snapping past 550. A Canopy vine never replaces a stronger Vine Link on the same ally.' },
     ],
   },
   {
