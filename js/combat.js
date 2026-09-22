@@ -438,7 +438,7 @@ const PASSIVES = {
   verdant: {
     onHealAlly(h, ally) {
       ally.addTimedBuff('speed', 60, 2);
-      h.mana = Math.min(h.maxMana, h.mana + 12);
+      h.gainMana(12);
     },
   },
 
@@ -484,7 +484,7 @@ const PASSIVES = {
       resolveDamage(h, target, {
         amount: 55 + h.curAtk() * 0.45, type: 'true', noPassive: true,
       });
-      h.mana = Math.min(h.maxMana, h.mana + 8);
+      h.gainMana(8);
       Game.fx.ring(target.x, target.y, target.radius + 16, h.color, 0.35);
     },
   },
@@ -527,7 +527,7 @@ const PASSIVES = {
   horizon: {
     _restore(h, frac) {
       h.heal((h.maxHp - h.hp) * frac);
-      h.mana = Math.min(h.maxMana, h.mana + (frac >= 0.12 ? 40 : 20));
+      h.gainMana(frac >= 0.12 ? 40 : 20);
       Game.fx.ring(h.x, h.y, 64, h.color, 0.4);
     },
     onKill(h, victim) { if (victim && victim.type === 'hero') PASSIVES.horizon._restore(h, 0.12); },

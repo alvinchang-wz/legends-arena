@@ -389,7 +389,11 @@ const UI = {
 
   /* [label, value] rows. Pass a live hero for current-level numbers. */
   skillStats(s, hero) {
-    const rows = [['Cooldown', s.cd + 's'], ['Mana', s.mana]];
+    const fmt = v => Array.isArray(v) ? v.join('/') : v;   // per-rank arrays (F1)
+    const rows = [['Cooldown', fmt(s.cd) + 's']];
+    if (s.hpCost) rows.push(['Cost', Math.round(s.hpCost * 100) + '% HP']);
+    else if (s.energy !== undefined) rows.push(['Energy', fmt(s.energy)]);
+    else if (s.mana !== undefined) rows.push(['Mana', fmt(s.mana)]);
     const reach = s.type === 'dash' ? s.dist : s.range;
     if (reach) rows.push([s.type === 'dash' ? 'Dash distance' : 'Cast range', reach]);
     const rad = (s.type === 'nova' || s.type === 'zone' || s.type === 'heal') ? s.radius
@@ -753,7 +757,7 @@ const UI = {
       ${this.skillStats(s, p).map(([k, v]) => row(k, v)).join('')}
       ${row('Status', p.skillRank[kind] < 1 ? `locked — unlocks at level ${BALANCE.ultLevels[0]}`
         : cd > 0 ? `on cooldown ${cd.toFixed(1)}s`
-        : p.mana < s.mana ? 'not enough mana' : 'ready')}
+        : !p.canAfford(s) ? (p.resource === 'energy' ? 'not enough energy' : p.resource === 'hp' && s.hpCost ? 'too little health' : 'not enough mana') : 'ready')}
       ${row('Rank', `${p.skillRank[kind]} / ${BALANCE.maxSkillRank[kind]}`)}
       ${this.skillTags(s).length ? `<div class="tagList">${this.skillTags(s).map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}`;
   },
@@ -842,7 +846,7 @@ const UI = {
       c.hp.style.width = (clamp(h.hpPct, 0, 1) * 100) + '%';
       c.mp.style.width = ((h.maxMana ? h.mana / h.maxMana : 0) * 100) + '%';
       c.lv && this.setTxt(c.lv, h.level);
-      c.ult.classList.toggle('ready', h.skillRank[2] > 0 && h.skillCd[2] <= 0 && h.mana >= h.skills[2].mana);
+      c.ult.classList.toggle('ready', h.skillRank[2] > 0 && h.skillCd[2] <= 0 && h.canAfford(h.skills[2]));
       if (c.spell) c.spell.classList.toggle('ready', h.spell && h.spellCd <= 0);
       if (c.deadT) this.setTxt(c.deadT, h.alive ? '' : Math.ceil(h.respawnT));
     }
@@ -1335,6 +1339,13 @@ const UI = {
     this.els.ppShield.style.width =
       Math.min(100 - hpW, p.shieldTotal / p.maxHp * 100) + '%';
     this.els.ppMp.style.width = (p.maxMana ? p.mana / p.maxMana * 100 : 0) + '%';
+    // F3: the bar is coloured by what it holds (mana / energy / heat) and hidden for a cooldown hero
+    const bar = this.els.ppMp.parentElement;
+    if (bar && bar.dataset.resource !== p.resource) {
+      bar.dataset.resource = p.resource;
+      bar.classList.toggle('hidden', p.resource === 'none');
+    }
+    this.els.ppMp.classList.toggle('overheat', p.resource === 'heat' && p.mana >= 100);
     this.setTxt(this.els.ppHpT, `${Math.ceil(p.hp)}/${p.maxHp}`);
     this.setTxt(this.els.ppLevel, p.level);
     this.setTxt(this.els.ppKda, `${p.kills}/${p.deaths}/${p.assists}`);
@@ -1393,9 +1404,9 @@ const UI = {
         mask.style.display = 'block';
         this.setTxt(num, Math.ceil(cd));
       } else { mask.style.display = 'none'; this.setTxt(num, ''); }
-      btn.classList.toggle('nomana', p.mana < s.mana);
+      btn.classList.toggle('nomana', !p.canAfford(s));
       btn.classList.toggle('locked', !learned);
-      btn.classList.toggle('ready', i === 2 && learned && cd <= 0 && p.mana >= s.mana);
+      btn.classList.toggle('ready', i === 2 && learned && cd <= 0 && p.canAfford(s));
       // rank pips + the "spend a point here" affordance
       let pips = btn.querySelector('.rankPips');
       if (!pips) {

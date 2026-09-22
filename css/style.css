@@ -386,6 +386,12 @@ kbd {
 .hpBar > #ppShield { background: var(--shield); }
 .mpBar { height: calc(8px * var(--hud-scale)); }
 .mpBar > div { background: linear-gradient(180deg, color-mix(in srgb, var(--mana) 75%, white), var(--mana)); }
+/* resource colours (docs/design/heroes.md F3): energy yellow, heat orange, hp-cost red */
+.mpBar[data-resource="energy"] > div { background: linear-gradient(180deg, #fde68a, #f59e0b); }
+.mpBar[data-resource="heat"] > div { background: linear-gradient(180deg, #fdba74, #ea580c); }
+.mpBar[data-resource="heat"] > div.overheat { animation: overheatFlash 0.5s ease-in-out infinite alternate; }
+.mpBar[data-resource="hp"] > div { background: linear-gradient(180deg, #fca5a5, #dc2626); }
+@keyframes overheatFlash { from { filter: brightness(1); } to { filter: brightness(1.7); } }
 #ppHpT {
   position: absolute; inset: 0; font-size: calc(10px * var(--hud-scale)); font-weight: 700;
   display: flex; align-items: center; justify-content: center;

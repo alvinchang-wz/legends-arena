@@ -202,7 +202,17 @@ class Hero extends Unit {
 
     this.hot = null;          // {rate, t} heal over time
     this.dashS = null;        // active dash state
-    this.forced = null;       // hook drag {src, t}
+    this.forced = null;       // {mode: 'hook'|'slide'|'point'|'taunt', ...} movement the hero does not choose (F15, F23)
+    /* Resource (docs/design/heroes.md F3-F6). `mana` is the bar whatever it
+       holds: mana, energy (F4) or heat (F5); `resource` says which. */
+    this.resource = def.resource || 'mana';
+    this.stillT = 0;          // F4 battery: seconds without moving
+    this.lastDmgT = -99;      // F5: last time this hero dealt or took damage (heat decay)
+    this._sx = 0; this._sy = 0;   // position at the top of the previous update (stillness)
+    this.state = null;        // F19 self state {s, t}
+    this.channelS = null;     // F18 channel {s, t, i, rank}
+    this.basicRangeState = null;
+    this.revealT = 0;         // seconds this hero is revealed through bush / conceal
     this.recallT = 0; this.respawnT = 0;
     this.recentDmg = [];      // [{h, t}] recent hero damagers for assists
     this.aiTimer = rand(0, 0.3); this.aiState = 'push'; this.aiTarget = null;
@@ -270,7 +280,7 @@ class Hero extends Unit {
     const prevMax = this.maxHp || 0;
 
     A.base.maxHp = d.hp + d.hpLv * l + (BALANCE.heroHpPad || 0);
-    A.base.maxMana = d.mp + d.mpLv * l;
+    A.base.maxMana = (d.mp || 0) + (d.mpLv || 0) * l;
     A.base.physAtk = d.atk + d.atkLv * l;
     A.base.magicPower = 0;
     A.base.armor = d.armor + d.armorLv * l + (BALANCE.heroArmorPad || 0);
@@ -317,11 +327,16 @@ class Hero extends Unit {
 
     this.maxHp = Math.round(A.get('maxHp'));
     this.maxMana = Math.round(A.get('maxMana'));
+    /* F3/F4/F5: an energy pool is flat whatever the level or items, a heat
+       gauge is 0-100, a cooldown-only hero has no bar at all */
+    if (this.resource === 'energy') this.maxMana = (d.energy && d.energy.max) || 100;
+    else if (this.resource === 'heat') this.maxMana = 100;
+    else if (this.resource === 'none') this.maxMana = 0;
     this.range = A.get('range');
 
     if (full) {
       this.hp = this.maxHp;
-      this.mana = this.maxMana;
+      this.mana = this.resource === 'heat' ? 0 : this.maxMana;
     } else {
       // grant the delta so a level-up or an HP item is felt immediately,
       // and never let a shrinking pool leave hp above the cap
@@ -374,6 +389,7 @@ class Hero extends Unit {
 
   /* --- passive plumbing used by the damage pipeline --- */
   onDealDamage(target, amount, packet) {
+    this.lastDmgT = Game.time;
     let a = this.fire('onDealDamage', target, amount, packet) ?? amount;
     // Focusing Mark: a support's target is softer for everyone on their team
     if (target.marks && target.marks.focused > Game.time && target.marks.focusBy === this.team) a *= 1.06;
@@ -389,6 +405,8 @@ class Hero extends Unit {
   }
   onBasicLanded(target, dmg) {
     this.fire('onBasicHit', target, dmg);
+    if (this.resource === 'energy') this.gainEnergy((this.def0.energy && this.def0.energy.perBasic) || 0);
+    else if (this.resource === 'heat') this.gainHeat(target, 'Basic');
     if (this.emblem && this.emblem.id === 'marksman' && target.cc) {
       target.cc.applySlow(0.15, 1, target.attrs ? target.attrs.get('tenacity') : 0);
     }
@@ -402,8 +420,9 @@ class Hero extends Unit {
   }
   onSkillLanded(target, dmg, s) {
     this.fire('onSkillHit', target, dmg, s);
+    if (this.resource === 'heat') this.gainHeat(target, 'Skill');
     if (this.emblem && this.emblem.id === 'fighter') this.heal(dmg * 0.06);
-    if (this.emblem && this.emblem.id === 'mage' && target.maxMana) {
+    if (this.emblem && this.emblem.id === 'mage' && target.maxMana && (!target.usesMana || target.usesMana())) {
       target.mana = Math.max(0, target.mana - target.maxMana * 0.015);
     }
     this.emblemOnHeroDamage(target, dmg);
@@ -568,6 +587,97 @@ class Hero extends Unit {
     const r = rank !== undefined ? rank : this.skillRankOf(s);
     return Math.max(1, (rankVal(s, 'cd', r) || 0) * (1 - this.cdr()));
   }
+  /* ---------- resource (docs/design/heroes.md F3-F6) ----------
+     mana  : s.mana (per rank) from the mana bar
+     energy: s.energy from a flat 0-100 pool that regenerates on its own
+             terms (F4)
+     heat  : free; at 100 the cast overheats (F5)
+     hp    : s.hpCost as a fraction of max HP (F6), or s.mana when the skill
+             has no hpCost (Pact's hybrid)
+     none  : free, no bar */
+  usesMana() { return this.resource === 'mana' || this.resource === 'hp'; }
+  /* What a cast takes from the bar (mana or energy) at a rank. */
+  costOf(s, rank) {
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    if (this.resource === 'energy') return rankVal(s, 'energy', r) || 0;
+    if (this.resource === 'mana' || (this.resource === 'hp' && !s.hpCost)) return rankVal(s, 'mana', r) || 0;
+    return 0;
+  }
+  canAfford(s, rank) {
+    if (!s) return false;
+    if (this.resource === 'hp' && s.hpCost) return this.hpPct >= (this.def0.hpFloor || 0);
+    return this.mana >= this.costOf(s, rank);
+  }
+  /* Runs after the effect. An HP cost is never lethal (1 HP floor), is not a
+     damage event (no passives, no kill credit, no spawn-protection break) and
+     is banked for Marrow's Catacomb when the passive keeps a bank. */
+  payCost(s, rank) {
+    if (this.resource === 'hp' && s.hpCost) {
+      const amt = Math.min(this.hp - 1, Math.floor(this.maxHp * s.hpCost));
+      if (amt > 0) {
+        this.hp -= amt;
+        if (this.pv && this.pv.bank) this.pv.bank.push({ amt, t: Game.time });
+      }
+      return;
+    }
+    const c = this.costOf(s, rank);
+    if (c) this.mana = Math.max(0, this.mana - c);
+  }
+  /* Refunds and regeneration from passives, runes and the fountain are mana
+     things: an energy, heat or cooldown hero ignores them. */
+  gainMana(v) {
+    if (!(v > 0) || !this.usesMana()) return;
+    this.mana = Math.min(this.maxMana, this.mana + v);
+  }
+  gainEnergy(v) {
+    if (this.resource !== 'energy' || !v) return;
+    this.mana = clamp(this.mana + v, 0, this.maxMana);
+  }
+  /* F5: heat from a hit that landed (`kind` is 'Basic' or 'Skill'). Dot
+     ticks never reach onBasicLanded/onSkillLanded, so they never count. */
+  gainHeat(target, kind) {
+    const ht = this.def0.heat;
+    if (!ht) return;
+    const v = target.type === 'hero' ? ht['gain' + kind + 'Hero'] : ht['gain' + kind];
+    if (v) this.mana = Math.min(100, this.mana + v);
+  }
+  /* Per-frame resource movement: mana regen, energy trickle and battery
+     charge, heat burn-up and decay. */
+  tickResource(dt) {
+    const res = this.resource;
+    if (res === 'mana' || res === 'hp') {
+      this.mana = Math.min(this.maxMana,
+        this.mana + (this.maxMana * BALANCE.manaRegenPct + this.attrs.get('manaRegen')) * dt);
+      return;
+    }
+    if (res === 'energy') {
+      const e = this.def0.energy || {};
+      let gain = (e.regen || 0) * dt;
+      if (e.stillRegen) {
+        // a dash or forced movement counts as moving; so does any real step since last frame
+        const dx = this.x - this._sx, dy = this.y - this._sy;
+        if (dx * dx + dy * dy > 0.25 || this.dashS || this.forced) this.stillT = 0;
+        else this.stillT += dt;
+        if (this.stillT >= (e.stillDelay || 0)) gain += e.stillRegen * dt;
+      }
+      if (gain) this.mana = clamp(this.mana + gain, 0, this.maxMana);
+      return;
+    }
+    if (res === 'heat') {
+      const ht = this.def0.heat || {};
+      let burning = false;
+      if (ht.burnPerSec) {
+        const tag = ht.burnTag || 'burn';
+        for (const e of Game.heroes) {
+          if (e.team === this.team || !e.alive) continue;
+          for (const d of e.dots) if (d.src === this && d.tag === tag) { burning = true; break; }
+          if (burning) break;
+        }
+      }
+      if (burning) this.mana = Math.min(100, this.mana + ht.burnPerSec * dt);
+      else if (Game.time - this.lastDmgT > (ht.decayDelay || 4)) this.mana = Math.max(0, this.mana - (ht.decay || 5) * dt);
+    }
+  }
   /* One skill hit on one victim: per-victim damage (F2), CC at rank (F1),
      marks (F12) and the on-hit hooks. Novas, zones, dashes, blinkstrikes,
      projectiles, traps and tethers all land through here. `o` may carry
@@ -603,6 +713,7 @@ class Hero extends Unit {
 
   onDamaged(src, dmg, packet) {
     this.hitFlash = 0.14;
+    this.lastDmgT = Game.time;
     if (this.recallT > 0) { this.recallT = 0; if (this.isPlayer) UI.announce('Recall interrupted!', 'minor'); }
     if (typeof Mlbb !== 'undefined') Mlbb.onDamaged(this);
     if (src instanceof Hero && src.team !== this.team) {
@@ -798,11 +909,20 @@ class Hero extends Unit {
   }
 
   castSkill(i, point) {
-    const s = this.skills[i];
-    if (!this.alive || this.skillCd[i] > 0 || this.mana < s.mana) return false;
-    if (this.skillRank[i] < 1) return false;              // ultimate not learned yet
+    const s0 = this.skills[i];
+    const rank = this.skillRank[i];
+    if (!this.alive || this.skillCd[i] > 0 || !this.canAfford(s0, rank)) return false;
+    if (rank < 1) return false;                          // ultimate not learned yet
     if (!this.cc.canCast || this.dashS || this.forced) return false;
     this.recallT = 0;
+    /* F5 overheat: at 100 heat this cast uses the skill's overheat variant
+       (a per-cast copy; `_base` keeps rank and index lookups working) and
+       the gauge empties. */
+    let s = s0, overheated = false;
+    if (this.resource === 'heat' && this.mana >= 100 && s0.overheat) {
+      s = Object.assign({}, s0, s0.overheat, { _base: s0 });
+      overheated = true;
+    }
     let dir;
     if (point && (point.x !== this.x || point.y !== this.y)) dir = norm(point.x - this.x, point.y - this.y);
     else dir = { x: Math.cos(this.facing), y: Math.sin(this.facing) };
@@ -876,8 +996,9 @@ class Hero extends Unit {
         break;
       }
     }
-    this.mana -= s.mana;
-    this.skillCd[i] = this.cooldownFor(s, this.skillRank[i]);
+    this.payCost(s0, rank);
+    if (overheated) { this.mana = 0; Game.fx.ring(this.x, this.y, this.radius + 30, this.color, 0.5); }
+    this.skillCd[i] = this.cooldownFor(s0, rank);
     Game.fx.skillCast(this, s, castAt);
     if (this.isPlayer) {
       if (i === 2) SFX.ult(); else SFX.skill();
@@ -941,8 +1062,8 @@ class Hero extends Unit {
 
     // passive regen + income
     this.heal((this.maxHp * BALANCE.hpRegenPct + this.attrs.get('hpRegen')) * dt);
-    this.mana = Math.min(this.maxMana,
-      this.mana + (this.maxMana * BALANCE.manaRegenPct + this.attrs.get('manaRegen')) * dt);
+    this.tickResource(dt);
+    this._sx = this.x; this._sy = this.y;
     this.gainXp(BALANCE.passiveXpPerSec * dt);
 
     // hook drag overrides everything
@@ -1215,7 +1336,7 @@ class Hero extends Unit {
     let burst = auto * (this.ranged ? 2.1 : 1.6);
     for (let i = 0; i < 3; i++) {
       const s = this.skills[i];
-      if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || this.mana < s.mana) continue;
+      if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
       burst += this.skillDmg(s, this.skillRank[i]) || auto;
     }
     if (this.spell && this.spellCd <= 0) {
@@ -1359,7 +1480,7 @@ class Hero extends Unit {
       return false;
     const next = ItemAI.recommend(this);
     const canFinishItem = next && this.gold >= Math.max(this.p.shopRecallMinGold, next.cost);
-    const lowMana = this.maxMana > 0 && this.mana / this.maxMana < this.p.manaRecallPct && this.hpPct < 0.9;
+    const lowMana = this.usesMana() && this.maxMana > 0 && this.mana / this.maxMana < this.p.manaRecallPct && this.hpPct < 0.9;
     return canFinishItem || lowMana;
   }
 
@@ -1760,7 +1881,7 @@ class Hero extends Unit {
     this.botCastSpell(threat);
     for (let i = 0; i < 3; i++) {
       const s = this.skills[i];
-      if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || this.mana < s.mana) continue;
+      if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
       if (s.type === 'heal') { if (this.hpPct < 0.7) this.castSkill(i, null); continue; }
       // a self-buff (Rampage's regen and tenacity) is at its best mid-escape
       if (s.type === 'buff') { if (threat && bd < 560) this.castSkill(i, null); continue; }
@@ -1790,7 +1911,7 @@ class Hero extends Unit {
   botSkillUrgency(i, t, d, isHero, farmOk) {
     const s = this.skills[i];
     const p = this.p;
-    if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || this.mana < s.mana) return 0;
+    if (!s || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) return 0;
     if (i === 2) {
       if (!isHero) return 0;
       const crowd = Game.heroes.filter(h => h.team !== this.team && h.alive && this.distTo(h) < 420).length;
@@ -1908,7 +2029,7 @@ class Hero extends Unit {
        for the fight it is farming towards. The ultimate stays hero-only
        inside botSkillUrgency. */
     const farmOk = this.farmsWithSkills && !isHero &&
-      this.mana > this.maxMana * p.farmManaFloor &&
+      (!this.usesMana() || this.mana > this.maxMana * p.farmManaFloor) &&
       !Game.heroes.some(e => e.team !== this.team && e.alive &&
         this.distTo(e) < p.acquireRange && Game.canSee(this.team, e));
     /* Crowd-control first, then damage, so a stun is not wasted on a target

@@ -1344,7 +1344,8 @@ const Game = {
         if (d < 300) {
           if (h.team === team) {
             h.heal(h.maxHp * 0.10 * dt);
-            h.mana = Math.min(h.maxMana, h.mana + h.maxMana * 0.12 * dt);
+            if (h.resource === 'energy') h.gainEnergy(h.maxMana * 0.12 * dt);
+            else h.gainMana(h.maxMana * 0.12 * dt);
           } else if (!this.isDuel() && this.bases[team] && this.bases[team].alive) {
             h.takeDamage(350 * dt, this.bases[team]);
           }
