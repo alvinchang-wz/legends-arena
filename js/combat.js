@@ -57,6 +57,12 @@ class CCState {
     for (const k in CC_TYPES) this.t[k] = 0;
     this.slowPct = 0;
     this.immuneT = 0;            // purify / spell immunity window
+    this.active = 0;             // how many timers are running: 0 lets the getters answer at once
+  }
+  recount() {
+    let n = 0;
+    for (const k in this.t) if (this.t[k] > 0) n++;
+    this.active = n;
   }
   /* Returns the applied duration (0 if the CC was refused). */
   apply(type, dur, tenacity = 0) {
@@ -67,6 +73,7 @@ class CCState {
     if (def.tenacity) d *= 1 - clamp(tenacity, 0, COMBAT.TENACITY_CAP);
     // CC does not stack, it refreshes: the longer of old and new wins
     if (d > this.t[type]) this.t[type] = d;
+    this.recount();
     return d;
   }
   applySlow(pct, dur, tenacity = 0) {
@@ -78,6 +85,7 @@ class CCState {
   clear() {
     for (const k in this.t) this.t[k] = 0;
     this.slowPct = 0;
+    this.active = 0;
   }
   /* Purify: drop every CC currently running and refuse new ones briefly. */
   purify(immuneFor = 0) {
@@ -85,20 +93,27 @@ class CCState {
     this.immuneT = Math.max(this.immuneT, immuneFor);
   }
   update(dt) {
-    for (const k in this.t) if (this.t[k] > 0) this.t[k] -= dt;
+    if (this.active > 0) {
+      let n = 0;
+      for (const k in this.t) if (this.t[k] > 0) { this.t[k] -= dt; if (this.t[k] > 0) n++; }
+      this.active = n;
+    }
     if (this.t.slow <= 0) this.slowPct = 0;
     if (this.immuneT > 0) this.immuneT -= dt;
   }
   has(type) { return this.t[type] > 0; }
   get canMove() {
+    if (this.active === 0) return true;
     for (const k in this.t) if (this.t[k] > 0 && !CC_TYPES[k].move) return false;
     return true;
   }
   get canAct() {
+    if (this.active === 0) return true;
     for (const k in this.t) if (this.t[k] > 0 && !CC_TYPES[k].act) return false;
     return true;
   }
   get canCast() {
+    if (this.active === 0) return true;
     for (const k in this.t) if (this.t[k] > 0 && !CC_TYPES[k].cast) return false;
     return true;
   }

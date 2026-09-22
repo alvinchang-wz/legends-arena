@@ -659,6 +659,22 @@ const Game = {
     /* Do not let route smoothing erase A*'s safer path by drawing a long line
        back through a turret circle or directly past the pursuer. */
     const steps = Math.max(1, Math.ceil(length / 70));
+    /* Risk only rises near a live, uncovered enemy turret (or, retreating,
+       a visible enemy). If none of those is within reach of the segment,
+       every sample's risk is exactly 1 and cannot exceed `allowed`. */
+    if (opts.avoidTowers !== false && !opts.retreat) {
+      const D = this.navFrame().teams[hero.team].danger;
+      let anyNear = false;
+      for (let i = 0; i < D.length && !anyNear; i++) {
+        const e = D[i], s = e.s;
+        if (!s.alive) continue;
+        const reach = e.edge + 1;
+        if (segDist2(s.x, s.y, a.x, a.y, b.x, b.y) >= reach * reach) continue;
+        if (e.covered()) continue;
+        anyNear = true;
+      }
+      if (!anyNear) return true;
+    }
     const allowed = Math.max(this.navRisk(hero, a.x, a.y, opts), this.navRisk(hero, b.x, b.y, opts)) + 0.75;
     for (let i = 1; i < steps; i++) {
       const f = i / steps;

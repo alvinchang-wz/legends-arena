@@ -61,10 +61,33 @@ function wallClosest(w, x, y) {
 function wallBlocks(w, x, y, pad) {
   if (w.circle) { const s = w.circle, rr = s.radius + pad, dx = x - s.x, dy = y - s.y; return dx * dx + dy * dy < rr * rr; }
   if (w.minX !== undefined && (x < w.minX - pad || x > w.maxX + pad || y < w.minY - pad || y > w.maxY + pad)) return false;
-  const c = wallClosest(w, x, y);
-  if (c.inside) return true;
-  const r = c.r + pad;
-  return (c.x - x) * (c.x - x) + (c.y - y) * (c.y - y) < r * r;
+  /* The same test wallClosest answers, without building the closest point:
+     this runs for every movement sample near rock. */
+  if (w.poly) {
+    if (polyInside(w.poly, x, y)) return true;
+    const poly = w.poly;
+    let bestD = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const d = segDist2(x, y, poly[j].x, poly[j].y, poly[i].x, poly[i].y);
+      if (d < bestD) bestD = d;
+    }
+    return bestD < pad * pad;
+  }
+  let bestD = Infinity, bi = 1, bt = 0;
+  for (let i = 1; i < w.pts.length; i++) {
+    const a = w.pts[i - 1], b = w.pts[i];
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const len2 = vx * vx + vy * vy;
+    const t = len2 < 1e-6 ? 0 : clamp(((x - a.x) * vx + (y - a.y) * vy) / len2, 0, 1);
+    const cx = a.x + vx * t, cy = a.y + vy * t;
+    const d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+    if (d < bestD) { bestD = d; bi = i; bt = t; }
+  }
+  if (bestD === Infinity) return false;
+  const a = w.pts[bi - 1], b = w.pts[bi];
+  const ra = a.r !== undefined ? a.r : w.r, rb = b.r !== undefined ? b.r : w.r;
+  const r = ra + (rb - ra) * bt + pad;
+  return bestD < r * r;
 }
 
 /* Shared empty list for maps with no terrain, so the open-ground case never
