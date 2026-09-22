@@ -2628,6 +2628,32 @@ class Hero extends Unit {
     }
     return false;
   }
+  /* F29 (Quill's / Mira's / Nadir's hint): the lone-target case of a
+     botCrowd zone: a target carrying the skill's botMark stacks (Glacial
+     Prison at 3 Chill), under its botExecuteHp (Implosion under 40%), or,
+     with neither field, one who is held (Killbox on a slowed hero). */
+  crowdZoneSingleOk(s, t) {
+    if (!t || t.type !== 'hero') return false;
+    if (s.botMark) return this.botMarkOk(s.botMark, t);
+    if (s.botExecuteHp) return t.hpPct < s.botExecuteHp;
+    return this.unitHeld(t);
+  }
+  /* F29 (Mira's hint): is `t` standing inside a lingering zone of this hero's? */
+  inOwnLinger(t) {
+    for (const z of Game.zones) {
+      if (z.dead || z.owner !== this || !(z.lingerT > 0)) continue;
+      if (hyp(t.x - z.x, t.y - z.y) <= z.radius + t.radius) return true;
+    }
+    return false;
+  }
+  /* F29 (Mira's hint): the point between this hero and `threat`, inside the
+     skill's cast range: 60% of the way toward the threat so the patch
+     covers the ground it must cross, never past the range. */
+  betweenPoint(s, threat) {
+    const dx = threat.x - this.x, dy = threat.y - this.y, d = Math.hypot(dx, dy) || 1;
+    const k = Math.min(0.6 * d, s.range || 500) / d;
+    return { x: this.x + dx * k, y: this.y + dy * k };
+  }
   /* F29 (Volt's hint): a visible enemy hero inside `r` who is on this bot:
      targeting it, or having damaged it in the last 1.5 s. */
   diverInRing(r) {
@@ -2721,7 +2747,7 @@ class Hero extends Unit {
           !(s.botAllyEngaged && this.allyEngagedNear(t)) &&   // F29 (Omen's hint): an ally has engaged
           !(s.tether && s.tether.multi && this.gaolCrowd(s).leaving) &&   // F29 (Karn's hint): someone is leaving
           !(s.type === 'zone' && s.wallStun && s.knockback && this.wallShoveDir(t, s.knockback + 10)) &&   // F29 (Tide's hint): a wall to throw at
-          !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.unitHeld(t))) &&   // F29 (Quill's hint): a crowd in the box, or a held hero
+          !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.crowdZoneSingleOk(s, t))) &&   // F29 (Quill's / Mira's hint): a crowd in the box, or one hero who qualifies alone
           !(s.botCcOk && this.unitHeld(t)) &&   // F29 (Lumen's hint): a target that cannot run
           !(s.type === 'zone' && s.botMark && this.botMarkOk(s.botMark, t)) &&   // F29 (Ignis's hint): a target already carrying the mark
           !(s.type === 'zone' && s.botFrontline && this.frontlineTarget(t)) &&   // F29 (Volt's hint): a frontliner, or a hero standing still in a fight
@@ -2755,6 +2781,8 @@ class Hero extends Unit {
         if (cc && isHero && !locked) return 820;
         // F29 (Volt's hint): a bouncing shot is best when a second enemy unit stands inside its bounce range of the target
         if (s.bounce && s.botBounce && isHero && this.bounceCompany(s, t)) return 720;
+        // F29 (Mira's hint): Frost Shard into the field: a hero standing in one of her lingering patches
+        if (s.botField && isHero && this.inOwnLinger(t)) return 700;
         // F29 (Quill's hint): a boomerang is best at a hero walking toward him, so the return pass crosses them too
         if (s.boomerang && isHero && (t.vx || 0) * (this.x - t.x) + (t.vy || 0) * (this.y - t.y) > 40 * d) return 560;
         return isHero ? 500 : 220;
@@ -2840,7 +2868,13 @@ class Hero extends Unit {
         if (s.botCrowd) {
           if (!isHero) return 0;
           if (this.zoneCrowd(s, t) >= 2) return 880;
-          return this.unitHeld(t) ? 820 : 0;
+          return this.crowdZoneSingleOk(s, t) ? 820 : 0;
+        }
+        // F29 (Mira's hint): Rime Field between her and a melee threat inside botBetween (aimed by botFireSkill),
+        // or on the target once an ally has engaged it; otherwise a routine drop on a hero
+        if (s.botBetween) {
+          if (this.meleeThreat(s.botBetween)) return 800;
+          if (isHero && this.allyEngagedNear(t)) return 600;
         }
         // F29 (Tide's hint): High Water when the target can be thrown into a wall
         if (s.wallStun && s.knockback && isHero && this.wallShoveDir(t, s.knockback + 10)) return 850;
@@ -3187,7 +3221,9 @@ class Hero extends Unit {
       case 'zone': {
         // F29 (Tide's hint): centre a wall-slamming zone so its outward throw sends the target at the rock
         const w = s.wallStun && s.knockback && t.type === 'hero' ? this.wallShoveDir(t, s.knockback + 10) : null;
-        this.castSkill(i, w ? { x: t.x - w.x * 100, y: t.y - w.y * 100 } : Game.aimLeadPoint(this, t, 550));
+        // F29 (Mira's hint): a botBetween patch goes between her and the melee threat
+        const threat = s.botBetween ? this.meleeThreat(s.botBetween) : null;
+        this.castSkill(i, w ? { x: t.x - w.x * 100, y: t.y - w.y * 100 } : threat ? this.betweenPoint(s, threat) : Game.aimLeadPoint(this, t, 550));
         break;
       }
       case 'heal':

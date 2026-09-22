@@ -328,4 +328,126 @@ T.test('Volt bot: Chain Arc rates highest with a second enemy unit within 320 of
   assert.equal(volt.botHoldNow(), 320, 'holds 320');
 });
 
+/* ---------------- Mira ---------------- */
+
+T.test('Mira: base stats and skill numbers match the spec (the only mage whose zones help allies; a linger on both zones)', () => {
+  reset();
+  const d = mira.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [490, 62, 310, 35, 45, 3.8, 10, 2.0, 12, 2.0, 335, 0.9, 250, 2]);
+  assert.equal(d.passive.id, 'frostbite');
+  const [s1, s2, s3] = mira.skills;
+  assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.slowPct, s1.slowDur, s1.cd, s1.cdLv, s1.mana, s1.manaLv],
+    ['skillshot', 700, 900, 24, 150, 20, 0.7, 0.30, 1.5, 5.5, -0.3, 40, 5]);
+  assert.equal(rankVal(s1, 'dmg', 6), 250); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Shard cd at rank 6');
+  const linger = { dur: 4, enemySlowPct: 0.35, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 };
+  assert.deepEqual([s2.type, s2.range, s2.radius, s2.delay, s2.ticks, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.linger],
+    ['zone', 600, 200, 0.3, 1, 90, 12, 0.4, 12, -0.4, 70, 5, linger]);
+  assert.equal(rankVal(s2, 'dmg', 6), 150); near(rankVal(s2, 'cd', 6), 10, 1e-9, 'Field cd at rank 6');
+  assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.dmg, s3.scaleAp, s3.stun, s3.cd, s3.mana, s3.linger],
+    ['zone', 620, 200, 0.75, [260, 340, 420], 0.9, [1.0, 1.1, 1.2], [42, 37, 32], [110, 130, 150], linger]);
+  for (const s of mira.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Mira: Frostbite chills per hit (8% per stack, strongest slow wins), freezes 0.8 s at four, consumes the stacks and grants 2.5 s of Chill immunity that prevents a chain freeze', () => {
+  reset();
+  T.place(mira, open.x, open.y); T.place(bastion, open.x + 300, open.y);
+  bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;
+  for (let k = 1; k <= 3; k++) {
+    mira.fire('onSkillHit', bastion, 10, mira.skills[0]);
+    assert.equal(bastion.marks.chill, k, `${k} Chill`);
+    near(bastion.cc.slowPct, 0.08 * k, 1e-9, `${k} stacks: ${8 * k}% slow`);
+  }
+  bastion.cc.applySlow(0.4, 1, 0);
+  near(bastion.cc.slowPct, 0.4, 1e-9, 'a stronger slow wins');
+  mira.fire('onBasicHit', bastion, 10);
+  assert.equal(bastion.marks.chill, 0, 'four stacks: consumed');
+  near(bastion.cc.t.stun, 0.8, 1e-9, 'Frozen 0.8 s');
+  near(bastion.marks.chillImmuneT, G.time + 2.5, 1e-9, 'Chill-immune 2.5 s');
+  for (let k = 0; k < 5; k++) mira.fire('onSkillHit', bastion, 10, mira.skills[0]);
+  assert.ok(!bastion.marks.chill, 'no Chill lands during the immunity: no chain freeze');
+  T.seconds(G, 2.6);
+  assert.ok(!bastion.cc.has('stun'));
+  mira.fire('onSkillHit', bastion, 10, mira.skills[0]);
+  assert.equal(bastion.marks.chill, 1, 'immunity over: Chill again');
+  // Frost Shard: damage, slow 30% 1.5 s and one Chill, the first enemy only
+  reset();
+  T.place(mira, open.x, open.y); T.place(bastion, open.x + 300, open.y); T.place(nadir, open.x + 500, open.y);
+  bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;
+  assert.ok(mira.castSkill(0, { x: open.x + 300, y: open.y }));
+  T.frames(G, 30);
+  assert.ok(bastion.stats.dmgTaken > 0 && !nadir.stats.dmgTaken, 'stops on the first');
+  assert.equal(bastion.marks.chill, 1); near(bastion.cc.slowPct, 0.30, 1e-9, 'the shard\'s own 30% slow');
+});
+
+T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed 35% and Chilled once a second after 1 s, allies inside gain +40 speed; Glacial Prison freezes 1.2 s at rank 3 and leaves a field', () => {
+  reset();
+  T.place(mira, open.x, open.y); T.place(bastion, open.x + 400, open.y); T.place(grom, open.x + 400, open.y + 120);
+  bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;
+  G.update(1 / 60);
+  const gromSpd = grom.curSpeed();
+  assert.ok(mira.castSkill(1, { x: open.x + 400, y: open.y }));
+  const z = G.zones[G.zones.length - 1];
+  T.seconds(G, 0.5);
+  assert.ok(bastion.stats.dmgTaken > 0, 'the pulse landed');
+  assert.ok(z.lingerT > 3 && !z.dead, 'the patch stays');
+  const chillAfterPulse = bastion.marks.chill || 0;
+  assert.equal(chillAfterPulse, 1, 'the pulse itself is one Chill (Frostbite)');
+  near(bastion.cc.slowPct, 0.35, 1e-9, 'slowed 35% inside');
+  near(grom.curSpeed(), gromSpd + 40, 1e-6, 'an ally inside is +40 speed');
+  T.seconds(G, 0.4);   // 0.9 s into the linger: no field Chill yet
+  assert.equal(bastion.marks.chill, 1, 'no field Chill before 1 s');
+  T.seconds(G, 1.2);   // 2.1 s in: one field Chill
+  assert.equal(bastion.marks.chill, 2, 'one Chill per second after the first second');
+  T.place(bastion, open.x + 900, open.y);
+  T.seconds(G, 0.3);
+  assert.ok(bastion.cc.slowPct < 0.35 || !bastion.cc.has('slow'), 'stepping out ends the field slow');
+  near(bastion.cc.slowPct, 0.16, 1e-9, 'only the two Chill stacks (16%) remain');
+  near(bastion.curSpeed(), bastion.attrs.get('speed') * 0.84, 1e-6, 'a slowed hero still moves, at 84% speed (a slow is not a root)');
+  T.seconds(G, 2.5);
+  assert.ok(z.dead, 'gone after 4 s');
+  // Glacial Prison: stun 1.2 at rank 3, then the same linger
+  reset();
+  T.place(mira, open.x, open.y); T.place(bastion, open.x + 400, open.y);
+  bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;
+  assert.ok(mira.castSkill(2, { x: open.x + 400, y: open.y }));
+  T.seconds(G, 0.8);
+  assert.ok(bastion.stats.dmgTaken > 0);
+  near(bastion.cc.t.stun, 1.2 * (1 - Math.min(0.6, bastion.attrs.get('tenacity'))) - 0.05, 0.03, 'Frozen 1.2 s at rank 3 (less tenacity)');
+  const zp = G.zones[G.zones.length - 1];
+  assert.ok(zp.lingerT > 3.5 && zp.linger.allySpeedAdd === 40, 'a Rime Field is left behind');
+});
+
+T.test('Mira bot: Rime Field between her and a melee inside 520 (or on the target once an ally engages); Frost Shard prefers a hero in her field; Glacial Prison for 2+ heroes or one at 3 Chill; holds 335', () => {
+  reset();
+  T.place(mira, open.x, open.y); T.place(vesper, open.x + 500, open.y);
+  G.update(1 / 60);
+  assert.equal(mira.botSkillUrgency(1, vesper, 500, true, false), 520, 'no melee, no ally engaged: a routine drop');
+  T.place(grom, open.x + 400, open.y + 60); grom.lastDmgT = G.time;   // an ally trading with the target
+  assert.equal(mira.botSkillUrgency(1, vesper, 500, true, false), 600, 'an ally on the target: field on the carry');
+  T.place(bastion, open.x + 450, open.y - 200);
+  assert.equal(mira.botSkillUrgency(1, vesper, 500, true, false), 800, 'a melee inside 520: field between');
+  const bp = mira.betweenPoint(mira.skills[1], bastion);
+  near(Math.hypot(bp.x - mira.x, bp.y - mira.y), 0.6 * mira.distTo(bastion), 1e-6, '60% of the way to the threat');
+  mira.botFireSkill(1, vesper, 500, true, false);
+  const z = G.zones[G.zones.length - 1];
+  near(Math.hypot(z.x - bp.x, z.y - bp.y), 0, 1e-6, 'cast there');
+  T.place(bastion, FAR.x, FAR.y); T.place(grom, FAR.x, FAR.y);
+  assert.equal(mira.botSkillUrgency(0, vesper, 500, true, false), 500, 'Shard at a hero on open ground');
+  T.place(vesper, z.x, z.y);
+  T.seconds(G, 0.4);
+  assert.equal(mira.botSkillUrgency(0, vesper, mira.distTo(vesper), true, false), 700, 'Shard into the field');
+  // Glacial Prison
+  T.place(vesper, open.x + 500, open.y); vesper.marks = {}; vesper.cc.clear();
+  assert.equal(mira.botSkillUrgency(2, vesper, 500, true, false), 0, 'one healthy hero, no Chill: held');
+  vesper.marks = { chill: 2, chillT: G.time + 4 };
+  assert.equal(mira.botSkillUrgency(2, vesper, 500, true, false), 0, 'two Chill: still held');
+  vesper.marks = { chill: 3, chillT: G.time + 4 };
+  assert.equal(mira.botSkillUrgency(2, vesper, 500, true, false), 820, 'three Chill: freeze him');
+  vesper.marks = {};
+  T.place(hexa, open.x + 500, open.y + 150);
+  assert.equal(mira.botSkillUrgency(2, vesper, 500, true, false), 880, 'two heroes in the prison');
+  assert.equal(mira.botHoldNow(), 335, 'holds 335');
+});
+
 T.done();

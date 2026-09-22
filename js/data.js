@@ -83,7 +83,7 @@ function mitigation(defence, flatPen, pctPen) {
 
    Tenacity shortens every type except airborne and suppression. */
 const CC_TYPES = {
-  slow:       { move: false, act: true,  cast: true,  tenacity: true,  icon: '❄', label: 'Slowed' },
+  slow:       { move: true,  act: true,  cast: true,  tenacity: true,  icon: '❄', label: 'Slowed' },   // the pct lives in CCState.slowPct: canMove stays true
   immobilize: { move: false, act: true,  cast: true,  tenacity: true,  icon: '🌿', label: 'Rooted' },
   silence:    { move: true,  act: true,  cast: false, tenacity: true,  icon: '🔇', label: 'Silenced' },
   stun:       { move: false, act: false, cast: false, tenacity: true,  icon: '💫', label: 'Stunned' },
@@ -273,19 +273,30 @@ const HEROES = [
   },
   {
     id: 'mira', name: 'Mira', role: 'Mage', icon: '❄️', color: '#93c5fd', projColor: '#bfdbfe',
-    desc: 'A frost witch who locks enemies in place.',
+    desc: 'An area-control mage: lingering Rime Fields slow enemies, speed allies and stack Chill until they freeze.',
     difficulty: 2, damageStyle: 'magic',
-    hp: 490, hpLv: 62, mp: 310, mpLv: 35, atk: 45, atkLv: 4,
-    armor: 10, armorLv: 2, mr: 12, mrLv: 2,
-    range: 335, atkSpd: 0.9, speed: 252,
+    /* docs/design/heroes.md, Mages: Mira. The only mage whose zones help
+       allies: Rime Field and Glacial Prison leave a lingering patch (F13)
+       that slows enemies, hastens allied heroes and Chills whoever stays.
+       Frostbite's freeze grants 2.5 s of Chill immunity (F28
+       chillImmuneT). No burst, no mobility. Bot fields: botHold 335;
+       botBetween drops Rime Field between her and a melee threat inside
+       520 (or on the target when an ally has engaged); botField rates
+       Frost Shard highest at a hero standing in one of her patches;
+       botCrowd + botMark hold Glacial Prison for 2+ heroes or one at
+       3 Chill. */
+    botHold: 335,
+    hp: 490, hpLv: 62, mp: 310, mpLv: 35, atk: 45, atkLv: 3.8,
+    armor: 10, armorLv: 2.0, mr: 12, mrLv: 2.0,
+    range: 335, atkSpd: 0.9, speed: 250,
     passive: {
       name: 'Frostbite', icon: '🧊', id: 'frostbite',
-      desc: 'Your damage applies a Chill stack for 4s (max 4), each slowing by 8%. At 4 stacks the target is frozen solid for 0.8s and the stacks are consumed.',
+      desc: 'Mira\'s damage applies Chill for 4s (max 4), 8% slow per stack (the strongest slow wins). At 4 stacks the target is Frozen 0.8s, the stacks are consumed and the target is Chill-immune for 2.5s.',
     },
     skills: [
-      { name: 'Frost Shard', icon: '🧿', type: 'skillshot', cd: 6, mana: 45, dmgType: 'magic', dmg: 160, dmgLv: 19, scaleAp: 0.7, range: 700, speed: 900, radius: 24, slowPct: 0.4, slowDur: 2, desc: 'Fire an icy shard that heavily slows the first enemy hit.' },
-      { name: 'Ice Nova', icon: '⭕', type: 'nova', cd: 9, mana: 60, dmgType: 'magic', radius: 240, dmg: 150, dmgLv: 17, scaleAp: 0.6, slowPct: 0.5, slowDur: 2, desc: 'Freeze the air around you, damaging and slowing.' },
-      { name: 'Glacial Prison', icon: '🧊', type: 'zone', cd: 42, mana: 115, dmgType: 'magic', range: 620, radius: 230, delay: 0.75, dmg: 270, dmgLv: 28, scaleAp: 0.9, stun: 1.1, desc: 'Freeze an area solid, stunning everyone inside.' },
+      { name: 'Frost Shard', icon: '🧿', type: 'skillshot', cd: 5.5, cdLv: -0.3, mana: 40, manaLv: 5, dmgType: 'magic', dmg: 150, dmgLv: 20, scaleAp: 0.7, range: 700, speed: 900, radius: 24, slowPct: 0.30, slowDur: 1.5, botField: true, desc: 'An icy shard that stops on the first enemy: 150+20/rank (+70% MAGIC), a 30% slow for 1.5s and one Chill.' },
+      { name: 'Rime Field', icon: '❄', type: 'zone', cd: 12, cdLv: -0.4, mana: 70, manaLv: 5, dmgType: 'magic', range: 600, radius: 200, delay: 0.3, ticks: 1, dmg: 90, dmgLv: 12, scaleAp: 0.4, linger: { dur: 4, enemySlowPct: 0.35, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 }, botBetween: 520, desc: 'A pulse of 90+12/rank (+40% MAGIC) in 200, then the ground stays frozen 4s: enemies inside are slowed 35% and take one Chill per second after the first, allied heroes gain +40 speed.' },
+      { name: 'Glacial Prison', icon: '🧊', type: 'zone', cd: [42, 37, 32], mana: [110, 130, 150], dmgType: 'magic', range: 620, radius: 200, delay: 0.75, ticks: 1, dmg: [260, 340, 420], scaleAp: 0.9, stun: [1.0, 1.1, 1.2], linger: { dur: 4, enemySlowPct: 0.35, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 }, botCrowd: true, botMark: { tag: 'chill', stacks: 3 }, desc: 'After 0.75s the area freezes solid: 260/340/420 (+90% MAGIC) in 200 and Frozen 1.0/1.1/1.2s, then a Rime Field stays 4s.' },
     ],
   },
   {

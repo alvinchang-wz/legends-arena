@@ -57,6 +57,7 @@ class CCState {
     this.t = {};                 // type -> remaining seconds
     for (const k in CC_TYPES) this.t[k] = 0;
     this.slowPct = 0;
+    this.slows = [];             // live slows [{pct, t}]: the strongest applies, each on its own timer
     this.immuneT = 0;            // purify / spell immunity window
     this.active = 0;             // how many timers are running: 0 lets the getters answer at once
   }
@@ -85,15 +86,23 @@ class CCState {
     if (this.owner && this.owner.onCC) this.owner.onCC(type, d);
     return d;
   }
+  /* Slows do not stack: the strongest live one applies, and each keeps its
+     own timer, so a strong short slow (a Rime Field's 35% refreshed 0.2 s at
+     a time while inside, F13) ends the moment it stops being refreshed
+     instead of riding a longer, weaker slow's timer. */
   applySlow(pct, dur, tenacity = 0) {
     const d = this.apply('slow', dur, tenacity);
     if (d <= 0) return 0;
-    if (pct >= this.slowPct || this.t.slow <= 0) this.slowPct = pct;
+    let e = null;
+    for (const k of this.slows) if (k.pct === pct) { e = k; break; }
+    if (e) { if (d > e.t) e.t = d; } else this.slows.push({ pct, t: d });
+    if (pct > this.slowPct) this.slowPct = pct;
     return d;
   }
   clear() {
     for (const k in this.t) this.t[k] = 0;
     this.slowPct = 0;
+    this.slows.length = 0;
     this.active = 0;
   }
   /* Purify: drop every CC currently running and refuse new ones briefly. */
@@ -113,6 +122,12 @@ class CCState {
       let n = 0;
       for (const k in this.t) if (this.t[k] > 0) { this.t[k] -= dt; if (this.t[k] > 0) n++; }
       this.active = n;
+    }
+    if (this.slows.length) {
+      let n = 0, best = 0;
+      for (const e of this.slows) { e.t -= dt; if (e.t > 0) { this.slows[n++] = e; if (e.pct > best) best = e.pct; } }
+      this.slows.length = n;
+      this.slowPct = best;
     }
     if (this.t.slow <= 0) this.slowPct = 0;
     if (this.immuneT > 0) this.immuneT -= dt;
@@ -434,10 +449,13 @@ function applyTaunt(src, target, dur, ten) {
   return d;
 }
 
-/* F28 chill lock. Every Chill stack (Mira's passive today, a lingering Frost
-   zone later) lands through here so `marks.chillImmuneT` is honoured in one
-   place: a target that has just thawed cannot be re-frozen until it passes.
-   `opts.immuneAfter` sets the lock on a freeze (Mira's kit will pass 2.5). */
+/* F28 chill lock. Every Chill stack (Mira's passive, her lingering Rime
+   Fields) lands through here so `marks.chillImmuneT` is honoured in one
+   place: a target that has just thawed cannot be re-chilled until it
+   passes. Four stacks freeze 0.8 s (stun), consume the stacks and lock the
+   target for CHILL_IMMUNE seconds (2.5, docs/design/heroes.md: Mira);
+   `opts.immuneAfter` overrides the lock. */
+const CHILL_IMMUNE = 2.5;
 function applyChill(src, target, opts) {
   if (!target.marks || !target.cc || target.isStructure || !target.alive) return false;
   const m = target.marks;
@@ -448,7 +466,8 @@ function applyChill(src, target, opts) {
   if (m.chill >= 4) {
     m.chill = 0;
     target.cc.apply('stun', 0.8, ten);
-    if (opts && opts.immuneAfter) m.chillImmuneT = Game.time + opts.immuneAfter;
+    const lock = opts && opts.immuneAfter !== undefined ? opts.immuneAfter : CHILL_IMMUNE;
+    if (lock > 0) m.chillImmuneT = Game.time + lock;
     Game.fx.ring(target.x, target.y, target.radius + 26, THEME.ccSlow, 0.5);
   } else {
     target.cc.applySlow(0.08 * m.chill, 4, ten);
@@ -646,7 +665,8 @@ const PASSIVES = {
     },
   },
 
-  /* Mira — stacking chill that freezes at four stacks. */
+  /* Mira — every basic and skill hit is one Chill (applyChill: 8% slow per
+     stack, a 0.8 s freeze at four, then 2.5 s of immunity). */
   frostbite: {
     onSkillHit(h, target) { applyChill(h, target); },
     onBasicHit(h, target) { applyChill(h, target); },
