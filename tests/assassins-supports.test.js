@@ -759,7 +759,7 @@ T.test('Sylva: base stats and skill numbers match the spec (the only single-ally
   assert.equal(rankVal(s1, 'dmg', 6), 210); near(rankVal(s1, 'cd', 6), 5, 1e-9, 'Thorn Volley cd at rank 6');
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.allyTarget, s2.heal, s2.healLv, s2.scaleAp],
     ['link', 12, -0.6, 70, 5, { range: 520, self: false }, 100, 16, 0.55]);
-  assert.deepEqual(s2.link, { dur: 4, interval: 0.5, tickHeal: 20, tickHealLv: 3, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 });
+  assert.deepEqual(s2.link, { dur: 4, interval: 0.5, tickHeal: 15, tickHealLv: 2, tickScaleAp: 0.12, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 });
   assert.equal(rankVal(s2, 'heal', 6), 180); near(rankVal(s2, 'cd', 6), 9, 1e-9, 'Vine Link cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 95);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius], ['heal', [58, 52, 46], [120, 150, 180], [140, 190, 240], 0.5, 420]);
   assert.deepEqual(s3.link, { all: true, dur: 6, interval: 0.5, tickHeal: [12, 17, 22], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 });
@@ -787,10 +787,10 @@ T.test('Sylva: Vine Link heals the chosen ally at once (Verdant Gift: +60 speed,
   assert.equal(heals, 1);
   const link = G.tethers.find(t => !t.dead && t.src === sylva);
   assert.ok(link && !link.hostile && link.target === pact && Math.abs(link.t - 4) < 1e-9, 'a 4 s friendly link');
-  const tick = 20 + 3 * 5 + sylva.magicPower() * 0.15;
+  const tick = 15 + 2 * 5 + sylva.magicPower() * 0.12;
   const hp1 = pact.hp;
   T.frames(G, 33);
-  assert.ok(pact.hp >= hp1 + tick - 1, `a tick of 35 (+15% MAGIC): ${pact.hp - hp1}`);
+  assert.ok(pact.hp >= hp1 + tick - 1, `a tick of 25 (+12% MAGIC): ${pact.hp - hp1}`);
   assert.equal(heals, 1, 'link ticks skip the passive');
   assert.ok(pact.attrs.get('speed') >= psp0 + 40, 'the ally +40 speed while linked');
   assert.ok(sylva.armorValue() >= armor0 + 12 - 1e-6 && sylva.mrValue() >= mr0 + 12 - 1e-6, 'Sylva +12 armor and MR while linked');

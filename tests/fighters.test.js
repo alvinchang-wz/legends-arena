@@ -54,7 +54,7 @@ T.test('Torren: a cooldown-only hero (resource none): no bar, free skills, mana 
   const d = torren.def0;
   assert.equal(d.resource, 'none');
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
-    [690, 96, 0, 0, 63, 7.4, 19, 3.0, 14, 2.2, 95, 1.02, 262]);
+    [650, 88, 0, 0, 60, 6.8, 19, 3.0, 14, 2.2, 95, 1.02, 262]);
   assert.equal(torren.maxMana, 0); assert.equal(torren.mana, 0);
   assert.equal(torren.usesMana(), false);
   for (const s of torren.skills) { assert.equal(s.mana, 0); assert.equal(torren.costOf(s, 1), 0); assert.ok(torren.canAfford(s, 1)); }

@@ -428,7 +428,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** None. mp 0, every skill mana 0, no bar.
 
-**Base stats.** hp 690 (+96), atk 63 (+7.4), armor 19 (+3.0), mr 14 (+2.2), range 95, atkSpd 1.02, speed 262.
+**Base stats.** hp 650 (+88), atk 60 (+6.8), armor 19 (+3.0), mr 14 (+2.2), range 95, atkSpd 1.02, speed 262.
 
 **Passive: Bloodthirst** (`bloodthirst`, retuned). 8% lifesteal plus 1% per 3% missing HP, capped at 35% at or below 20% HP. Basics only.
 
@@ -564,7 +564,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **S1 Thorn Volley** - `skillshot`. range 680, speed 850, radius 26. magic dmg 130 +16/rank (130 -> 210), scaleAp 0.6, slowPct 0.30, slowDur 1.5. cd 7, cdLv -0.4; mana 45, manaLv 4.
 
-**S2 Vine Link** - `tether` friendly with `allyTarget`. Target: allied hero (not self) nearest the aim point within 520, fallback lowest-HP ally; no target = no cost. Instant heal 100 +16/rank (100 -> 180), scaleAp 0.55. Link dur 4, 8 ticks of 20 +3/rank (+15% MP) (160 -> 280 +120% MP), target +40 speed, Sylva +12 armor/MR while linked, breakRange 650. Recasting replaces. cd 12, cdLv -0.6 (-> 9); mana 70, manaLv 5.
+**S2 Vine Link** - `tether` friendly with `allyTarget`. Target: allied hero (not self) nearest the aim point within 520, fallback lowest-HP ally; no target = no cost. Instant heal 100 +16/rank (100 -> 180), scaleAp 0.55. Link dur 4, 8 ticks of 15 +2/rank (+12% MP) (120 -> 200 +96% MP), target +40 speed, Sylva +12 armor/MR while linked, breakRange 650. Recasting replaces. cd 12, cdLv -0.6 (-> 9); mana 70, manaLv 5.
 
 **Ult Canopy** - `heal` + friendly `tether` to all. Instant heal 140/190/240 (+50% MP) to allied heroes within 420; then every allied hero within 420 (incl. self) is linked 6 s: 12 ticks of 12/17/22 (+8% MP) (144/204/264 +96% MP), +40 speed, breakRange 550. A Canopy link does not stack with a Vine Link on the same ally (stronger tick wins). cd 58/52/46; mana 120/150/180.
 

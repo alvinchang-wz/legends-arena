@@ -266,8 +266,8 @@ const HEROES = [
     skills: [
       { name: 'Thorn Volley', icon: '🌱', type: 'skillshot', cd: 7, cdLv: -0.4, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 130, dmgLv: 16, scaleAp: 0.6, range: 680, speed: 850, radius: 26, slowPct: 0.3, slowDur: 1.5, botChasing: true, desc: 'A thorn (680 range at 850, radius 26) that damages the first enemy hit for 130+16/rank (+60% MAGIC) and slows it 30% for 1.5s.' },
       { name: 'Vine Link', icon: '🌿', type: 'link', cd: 12, cdLv: -0.6, mana: 70, manaLv: 5, allyTarget: { range: 520, self: false }, heal: 100, healLv: 16, scaleAp: 0.55,
-        link: { dur: 4, interval: 0.5, tickHeal: 20, tickHealLv: 3, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 },
-        desc: 'Bind a vine to the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim): heal 100+16/rank (+55% MAGIC) at once, then 8 ticks of 20+3/rank (+15% MAGIC) over 4s while they stay within 650; the ally gains +40 move speed and Sylva +12 armor and magic resist while linked. Recasting replaces the vine. No ally in reach, no cost.' },
+        link: { dur: 4, interval: 0.5, tickHeal: 15, tickHealLv: 2, tickScaleAp: 0.12, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 },
+        desc: 'Bind a vine to the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim): heal 100+16/rank (+55% MAGIC) at once, then 8 ticks of 15+2/rank (+12% MAGIC) over 4s while they stay within 650; the ally gains +40 move speed and Sylva +12 armor and magic resist while linked. Recasting replaces the vine. No ally in reach, no cost.' },
       { name: 'Canopy', icon: '🌳', type: 'heal', cd: [58, 52, 46], mana: [120, 150, 180], heal: [140, 190, 240], scaleAp: 0.5, radius: 420, botHealCount: { n: 2, hp: 0.55 }, botHealHp: 0.35,
         link: { all: true, dur: 6, interval: 0.5, tickHeal: [12, 17, 22], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 },
         desc: 'Heal every allied hero within 420 for 140/190/240 (+50% MAGIC), then link all of them (herself included) for 6s: 12 ticks of 12/17/22 (+8% MAGIC) and +40 move speed, snapping past 550. A Canopy vine never replaces a stronger Vine Link on the same ally.' },
@@ -285,7 +285,7 @@ const HEROES = [
        (F22). botOwnHpBelow: bots also cast the ult on a single hero once
        Torren himself is under 50%. */
     resource: 'none',
-    hp: 690, hpLv: 96, mp: 0, mpLv: 0, atk: 63, atkLv: 7.4,
+    hp: 650, hpLv: 88, mp: 0, mpLv: 0, atk: 60, atkLv: 6.8,
     armor: 19, armorLv: 3.0, mr: 14, mrLv: 2.2,
     range: 95, atkSpd: 1.02, speed: 262,
     passive: {
