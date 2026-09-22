@@ -2536,11 +2536,11 @@ class Hero extends Unit {
        bot deaths happened with the battle spell still off cooldown, and 81% of
        deaths happened while retreating. */
     this.botCastSpell(threat);
+    // F22: an open Return is the cleanest exit there is, and it goes before any dash away (Rook)
+    if (this.recast && Game.time < this.recast.until && this.castSkill(this.recast.skillIdx, null)) return;
     for (let i = 0; i < 3; i++) {
       const s = this.skills[i];
       if (!s || this.skillRank[i] < 1) continue;
-      // F22: the Return is the cleanest exit there is
-      if (this.recast && this.recast.skillIdx === i && Game.time < this.recast.until) { this.castSkill(i, null); continue; }
       if (this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
       if (s.charges && !(this.skillCharges[i] > 0)) continue;   // F8
       // a heal that cannot land on the caster (Pact's Offering) is no escape

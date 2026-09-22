@@ -430,4 +430,115 @@ T.test('Sable bot: Needle never at creeps; Lunge for the third Venom (760 at two
   nyx.level = 1; nyx.recalcStats(true);
 });
 
+/* ---------------- Rook ---------------- */
+
+T.test('Rook: base stats and skill numbers match the spec (airborne on both gap-closers, the only recast skill)', () => {
+  reset();
+  const d = rook.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [530, 70, 200, 22, 64, 7.0, 13, 2.1, 10, 1.6, 98, 1.05, 278, 3]);
+  assert.equal(d.passive.id, 'stoop');
+  const [s1, s2, s3] = rook.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.mana, s1.dist, s1.speed, s1.stopOnHero, s1.dmg, s1.dmgLv, s1.scaleAd, s1.airborne], ['dash', 10, 45, 380, 1150, true, 120, 15, 0.6, 0.5]);
+  assert.equal(rankVal(s1, 'dmg', 6), 195);
+  assert.deepEqual([s2.type, s2.cd, s2.mana, s2.radius, s2.dmg, s2.dmgLv, s2.scaleAd, s2.stun, s2.airborne], ['nova', 7, 40, 210, 115, 14, 0.6, undefined, undefined]);
+  assert.equal(rankVal(s2, 'dmg', 6), 185);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.dmg, s3.dmgLv, s3.scaleAd, s3.airborne, s3.recast],
+    ['blinkstrike', [40, 36, 32], 105, 540, 250, 40, 0.9, 0.6, { window: 3.0, speed: 1300, label: 'Return' }]);
+  assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.recast)).length, 1, 'the only recast skill');
+  for (const s of rook.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Rook: Dive stops on the first hero and launches it 0.5 s; Stoop on a hero landing gives +40 speed 2 s and loads the next basic with +50% ATK; Talon Fan and creeps do not', () => {
+  reset();
+  T.place(rook, open.x, open.y);
+  T.place(bastion, open.x + 250, open.y);
+  T.place(wraith, open.x + 370, open.y + 10);   // behind him on the line: the dive stops before her
+  const speed0 = rook.attrs.get('speed');
+  assert.ok(rook.castSkill(0, bastion));
+  T.frames(G, 20);
+  assert.equal(rook.dashS, null, 'the dive ended on him');
+  assert.ok(rook.distTo(bastion) < 200, 'stopped on the first hero');
+  assert.ok(bastion.stats.dmgTaken > 0 && bastion.cc.has('airborne'), 'struck and launched');
+  assert.equal(wraith.stats.dmgTaken, 0, 'the hero behind him was never reached');
+  near(rook.attrs.get('speed'), speed0 + 40, 1e-6, 'Stoop: +40 move speed');
+  assert.ok(rook.pv.until > G.time, 'the next basic is loaded');
+  T.place(rook, bastion.x - 100, bastion.y);
+  let before = bastion.stats.dmgTaken;
+  basic(rook, bastion);
+  const loaded = bastion.stats.dmgTaken - before;
+  assert.ok(!(rook.pv.until > G.time), 'spent');
+  before = bastion.stats.dmgTaken;
+  basic(rook, bastion);
+  const plain = bastion.stats.dmgTaken - before;
+  near(loaded / plain, 1.5, 0.04, 'the loaded swing carried +50% ATK');
+  // Talon Fan: damage, no CC, no Stoop
+  assert.ok(rook.castSkill(1, null));
+  assert.ok(!(rook.pv.until > G.time), 'Talon Fan does not load Stoop');
+  assert.equal(bastion.cc.has('stun') || bastion.cc.has('immobilize'), false, 'no CC');
+  // a creep hit by Dive: no Stoop
+  reset();
+  T.place(rook, open.x, open.y);
+  const m = creep(1, open.x + 200, open.y);
+  assert.ok(rook.castSkill(0, m));
+  T.frames(G, 25);
+  assert.ok(m.hp < m.maxHp, 'the creep was cut');
+  assert.ok(!(rook.pv.until > G.time) && !(rook.buffs.speed && rook.buffs.speed.t > 0), 'no Stoop off a creep');
+});
+
+T.test('Rook: Skyfall slams the target airborne 0.6 s and opens a 3 s Return: a free, unhookable 1300 leap back to the takeoff point, the cooldown running from the first cast; other skills may be cast inside the window', () => {
+  reset();
+  T.place(rook, open.x, open.y);
+  T.place(bastion, open.x + 400, open.y);
+  const x0 = rook.x, y0 = rook.y, mana0 = rook.mana;
+  assert.ok(rook.castSkill(2, bastion));
+  assert.ok(rook.distTo(bastion) < 120 && bastion.cc.has('airborne') && Math.abs(bastion.cc.t.airborne - 0.6) < 1e-9, 'slammed airborne 0.6 s');
+  assert.ok(rook.recast && rook.recast.skillIdx === 2 && Math.abs(rook.recast.x - x0) < 1e-9, 'Return open at the takeoff point');
+  assert.ok(rook.skillCd[2] >= 32 - 1e-9, 'the cooldown started on the cast');
+  near(rook.mana, mana0 - 105, 1e-9, '105 mana');
+  assert.ok(rook.castSkill(1, null), 'Talon Fan inside the window');
+  assert.ok(rook.pv.until > G.time, 'Stoop loaded by the Skyfall landing');
+  T.frames(G, 20);
+  const cd = rook.skillCd[2], mana = rook.mana;
+  assert.ok(rook.castSkill(2, bastion), 'the button is the Return');
+  assert.ok(rook.dashS && rook.dashS.speed === 1300 && rook.dashS.unhookable && rook.dashS.dmg === 0, 'a plain unhookable leap');
+  assert.equal(rook.recast, null);
+  assert.ok(rook.mana >= mana - 1e-9, 'free');
+  assert.ok(Math.abs(rook.skillCd[2] - cd) < 0.5, 'no new cooldown');
+  T.frames(G, 30);
+  assert.ok(Math.hypot(rook.x - x0, rook.y - y0) < 3, 'back where she took off');
+});
+
+T.test('Rook bot: Dive only with an ally within 400, at the lowest ranged hero in reach; Skyfall at the marksman or mage in reach whatever its health; the Return under 45% HP or with 2+ enemies inside 300, and as the escape', () => {
+  reset();
+  T.place(rook, open.x, open.y);
+  T.place(bastion, open.x + 250, open.y);
+  T.place(sylva, open.x + 300, open.y + 60);
+  assert.equal(rook.botSkillUrgency(0, bastion, 250, true, false), 0, 'no ally within 400: no Dive');
+  T.place(nyx, open.x - 200, open.y);
+  assert.equal(rook.botSkillUrgency(0, bastion, 250, true, false), 780, 'an ally close: Dive (it launches)');
+  assert.equal(rook.dashPick(rook.skills[0], bastion), sylva, 'aimed at the ranged hero, not the tank in front');
+  // Skyfall: a healthy lone tank is held; a healthy mage in reach is taken
+  T.place(sylva, FAR.x, FAR.y);
+  assert.equal(rook.botSkillUrgency(2, bastion, 250, true, false), 0, 'a healthy lone tank: held');
+  T.place(sylva, open.x + 400, open.y);
+  const def0 = sylva.def0;
+  sylva.def0 = Object.assign({}, def0, { role: 'Mage' });   // this lineup has no red marksman or mage
+  assert.equal(rook.botSkillUrgency(2, bastion, 250, true, false), 720, 'a mage in reach: Skyfall');
+  rook.botFireSkill(2, bastion, 250, true, false);
+  assert.ok(rook.distTo(sylva) < 120, 'landed on the mage, not the tank she was fighting');
+  sylva.def0 = def0;
+  // the Return
+  assert.ok(rook.recast, 'open');
+  T.place(bastion, FAR.x, FAR.y);
+  assert.equal(rook.botSkillUrgency(2, sylva, 60, true, false), 0, 'healthy with one enemy near: stay');
+  rook.hp = rook.maxHp * 0.4;
+  assert.equal(rook.botSkillUrgency(2, sylva, 60, true, false), 950, 'under 45%: go home');
+  rook.hp = rook.maxHp;
+  T.place(bastion, rook.x + 150, rook.y + 100);
+  assert.equal(rook.botSkillUrgency(2, sylva, 60, true, false), 950, 'two enemies inside 300: go home');
+  rook.botEscapeCast();
+  assert.ok(rook.dashS && rook.dashS.unhookable && rook.recast === null, 'the escape pressed the Return');
+});
+
 T.done();

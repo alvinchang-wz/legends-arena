@@ -606,19 +606,31 @@ const HEROES = [
   },
   {
     id: 'rook', name: 'Rook', role: 'Assassin', icon: '🦅', color: '#fb7185', projColor: '#fecdd3',
-    desc: 'A sky-diver who slams prey into the dirt.',
-    difficulty: 2, damageStyle: 'physical',
+    desc: 'The dive-and-return striker: airborne on both gap-closers, and an ult that can be recast to fly back to where she took off. In, slam, one basic, out.',
+    difficulty: 3, damageStyle: 'physical',
+    /* docs/design/heroes.md, Assassins: Rook. The roster's only recast
+       skill (F22): Skyfall stores the takeoff point and for 3 s the button
+       is a free Return to it (dash-to-point at 1300, no damage, unhookable,
+       stopped short of rock by the Flicker back-off), the cooldown running
+       from the first cast. Both gap-closers launch (F28 airborne ignores
+       tenacity). Stoop is reworked: landing Dive or Skyfall on a hero is
+       what hastens her and loads the next basic. With 200 mana she runs
+       dry after two rotations. Bot fields: Dive waits for an allied hero
+       within 400 (botAllyWithin) and goes at the lowest ranged hero in
+       reach (the stopOnHero pick); Skyfall goes at the marksman or mage in
+       reach (botCarry) whatever its health; the Return is pressed under 45%
+       HP or with 2+ enemy heroes inside 300 (the recast rule). */
     hp: 530, hpLv: 70, mp: 200, mpLv: 22, atk: 64, atkLv: 7.0,
     armor: 13, armorLv: 2.1, mr: 10, mrLv: 1.6,
     range: 98, atkSpd: 1.05, speed: 278,
     passive: {
       name: 'Stoop', icon: '⬇', id: 'stoop',
-      desc: 'Dealing skill damage from more than 250 range away (your dash/ult) grants +40 move speed for 2s.',
+      desc: 'Landing Dive or Skyfall on a hero grants +40 move speed for 2s and makes her next basic attack within 3s deal +50% total ATK bonus physical damage.',
     },
     skills: [
-      { name: 'Dive', icon: '⬇', type: 'dash', cd: 9, mana: 45, dmgType: 'physical', dist: 380, speed: 1150, dmg: 130, dmgLv: 16, scaleAd: 0.6, airborne: 0.55, stopOnHero: true, desc: 'Dive onto the first hero, knocking them up.' },
-      { name: 'Talon Fan', icon: '彡', type: 'nova', cd: 7, mana: 40, dmgType: 'physical', radius: 210, dmg: 125, dmgLv: 15, scaleAd: 0.6, desc: 'Rake everyone nearby.' },
-      { name: 'Skyfall', icon: '☄', type: 'blinkstrike', cd: 42, mana: 105, dmgType: 'physical', range: 540, dmg: 270, dmgLv: 30, scaleAd: 0.9, airborne: 0.55, desc: 'Appear above a target and slam them into the air.' },
+      { name: 'Dive', icon: '⬇', type: 'dash', cd: 10, mana: 45, dmgType: 'physical', dist: 380, speed: 1150, dmg: 120, dmgLv: 15, scaleAd: 0.6, airborne: 0.5, stopOnHero: true, botAllyWithin: 400, desc: 'Dive 380 units along a line at 1150 and stop on the first hero: 120+15/rank (+60% ATK) and 0.5s airborne to everyone on the path.' },
+      { name: 'Talon Fan', icon: '彡', type: 'nova', cd: 7, mana: 40, dmgType: 'physical', radius: 210, dmg: 115, dmgLv: 14, scaleAd: 0.6, desc: 'Rake everyone within 210 for 115+14/rank (+60% ATK). No CC.' },
+      { name: 'Skyfall', icon: '☄', type: 'blinkstrike', cd: [40, 36, 32], mana: 105, dmgType: 'physical', range: 540, dmg: 250, dmgLv: 40, scaleAd: 0.9, airborne: 0.6, recast: { window: 3.0, speed: 1300, label: 'Return' }, botCarry: true, desc: 'Appear on the nearest hero within 540 and slam them airborne 0.6s for 250/290/330 (+90% ATK). Within 3s the button is Return: a free 1300-speed leap back to the takeoff point (no damage, cannot cross walls or be hooked). The cooldown starts on the first cast.' },
     ],
   },
   {

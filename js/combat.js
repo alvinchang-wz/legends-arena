@@ -871,9 +871,23 @@ const PASSIVES = {
     },
   },
 
+  /* Rook — landing Dive (skill 0) or Skyfall (skill 2) on a HERO grants +40
+     move speed 2 s and loads the next basic within 3 s with +50% total ATK
+     bonus physical damage (Talon Fan and creeps never do). */
   stoop: {
-    onSkillHit(h, target) {
-      if (dist(h, target) > 250) h.addTimedBuff('speed', 40, 2);
+    init(h) { h.pv = { until: 0 }; },
+    onSkillHit(h, target, dmg, s) {
+      if (!target || target.type !== 'hero' || !s) return;
+      const b = s._base || s;
+      if (b !== h.skills[0] && b !== h.skills[2]) return;
+      h.addTimedBuff('speed', 40, 2);
+      h.pv.until = Game.time + 3;
+    },
+    onDealDamage(h, target, amount, pkt) {
+      if (!pkt || !pkt.isBasic || !h.pv || Game.time > h.pv.until) return amount;
+      h.pv.until = 0;
+      Game.fx.ring(target.x, target.y, 22, h.color, 0.3);
+      return amount + h.curAtk() * 0.5;
     },
   },
 
