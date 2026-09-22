@@ -21,9 +21,24 @@ function segClosest(px, py, ax, ay, bx, by) {
   return { x: ax + vx * t, y: ay + vy * t, t };
 }
 
-/* Closest point on a wall's spine, with the wall's radius there. Fat rock
-   tapers, so a wall's points may each carry a radius; otherwise w.r. */
+/* Closest point on a polygon's outline, and whether (x, y) is inside it. */
+function polyClosest(poly, x, y) {
+  let best = null, bestD = Infinity, inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i];
+    const c = segClosest(x, y, a.x, a.y, b.x, b.y);
+    const d = (c.x - x) * (c.x - x) + (c.y - y) * (c.y - y);
+    if (d < bestD) { bestD = d; best = c; }
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  best.r = 0; best.inside = inside;
+  return best;
+}
+
+/* Closest point on a wall: for a polygon wall its outline (plus whether the
+   point is inside); for a capsule chain its spine, with the radius there. */
 function wallClosest(w, x, y) {
+  if (w.poly) return polyClosest(w.poly, x, y);
   let best = null, bestD = Infinity, bi = 1;
   for (let i = 1; i < w.pts.length; i++) {
     const c = segClosest(x, y, w.pts[i - 1].x, w.pts[i - 1].y, w.pts[i].x, w.pts[i].y);
@@ -33,7 +48,7 @@ function wallClosest(w, x, y) {
   if (!best) return null;
   const a = w.pts[bi - 1], b = w.pts[bi];
   const ra = a.r !== undefined ? a.r : w.r, rb = b.r !== undefined ? b.r : w.r;
-  best.r = ra + (rb - ra) * best.t;
+  best.r = ra + (rb - ra) * best.t; best.inside = false;
   return best;
 }
 
@@ -41,6 +56,7 @@ function wallClosest(w, x, y) {
 function wallBlocks(w, x, y, pad) {
   if (w.minX !== undefined && (x < w.minX - pad || x > w.maxX + pad || y < w.minY - pad || y > w.maxY + pad)) return false;
   const c = wallClosest(w, x, y);
+  if (c.inside) return true;
   const r = c.r + pad;
   return (c.x - x) * (c.x - x) + (c.y - y) * (c.y - y) < r * r;
 }
@@ -248,6 +264,16 @@ const CAMPS = MAP_DATA.camps.map(c => ({ ...mpx(c.x, c.y), kind: c.kind }));
    Thick polylines (points + radius). Each carries its bounding box so the
    per-unit collision tests can skip the terrain that is nowhere near. */
 const MAP_WALLS = MAP_DATA.walls.map(w => {
+  if (w.poly) {                                                     // exact outline
+    const poly = mpxs(w.poly), c = w.x !== undefined ? mpx(w.x, w.y) : poly[0];
+    const wall = { poly, pts: poly, x: c.x, y: c.y, r: (w.r || 4) * MAP_K, hidden: !!w.hidden,
+      minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const p of poly) {
+      wall.minX = Math.min(wall.minX, p.x); wall.maxX = Math.max(wall.maxX, p.x);
+      wall.minY = Math.min(wall.minY, p.y); wall.maxY = Math.max(wall.maxY, p.y);
+    }
+    return wall;
+  }
   const pts = mpxs(w.pts);
   if (w.rs) pts.forEach((p, i) => { p.r = w.rs[i] * MAP_K; });   // radius per point
   const r = (w.rs ? Math.max(...w.rs) : w.r) * MAP_K;             // the fattest point
@@ -263,12 +289,22 @@ const MAP_WALLS = MAP_DATA.walls.map(w => {
 /* ---- bushes ----
    A bush is a circle {x, y, r} or a capsule {x, y, r, ax, ay, bx, by}: the
    concealing area is every point within r of the segment a-b. */
-/* The cut-off corners beyond the lane chamfers: solid plateau, painted flat
-   by the board painter; hidden walls inside them do the blocking. */
-const MAP_CORNERS = (MAP_DATA.corners || []).map(poly => mpxs(poly));
+/* The cut-off corners beyond the lane chamfers are void: nothing there, and
+   a hidden wall keeps units out. The painter shows them as open water. */
+const MAP_VOID = (MAP_DATA.void || []).map(poly => mpxs(poly));
 
 const BUSHES = MAP_DATA.bushes.map(b => {
   const c = mpx(b.x, b.y), out = { x: c.x, y: c.y, r: b.r * MAP_K };
+  if (b.poly) {                                                     // exact outline
+    out.poly = mpxs(b.poly);
+    out.minX = Math.min(...out.poly.map(p => p.x)); out.maxX = Math.max(...out.poly.map(p => p.x));
+    out.minY = Math.min(...out.poly.map(p => p.y)); out.maxY = Math.max(...out.poly.map(p => p.y));
+    /* where the painters put the thickets: the centroid and every other
+       vertex pulled well inside */
+    out.lobes = [{ x: c.x, y: c.y }];
+    out.poly.forEach((p, i) => { if (i % 2 === 0) out.lobes.push({ x: c.x + (p.x - c.x) * 0.55, y: c.y + (p.y - c.y) * 0.55 }); });
+    return out;
+  }
   if (b.ax !== undefined) {
     const a = mpx(b.ax, b.ay), q = mpx(b.bx, b.by);
     out.ax = a.x; out.ay = a.y; out.bx = q.x; out.by = q.y;
@@ -276,6 +312,10 @@ const BUSHES = MAP_DATA.bushes.map(b => {
   return out;
 });
 function inBush(b, x, y) {
+  if (b.poly) {
+    if (x < b.minX || x > b.maxX || y < b.minY || y > b.maxY) return false;
+    return polyClosest(b.poly, x, y).inside;
+  }
   if (b.ax === undefined) return (x - b.x) * (x - b.x) + (y - b.y) * (y - b.y) <= b.r * b.r;
   const c = segClosest(x, y, b.ax, b.ay, b.bx, b.by);
   return (x - c.x) * (x - c.x) + (y - c.y) * (y - c.y) <= b.r * b.r;

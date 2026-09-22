@@ -1170,7 +1170,8 @@ const Game = {
         let dx = a.x - c.x, dy = a.y - c.y;
         const d = Math.hypot(dx, dy);
         const min = c.r + a.radius;
-        if (d >= min) continue;
+        if (!c.inside && d >= min) continue;
+        if (c.inside) { dx = -dx; dy = -dy; }   // inside a polygon: leave through the nearest edge
         if (d < 0.01) {           // dead centre: leave along the nearest segment's normal
           const p0 = w.pts[0], p1 = w.pts[w.pts.length - 1];
           dx = -(p1.y - p0.y); dy = p1.x - p0.x;
@@ -2803,6 +2804,11 @@ function render() {
   const runArt = !Game.isTen() && typeof MapArt !== 'undefined';
   for (const w of Game.walls()) {
     if (w.hidden) continue;
+    if (w.poly) {
+      if (!inView((w.minX + w.maxX) / 2, (w.minY + w.maxY) / 2, (w.maxX - w.minX) / 2 + w.r * 2 + 120)) continue;
+      pushBody(w.maxY, () => MapArt.drawWallPoly(ctx, w));
+      continue;
+    }
     let run = null;
     const flush = () => { if (run) { const segs = run.segs; pushBody(run.depth, () => MapArt.drawWallRun(ctx, segs)); run = null; } };
     for (let i = 1; i < w.pts.length; i++) {
@@ -2922,7 +2928,21 @@ function render() {
     }
     ctx.restore();
   };
+  const bushPoly = b => {
+    const path = (dx, dy) => { ctx.beginPath(); b.poly.forEach((p, i) => i ? ctx.lineTo(p.x + dx, p.y + dy) : ctx.moveTo(p.x + dx, p.y + dy)); ctx.closePath(); };
+    path(6, 10); ctx.fillStyle = 'rgba(4,10,6,0.32)'; ctx.fill();
+    path(0, 0); ctx.fillStyle = Game.isTen() ? '#3a1a10' : THEME.bush; ctx.fill();
+    ctx.save(); path(0, -10); ctx.clip();
+    const sub = { r: Math.max(26, b.r * 0.62) };
+    for (const p of b.lobes) bushLobes(sub, p.x, p.y, Math.atan2(p.y - b.y, p.x - b.x) + Math.PI / 4);
+    ctx.restore();
+  };
   for (const b of Game.bushes()) {
+    if (b.poly) {
+      if (!inView((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, (b.maxX - b.minX) / 2 + b.r + 60)) continue;
+      bushPoly(b);
+      continue;
+    }
     const pad = b.ax === undefined ? b.r + 60 : b.r + 60 + Math.hypot(b.bx - b.ax, b.by - b.ay) / 2;
     if (!inView(b.x, b.y, pad)) continue;
     if (b.ax === undefined) {

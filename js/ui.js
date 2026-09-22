@@ -1548,16 +1548,15 @@ const UI = {
     // walls, under the bushes — terrain you cannot cross is worth reading on
     // the minimap, since it decides which way a rotation actually goes
     g.strokeStyle = THEME.wallLight; g.lineJoin = 'round'; g.lineCap = 'round';
-    if (typeof MAP_CORNERS !== 'undefined' && !Game.isTen()) {
-      g.fillStyle = THEME.wallLight;
-      for (const poly of MAP_CORNERS) {
-        g.beginPath(); g.moveTo(mx(poly[0].x), my(poly[0].y));
-        for (const p of poly) g.lineTo(mx(p.x), my(p.y));
-        g.closePath(); g.fill();
-      }
-    }
     for (const w of Game.walls()) {
       if (w.hidden) continue;
+      if (w.poly) {
+        g.fillStyle = THEME.wallLight;
+        g.beginPath(); g.moveTo(mx(w.poly[0].x), my(w.poly[0].y));
+        for (const p of w.poly) g.lineTo(mx(p.x), my(p.y));
+        g.closePath(); g.fill();
+        continue;
+      }
       for (let i = 1; i < w.pts.length; i++) {
         const a = w.pts[i - 1], b = w.pts[i], r = a.r !== undefined ? (a.r + b.r) / 2 : w.r;
         g.lineWidth = Math.max(3, r * 2 * k);
@@ -1567,6 +1566,12 @@ const UI = {
     // bushes
     for (const b of Game.bushes()) {
       g.fillStyle = rgba(THEME.bush, 0.85);
+      if (b.poly) {
+        g.beginPath(); g.moveTo(mx(b.poly[0].x), my(b.poly[0].y));
+        for (const p of b.poly) g.lineTo(mx(p.x), my(p.y));
+        g.closePath(); g.fill();
+        continue;
+      }
       if (b.ax !== undefined) {
         g.strokeStyle = rgba(THEME.bush, 0.85); g.lineWidth = b.r * 2 * k; g.lineCap = 'round';
         g.beginPath(); g.moveTo(mx(b.ax), my(b.ay)); g.lineTo(mx(b.bx), my(b.by)); g.stroke();

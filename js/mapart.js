@@ -426,6 +426,19 @@ const MapArt = (() => {
   /* Reed thicket: blade strokes over a dark bed. A capsule bush is a row of
      beds along its axis, the same shape the concealment test uses. */
   function bush(g, b) {
+    if (b.poly) {
+      /* exact outline: the bed is the polygon itself, thickets sit inside it */
+      g.fillStyle = 'rgba(6, 22, 8, 0.55)';
+      g.beginPath(); b.poly.forEach((p, i) => i ? g.lineTo(p.x + 10, p.y + 12) : g.moveTo(p.x + 10, p.y + 12)); g.closePath(); g.fill();
+      g.fillStyle = '#245a2c';
+      g.beginPath(); b.poly.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.fill();
+      const rr = Math.max(26, b.r * 0.62);
+      for (const p of b.lobes) bushBeds(g, { x: p.x, y: p.y, r: rr });
+      return;
+    }
+    bushBeds(g, b);
+  }
+  function bushBeds(g, b) {
     const rnd = rng((b.x * 31 + b.y * 17) | 0);
     const beds = [];
     if (b.ax === undefined) beds.push({ x: b.x, y: b.y });
@@ -464,15 +477,26 @@ const MapArt = (() => {
     const rnd = rng(78123);
     g.lineCap = 'round'; g.lineJoin = 'round';
     const segR = (a, b, w) => a.r !== undefined ? (a.r + b.r) / 2 : w.r;
-    const eachSeg = fn => { for (const w of MAP_WALLS) { if (w.hidden) continue; for (let i = 1; i < w.pts.length; i++) fn(w.pts[i - 1], w.pts[i], segR(w.pts[i - 1], w.pts[i], w)); } };
+    const eachSeg = fn => { for (const w of MAP_WALLS) { if (w.hidden || w.poly) continue; for (let i = 1; i < w.pts.length; i++) fn(w.pts[i - 1], w.pts[i], segR(w.pts[i - 1], w.pts[i], w)); } };
+    const polyPath = (poly, dx, dy) => { g.beginPath(); poly.forEach((p, i) => i ? g.lineTo(p.x + dx, p.y + dy) : g.moveTo(p.x + dx, p.y + dy)); g.closePath(); };
     eachSeg((a, b, r) => {
       g.strokeStyle = 'rgba(10, 18, 10, 0.5)'; g.lineWidth = r * 2 + 40;
       g.beginPath(); g.moveTo(a.x + 14, a.y + 22); g.lineTo(b.x + 14, b.y + 22); g.stroke();
     });
+    for (const w of MAP_WALLS) {
+      if (w.hidden || !w.poly) continue;
+      g.fillStyle = 'rgba(10, 18, 10, 0.5)'; g.strokeStyle = 'rgba(10, 18, 10, 0.5)'; g.lineWidth = 40;
+      polyPath(w.poly, 14, 22); g.fill(); g.stroke();
+    }
     eachSeg((a, b, r) => {
       g.strokeStyle = PAL.rockDark; g.lineWidth = r * 2 + 8;
       g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
     });
+    for (const w of MAP_WALLS) {
+      if (w.hidden || !w.poly) continue;
+      g.fillStyle = PAL.rockDark; g.strokeStyle = PAL.rockDark; g.lineWidth = 8;
+      polyPath(w.poly, 0, 0); g.fill(); g.stroke();
+    }
     for (const w of MAP_WALLS) {
       if (w.hidden) continue;
       const step = Math.max(1, Math.floor(w.pts.length / 4));
@@ -560,27 +584,47 @@ const MapArt = (() => {
   }
 
   /* ---------------------------------------------------------------- board */
-  /* The two cut-off corners: a flat rock plateau behind the chamfer ridge. */
+  /* The two cut-off corners are not part of the board: open water with the
+     same cliff edge the rim has, so the octagon reads as the island. */
   function paintCorners(g) {
-    const rnd = rng(90210);
-    for (const poly of (typeof MAP_CORNERS !== 'undefined' ? MAP_CORNERS : [])) {
+    for (const poly of (typeof MAP_VOID !== 'undefined' ? MAP_VOID : [])) {
       g.beginPath(); g.moveTo(poly[0].x, poly[0].y);
       for (const p of poly) g.lineTo(p.x, p.y);
       g.closePath();
-      g.fillStyle = PAL.rockShade; g.fill();
-      g.strokeStyle = PAL.rockDark; g.lineWidth = 26; g.lineJoin = 'round'; g.stroke();
-      g.save(); g.clip();
-      const minX = Math.min(...poly.map(p => p.x)), maxX = Math.max(...poly.map(p => p.x));
-      const minY = Math.min(...poly.map(p => p.y)), maxY = Math.max(...poly.map(p => p.y));
-      for (let i = 0; i < 90; i++) {
-        const x = minX + rnd() * (maxX - minX), y = minY + rnd() * (maxY - minY);
-        g.fillStyle = rnd() < 0.5 ? PAL.rockDark : PAL.rockLit; g.globalAlpha = 0.35;
-        blob(g, x, y, 30 + rnd() * 70, 20 + rnd() * 40, rnd, 0.3, 7, rnd() * TAU); g.fill();
-      }
-      g.globalAlpha = 1;
-      for (let i = 0; i < 14; i++) rock(g, minX + rnd() * (maxX - minX), minY + rnd() * (maxY - minY), 18 + rnd() * 30, rnd, false);
-      g.restore();
+      g.fillStyle = '#123f4c'; g.fill();
+      g.strokeStyle = PAL.rockShade; g.lineWidth = 60; g.lineJoin = 'round'; g.stroke();
+      g.strokeStyle = PAL.rockDark; g.lineWidth = 14; g.stroke();
     }
+  }
+
+  /* One polygon rock: its footprint extruded upward in shade steps to a lit
+     top. The outline is the reference's own, so nothing is invented. */
+  function drawWallPoly(ctx, w) {
+    const poly = w.poly, h = Math.min(130, w.r * 1.15 + 30);
+    const path = (dx, dy) => { ctx.beginPath(); poly.forEach((p, i) => i ? ctx.lineTo(p.x + dx, p.y + dy) : ctx.moveTo(p.x + dx, p.y + dy)); ctx.closePath(); };
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = 'rgba(6, 12, 8, 0.4)'; path(w.r * 0.2 + 8, w.r * 0.35 + 12); ctx.fill();
+    ctx.fillStyle = PAL.rockDark; ctx.strokeStyle = PAL.rockDark; ctx.lineWidth = 8; path(0, 0); ctx.fill(); ctx.stroke();
+    for (let i = 0; i <= 5; i++) {
+      const t = i / 5, col = mixHex(PAL.rockShade, PAL.rockLit, t);
+      ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 3; path(0, -h * t); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = PAL.rockTop; path(0, -h); ctx.fill();
+    ctx.save(); path(0, -h); ctx.clip();
+    ctx.strokeStyle = mixHex(PAL.rockTop, '#fff2d8', 0.22); ctx.lineWidth = 6; path(3, -h + 3); ctx.stroke();
+    const rnd = rng(((w.minX * 73 + w.minY * 151) | 0) & 0x7fffffff);
+    ctx.fillStyle = rgba(PAL.moss, 0.45);
+    for (let i = 0; i < 3 + (poly.length / 12 | 0); i++) {
+      const p = poly[(rnd() * poly.length) | 0];
+      blob(ctx, p.x + (w.x - p.x) * 0.4 * rnd(), p.y - h + (w.y - p.y) * 0.4 * rnd(), 14 + rnd() * 24, 8 + rnd() * 12, rnd, 0.3, 7, rnd() * TAU); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(30, 24, 16, 0.35)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 2 + (poly.length / 16 | 0); i++) {        // short cracks running in from the edge
+      const p = poly[(rnd() * poly.length) | 0], t = 0.15 + rnd() * 0.3;
+      const mx_ = p.x + (w.x - p.x) * t, my_ = p.y + (w.y - p.y) * t;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - h); ctx.lineTo(mx_ + (rnd() - 0.5) * 20, my_ - h + (rnd() - 0.5) * 20); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function paintBoard(g) {
@@ -656,5 +700,5 @@ const MapArt = (() => {
     }
   }
 
-  return { paintBoard, drawWall, drawWallRun, PAL, MARGIN };
+  return { paintBoard, drawWall, drawWallRun, drawWallPoly, PAL, MARGIN };
 })();

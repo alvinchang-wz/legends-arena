@@ -30,16 +30,15 @@ the playable square is 436 px on a side, so one map px is about 14.7 world units
    the survey's positions snapped onto the lanes.
 2. **Walls**: the aligned minimap's rock layer, symmetrised, with the lanes,
    bases, camp floors and turret pads carved free, specks removed and every
-   corridor widened to at least 6.5 map px. Each rock blob becomes its medial
-   axis (Zhang-Suen skeleton, spurs pruned) sampled every 4 map px with the
-   distance-transform radius at each point: a capsule chain with a radius per
-   point (`pts` + `rs`). A blob whose skeleton collapses becomes one round
-   boulder. Fidelity to the reference mask is printed (IoU, about 0.86).
-3. **Corners**: the two cut-off corners beyond the lane chamfers are a ridge
-   along the chamfer plus hidden collision chains behind it; the painter fills
-   the triangle (`corners`) as a flat rock plateau.
-4. **Bushes**: the aligned minimap's bush layer, symmetrised, fitted as circles
-   or capsules (PCA). 26 bushes.
+   corridor widened to at least 5.5 map px. Each rock is then an exact
+   polygon: the blob's outline traced at 2 raster px per map px and
+   simplified by a third of a map px (`poly`, plus `r`, the largest inscribed
+   radius, which sets its height). Overlap with the reference mask is 0.99.
+3. **Corners**: the two cut-off corners beyond the lane chamfers are void
+   (`void` polygons): the painter shows water there and a hidden polygon
+   wall keeps units out.
+4. **Bushes**: the aligned minimap's bush layer, symmetrised, as exact
+   polygons the same way. 32 bushes.
 5. **River**: a channel of half-width 10 from the Lord pit through the centre
    to the Turtle pit, with pools at both pits (r 25) and a pond at the mid
    crossing (r 30) that the lane bridges.
@@ -51,12 +50,14 @@ The blockout `docs/drafts/draft-d.png` is the same data drawn flat.
 
 ## In the engine
 
-- `wallClosest` returns the closest point on a wall's spine and the radius
-  there (interpolated between the two points); `wallBlocks`, `separate()` and
-  the painters all use it, so collision and visuals are the same shape.
-- Live walls are painted as runs of consecutive segments at one depth, every
-  layer across the whole run, so fat rock reads as one body.
-- `hidden` walls block but are not drawn; `MAP_CORNERS` are the plateau polygons.
+- Polygon walls: `wallClosest` returns the closest point on the outline and
+  whether the point is inside; `wallBlocks`, `separate()` (which ejects an
+  inside unit through the nearest edge), `inBush` and the painters all use
+  the same polygons, so collision and visuals are the same shape. Capsule
+  chains (`pts` + `rs`) are still supported for the other modes.
+- A polygon rock is painted as its footprint extruded upward in shade steps
+  to a lit top (`MapArt.drawWallPoly`), depth-sorted by its lowest edge.
+- `hidden` walls block but are not drawn; `MAP_VOID` are the corner polygons.
 - `POOLS` comes from `pools` in the data (lord, turtle, centre pond).
 
 ## Provisional values
