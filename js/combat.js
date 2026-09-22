@@ -510,7 +510,7 @@ function applyDisplacement(src, target, spec) {
   if (cur && cur.mode === 'taunt') f.prev = cur;
   else if (cur && cur.prev) f.prev = cur.prev;
   target.forced = f;
-  if (target.marks) target.marks.heavyUntil = Game.time + 3;   // Nadir's Accretion reads this
+  if (target.marks) { target.marks.heavyUntil = Game.time + 3; target.marks.heavyBy = src || null; }   // Nadir's Accretion reads these
   Game.fx.spark(target.x, target.y, THEME.ccKnockback, 5);
   return true;
 }
@@ -763,14 +763,22 @@ const PASSIVES = {
     },
   },
 
-  horizon: {
-    _restore(h, frac) {
-      h.heal((h.maxHp - h.hp) * frac);
-      h.gainMana(frac >= 0.12 ? 40 : 20);
-      Game.fx.ring(h.x, h.y, 64, h.color, 0.4);
+  /* Nadir — the displacement tween (F15: a pullTo, a knockback, a zone's
+     pullSpeed) stamps marks.heavyBy / heavyUntil on whoever it moves; an
+     enemy hero Nadir moved is Heavy 3 s: a flat 20% slow refreshed each
+     frame (the strongest slow wins, so it never weakens a Singularity
+     slow) and +12% damage taken from Nadir alone. */
+  accretion: {
+    _heavy(h, u) { return !!(u.marks && u.marks.heavyBy === h && u.marks.heavyUntil > Game.time); },
+    tick(h) {
+      for (const e of Game.heroes) {
+        if (e.team === h.team || !e.alive || !e.cc || !PASSIVES.accretion._heavy(h, e)) continue;
+        e.cc.applySlow(0.2, 0.25, 0);
+      }
     },
-    onKill(h, victim) { if (victim && victim.type === 'hero') PASSIVES.horizon._restore(h, 0.12); },
-    onAssist(h, victim) { if (victim && victim.type === 'hero') PASSIVES.horizon._restore(h, 0.06); },
+    onDealDamage(h, target, amount) {
+      return PASSIVES.accretion._heavy(h, target) ? amount * 1.12 : amount;
+    },
   },
 
   drymouth: {

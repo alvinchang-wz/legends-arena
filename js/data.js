@@ -435,19 +435,32 @@ const HEROES = [
   },
   {
     id: 'nadir', name: 'Nadir', role: 'Mage', icon: '🌀', color: '#7c3aed', projColor: '#c4b5fd',
-    desc: 'A gravity mage who collapses space onto a single point.',
+    desc: 'A teamfight-initiator mage: a huge delayed ult drags enemies into its centre before it detonates.',
     difficulty: 3, damageStyle: 'magic',
-    hp: 510, hpLv: 66, mp: 300, mpLv: 33, atk: 42, atkLv: 3.6,
-    armor: 11, armorLv: 2.1, mr: 14, mrLv: 2.2,
-    range: 310, atkSpd: 0.86, speed: 244,
+    /* docs/design/heroes.md, Mages: Nadir. The only hero with travelling
+       displacement toward a point (F15): Crush drags everyone in its ring
+       120 toward him over 0.13 s (pullTo), Implosion pulls enemy heroes
+       toward its centre at 260 u/s for its whole 0.9 s delay (pullSpeed),
+       refused by Purify, not clearing a dash, stopping at rock. Anyone
+       his skills displace is Heavy 3 s (Accretion reads marks.heavyBy /
+       heavyUntil). Sturdier and slower than the other mages, no escape.
+       Bot fields: botHold 310; botCrowd + botExecuteHp hold Implosion for
+       2+ heroes within 280 of the target or one under 40%; botAfterPull
+       fires Crush at 900 while a hero he just pulled is stunned inside its
+       ring (right after the detonation); botRetreating rates Singularity
+       700 at a hero moving away from him. */
+    botHold: 310,
+    hp: 520, hpLv: 68, mp: 300, mpLv: 33, atk: 42, atkLv: 3.6,
+    armor: 12, armorLv: 2.2, mr: 14, mrLv: 2.2,
+    range: 310, atkSpd: 0.86, speed: 245,
     passive: {
-      name: 'Event Horizon', icon: '●', id: 'horizon',
-      desc: 'Killing a hero restores 12% missing HP and 40 mana. Assists restore half.',
+      name: 'Accretion', icon: '●', id: 'accretion',
+      desc: 'Enemy heroes displaced by Nadir\'s skills become Heavy for 3s: -20% move speed and +12% damage taken from Nadir.',
     },
     skills: [
-      { name: 'Singularity', icon: '◉', type: 'skillshot', cd: 7, mana: 55, dmgType: 'magic', dmg: 175, dmgLv: 21, scaleAp: 0.8, range: 640, speed: 720, radius: 30, explodeR: 140, slowPct: 0.45, slowDur: 1.4, desc: 'Hurl a collapsing star that explodes and slows.' },
-      { name: 'Crush', icon: '⬤', type: 'nova', cd: 10, mana: 65, dmgType: 'magic', radius: 260, dmg: 130, dmgLv: 15, scaleAp: 0.5, knockback: -80, desc: 'Pull nearby enemies inward and damage them.' },
-      { name: 'Implosion', icon: '◎', type: 'zone', cd: 44, mana: 125, dmgType: 'magic', range: 580, radius: 260, delay: 0.85, dmg: 320, dmgLv: 34, scaleAp: 1.05, stun: 1.1, desc: 'After a delay, crush a huge area and stun everyone inside. Widest mage ult in the game, paid for with damage.' },
+      { name: 'Singularity', icon: '◉', type: 'skillshot', cd: 7, cdLv: -0.4, mana: 50, manaLv: 5, dmgType: 'magic', dmg: 160, dmgLv: 20, scaleAp: 0.75, range: 640, speed: 720, radius: 30, explodeR: 140, slowPct: 0.40, slowDur: 1.2, botRetreating: true, desc: 'A collapsing star that bursts on the first enemy hit: 160+20/rank (+75% MAGIC) and a 40% slow for 1.2s, 80% of the damage to everyone else within 140.' },
+      { name: 'Crush', icon: '⬤', type: 'nova', cd: 11, cdLv: -0.4, mana: 60, manaLv: 4, dmgType: 'magic', radius: 280, dmg: 120, dmgLv: 14, scaleAp: 0.5, pullTo: { target: 'caster', dist: 120, speed: 900 }, botAfterPull: true, desc: 'Collapse space in 280 around Nadir: 120+14/rank (+50% MAGIC), and every enemy (heroes and minions) is dragged 120 units toward him over 0.13s.' },
+      { name: 'Implosion', icon: '◎', type: 'zone', cd: [44, 38, 32], mana: [120, 140, 160], dmgType: 'magic', range: 560, radius: 280, delay: 0.9, ticks: 1, pullSpeed: 260, dmg: [300, 390, 480], scaleAp: 1.1, stun: 0.8, botCrowd: true, botExecuteHp: 0.4, desc: 'For 0.9s enemy heroes inside the 280 ring are dragged toward its centre at 260 u/s (Purify refuses it, a dash or Flicker leaves, rock stops it), then it implodes: 300/390/480 (+110% MAGIC) and a 0.8s stun.' },
     ],
   },
   {

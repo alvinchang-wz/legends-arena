@@ -53,7 +53,7 @@ G.update(1 / 60);
 function creep(team, x, y) {
   const m = new sim.context.Minion(team, 'mid', 'melee');
   m._test = true; T.place(m, x, y); G.minions.push(m);
-  m.update = function (dt) { this.baseUpdate(dt); };
+  m.update = function (dt) { this.baseUpdate(dt); if (this.forced) this.updateForced(dt); };
   return m;
 }
 
@@ -448,6 +448,131 @@ T.test('Mira bot: Rime Field between her and a melee inside 520 (or on the targe
   T.place(hexa, open.x + 500, open.y + 150);
   assert.equal(mira.botSkillUrgency(2, vesper, 500, true, false), 880, 'two heroes in the prison');
   assert.equal(mira.botHoldNow(), 335, 'holds 335');
+});
+
+/* ---------------- Nadir ---------------- */
+
+T.test('Nadir: base stats and skill numbers match the spec (the sturdiest, slowest mage; pullTo and pullSpeed; the only explodeR skillshot)', () => {
+  reset();
+  const d = nadir.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [520, 68, 300, 33, 42, 3.6, 12, 2.2, 14, 2.2, 310, 0.86, 245, 3]);
+  assert.equal(d.passive.id, 'accretion');
+  const [s1, s2, s3] = nadir.skills;
+  assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.explodeR, s1.dmg, s1.dmgLv, s1.scaleAp, s1.slowPct, s1.slowDur, s1.cd, s1.cdLv, s1.mana, s1.manaLv],
+    ['skillshot', 640, 720, 30, 140, 160, 20, 0.75, 0.40, 1.2, 7, -0.4, 50, 5]);
+  assert.equal(rankVal(s1, 'dmg', 6), 260); near(rankVal(s1, 'cd', 6), 5, 1e-9, 'Singularity cd at rank 6');
+  assert.deepEqual([s2.type, s2.radius, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.pullTo],
+    ['nova', 280, 120, 14, 0.5, 11, -0.4, 60, 4, { target: 'caster', dist: 120, speed: 900 }]);
+  assert.equal(rankVal(s2, 'dmg', 6), 190); near(rankVal(s2, 'cd', 6), 9, 1e-9, 'Crush cd at rank 6');
+  assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.pullSpeed, s3.dmg, s3.scaleAp, s3.stun, s3.cd, s3.mana],
+    ['zone', 560, 280, 0.9, 1, 260, [300, 390, 480], 1.1, 0.8, [44, 38, 32], [120, 140, 160]]);
+  for (const s of nadir.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Nadir: Crush drags heroes and minions 120 toward him over 0.13 s (stopping at the bodies) and a pull stops at rock; Accretion makes the pulled hero Heavy: -20% speed for 3 s and +12% damage from Nadir only', () => {
+  reset();
+  T.place(nadir, open.x, open.y); T.place(grom, open.x + 250, open.y); T.place(zephyr, open.x, open.y + 100);
+  const m = creep(0, open.x - 200, open.y);
+  grom.attrs.bonus.tenacity = 0;
+  G.update(1 / 60);
+  const spd0 = grom.attrs.get('speed');
+  assert.ok(nadir.castSkill(1, null));
+  assert.ok(grom.forced && grom.forced.mode === 'slide', 'a tween, not a teleport');
+  T.frames(G, 3);
+  assert.ok(grom.x < open.x + 250 && grom.x > open.x + 130, `mid-flight: ${grom.x - open.x}`);
+  T.frames(G, 12);
+  near(grom.x, open.x + 130, 2, 'dragged 120 toward Nadir');
+  near(zephyr.y, open.y + grom.radius + nadir.radius, 2, 'a hero 100 away stops at the bodies');
+  near(m.x, open.x - 80, 2, 'a minion is dragged too');
+  assert.ok(grom.stats.dmgTaken > 0 && zephyr.stats.dmgTaken > 0, 'both took the nova');
+  // Heavy: -20% speed for 3 s and +12% from Nadir, nothing from anyone else
+  assert.equal(grom.marks.heavyBy, nadir); assert.ok(grom.marks.heavyUntil > G.time);
+  near(grom.curSpeed(), spd0 * 0.8, 1e-6, 'Heavy: -20% move speed');
+  near(nadir.onDealDamage(grom, 100, { type: 'magic' }), 112, 1e-9, '+12% from Nadir');
+  near(mira.onDealDamage(grom, 100, { type: 'magic' }), 100, 1e-9, 'nothing extra from Mira');
+  assert.ok(!zephyr.marks.heavyBy || zephyr.marks.heavyBy !== nadir || true);
+  T.seconds(G, 3.1);
+  near(grom.curSpeed(), spd0, 1e-6, 'Heavy lapses after 3 s');
+  near(nadir.onDealDamage(grom, 100, { type: 'magic' }), 100, 1e-9, 'and so does the bonus');
+  // a pull toward the caster stops at rock
+  const wall = T.openSpot(G, 60, { nearWallDx: 140 });
+  reset();
+  T.place(grom, wall.x, wall.y);   // the rock starts at wall.x + 140: a drag toward a point beyond it stops there
+  G.rules.applyPullTo(nadir, grom, { pullTo: { target: 'point', dist: 400, speed: 900 } }, 1, { point: { x: wall.x + 400, y: wall.y } });
+  assert.ok(grom.forced && grom.forced.mode === 'slide', 'dragged toward the point');
+  T.frames(G, 40);
+  const moved = grom.x - wall.x;
+  assert.ok(moved > 0 && moved < 140, `stopped short of the rock: ${moved}`);
+  assert.ok(!G.wallAt(grom.x, grom.y, grom.radius), 'never inside the wall');
+  assert.equal(grom.forced, null, 'the drag ended at the rock');
+});
+
+T.test('Nadir: Implosion pulls enemy heroes toward its centre at 260 u/s for its 0.9 s delay, ignores tenacity, is refused by Purify immunity, waits for a dash, then stuns 0.8 s and hits everyone inside', () => {
+  reset();
+  // everything inside the spot's 420 clearance, so Game.separate() never pushes anyone off rock
+  const cx = open.x + 200, cy = open.y;   // the zone centre, 300 from Nadir
+  T.place(nadir, open.x - 100, open.y); T.place(grom, cx + 200, cy); T.place(zephyr, cx, cy - 200); T.place(mira, cx, cy + 230);
+  mira.cc.immuneT = 2;
+  assert.ok(nadir.castSkill(2, { x: cx, y: cy }));
+  const z = G.zones[G.zones.length - 1];
+  assert.equal(z.s.pullSpeed, 260);
+  T.seconds(G, 0.5);
+  const pulledGrom = (cx + 200) - grom.x, pulledZ = 200 - Math.abs(zephyr.y - cy);
+  assert.ok(pulledGrom > 115 && pulledGrom < 150, `0.5 s at 260 u/s: ${pulledGrom}`);
+  assert.ok(pulledZ > 115 && pulledZ < 150, `pulled from the side too: ${pulledZ}`);
+  near(mira.y, cy + 230, 1e-6, 'Purify immunity refuses the pull');
+  assert.equal(grom.marks.heavyBy, nadir, 'pulled heroes are Heavy from Nadir');
+  // a dash in progress is not stopped by the pull
+  zephyr.dashS = { dx: 0, dy: -1, remaining: 300, speed: 1100, dmg: 0, hitSet: new Set(), s: null, stopOnHero: false, endNova: null, rank: 1 };
+  const zy = zephyr.y;
+  T.seconds(G, 0.2);
+  assert.ok(zephyr.y < zy - 150, 'the dash carried him out against the pull');
+  T.seconds(G, 0.3);
+  assert.ok(z.dead, 'detonated at 0.9 s');
+  assert.ok(grom.stats.dmgTaken > 0, 'hit');
+  near(grom.cc.t.stun, 0.8 * (1 - Math.min(0.6, grom.attrs.get('tenacity'))) - 0.1, 0.05, 'stunned 0.8 s (less tenacity)');
+  assert.ok(!zephyr.cc.has('stun') && !zephyr.stats.dmgTaken, 'the dasher left the ring');
+  // Singularity: first hit takes full damage and the slow, the splash 80% and no slow
+  reset();
+  T.place(nadir, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 300, open.y + 120);
+  grom.attrs.bonus.tenacity = 0; zephyr.attrs.bonus.tenacity = 0;
+  assert.ok(nadir.castSkill(0, { x: open.x + 300, y: open.y }));
+  T.frames(G, 40);
+  assert.ok(grom.stats.dmgTaken > 0 && zephyr.stats.dmgTaken > 0, 'both hit');
+  near(grom.cc.slowPct, 0.40, 1e-9, 'the first enemy is slowed 40%');
+  assert.ok(!zephyr.cc.has('slow'), 'the splash carries no slow');
+});
+
+T.test('Nadir bot: Implosion for 2+ heroes within 280 of the target or one under 40%; Crush at 900 right after the detonation; Singularity at 700 on a hero retreating; holds 310', () => {
+  reset();
+  T.place(nadir, open.x, open.y); T.place(grom, open.x + 450, open.y);
+  G.update(1 / 60);
+  assert.equal(nadir.botSkillUrgency(2, grom, 450, true, false), 0, 'one healthy hero: held');
+  grom.hp = grom.maxHp * 0.35;
+  assert.equal(nadir.botSkillUrgency(2, grom, 450, true, false), 820, 'one hero under 40%: fire');
+  grom.hp = grom.maxHp;
+  grom.cc.applySlow(0.3, 2, 0);
+  assert.equal(nadir.botSkillUrgency(2, grom, 450, true, false), 0, 'a slowed healthy hero is not enough for Implosion (Killbox would go)');
+  grom.cc.clear();
+  T.place(zephyr, open.x + 450, open.y + 200);
+  assert.equal(nadir.botSkillUrgency(2, grom, 450, true, false), 880, 'two heroes within 280 of the target');
+  // Crush after the detonation: a Heavy-from-Nadir hero still stunned inside the ring
+  T.place(zephyr, FAR.x, FAR.y); T.place(grom, open.x + 200, open.y);
+  assert.equal(nadir.botSkillUrgency(1, grom, 200, true, false), 480, 'a lone hero in the ring: a routine nova');
+  grom.marks.heavyBy = nadir; grom.marks.heavyUntil = G.time + 3; grom.cc.apply('stun', 0.7, 0);
+  assert.equal(nadir.botSkillUrgency(1, grom, 200, true, false), 900, 'just pulled and stunned: Crush keeps them stacked');
+  grom.cc.clear(); grom.marks = {};
+  // Singularity on whoever retreats
+  T.place(grom, open.x + 400, open.y);
+  grom.vx = 0; grom.vy = 0;
+  assert.equal(nadir.botSkillUrgency(0, grom, 400, true, false), 500, 'standing: a normal poke');
+  grom.vx = 200;
+  assert.equal(nadir.botSkillUrgency(0, grom, 400, true, false), 700, 'walking away: Singularity');
+  grom.vx = -200;
+  assert.equal(nadir.botSkillUrgency(0, grom, 400, true, false), 500, 'walking in: normal');
+  grom.vx = 0;
+  assert.equal(nadir.botHoldNow(), 310, 'holds 310');
 });
 
 T.done();

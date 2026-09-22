@@ -2654,6 +2654,16 @@ class Hero extends Unit {
     const k = Math.min(0.6 * d, s.range || 500) / d;
     return { x: this.x + dx * k, y: this.y + dy * k };
   }
+  /* F29 (Nadir's hint): an enemy hero inside `r` whom this hero displaced
+     (Heavy from him, F15) and who is still stunned: the moment after an
+     Implosion lands. */
+  pulledHeroInside(r) {
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || !e.marks || this.distTo(e) >= r + e.radius) continue;
+      if (e.marks.heavyBy === this && e.marks.heavyUntil > Game.time && e.cc.has('stun')) return e;
+    }
+    return null;
+  }
   /* F29 (Volt's hint): a visible enemy hero inside `r` who is on this bot:
      targeting it, or having damaged it in the last 1.5 s. */
   diverInRing(r) {
@@ -2783,6 +2793,8 @@ class Hero extends Unit {
         if (s.bounce && s.botBounce && isHero && this.bounceCompany(s, t)) return 720;
         // F29 (Mira's hint): Frost Shard into the field: a hero standing in one of her lingering patches
         if (s.botField && isHero && this.inOwnLinger(t)) return 700;
+        // F29 (Nadir's hint): Singularity on whoever retreats: a hero moving away from him
+        if (s.botRetreating && isHero && (t.vx || 0) * (t.x - this.x) + (t.vy || 0) * (t.y - this.y) > 40 * d) return 700;
         // F29 (Quill's hint): a boomerang is best at a hero walking toward him, so the return pass crosses them too
         if (s.boomerang && isHero && (t.vx || 0) * (this.x - t.x) + (t.vy || 0) * (this.y - t.y) > 40 * d) return 560;
         return isHero ? 500 : 220;
@@ -2812,6 +2824,8 @@ class Hero extends Unit {
              any Ember is still worth the ring as a routine nuke (+65 +20% MAGIC per stack) */
           return this.markedHeroWithin({ tag: s.botMark.tag, stacks: 1 }, reach) ? 520 : 0;
         }
+        // F29 (Nadir's hint): Crush right after the detonation: a hero he just pulled (Heavy from him) still stunned inside the ring
+        if (s.botAfterPull && this.pulledHeroInside(s.radius)) return 900;
         if (near >= 2) return hot ? 900 : 880;
         // F29 (Volt's hint): a botMelee ring (Flashover) is held for a melee hero reaching it (830) or, since a
         // diver's window inside 240 is too short for the think tick to catch a melee there (measured: none in
@@ -4690,7 +4704,7 @@ class Zone {
       const nx = h.x + rx * k, ny = h.y + ry * k;
       if (Game.wallAt(nx, ny, h.radius)) continue;
       h.x = nx; h.y = ny;
-      h.marks.heavyUntil = Game.time + 3;
+      h.marks.heavyUntil = Game.time + 3; h.marks.heavyBy = this.owner;   // Nadir's Accretion
     }
   }
   update(dt) {
