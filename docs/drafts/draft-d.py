@@ -211,6 +211,13 @@ for c in (BASE_A, BASE_B): circle(bush, c, 30, 0)
 bush = remove_small(bush, 25)
 bush = symmetrise(bush)
 BUSHES = [{'poly': b['poly'], 'x': b['x'], 'y': b['y'], 'r': round(max(3.0, math.sqrt(b['area'] / math.pi)), 1)} for b in polygons(bush, 0.7, 25)]
+# the mid lane has no bushes: the light patches the minimap draws on the lane at
+# the river crossing are bank decoration, not concealment (confirmed by the user)
+def _dist_mid(x, y):
+    (ax_, ay_), (bx_, by_) = BASE_A, BASE_B
+    vx_, vy_ = bx_ - ax_, by_ - ay_; t = max(0.0, min(1.0, ((x - ax_) * vx_ + (y - ay_) * vy_) / (vx_ * vx_ + vy_ * vy_)))
+    return math.hypot(x - (ax_ + vx_ * t), y - (ay_ + vy_ * t))
+BUSHES = [b for b in BUSHES if _dist_mid(b['x'], b['y']) > LANE_W / 2 + 2]
 
 # ---------------------------------------------------------------- measured corrections (phone survey)
 # walls_measured.json: per-rock translation fitted from wall-contact marks (mlbb_survey.reconcile);
