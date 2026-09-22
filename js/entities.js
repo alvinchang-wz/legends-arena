@@ -2618,6 +2618,35 @@ class Hero extends Unit {
     if (tt && tt.s && tt.s.botKiteHold) hold = tt.s.botKiteHold;
     return hold;
   }
+  /* F29 (Volt's hint): is there another enemy unit (not a structure) inside
+     the shot's bounce range of `t` for the arc to jump to? */
+  bounceCompany(s, t) {
+    const r = (s.bounce && s.bounce.range) || 300;
+    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+      if (u === t || u.isStructure || !u.alive) continue;
+      if (u.distTo(t) < r) return true;
+    }
+    return false;
+  }
+  /* F29 (Volt's hint): a visible enemy hero inside `r` who is on this bot:
+     targeting it, or having damaged it in the last 1.5 s. */
+  diverInRing(r) {
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || this.distTo(e) >= r || !Game.canSee(this.team, e)) continue;
+      if (e.curTarget === this || e.aiTarget === this) return e;
+      if (this.recentDmg.some(k => k.h === e && Game.time - k.t < 1.5)) return e;
+    }
+    return null;
+  }
+  /* F29 (Volt's hint): a target a multi-tick zone can sit on: a Tank or
+     Fighter (the frontliner), or a hero standing still (under 30 u/s)
+     while this bot is in a fight around them. */
+  frontlineTarget(t) {
+    if (!t || t.type !== 'hero') return false;
+    const role = t.def0 && t.def0.role;
+    if (role === 'Tank' || role === 'Fighter') return true;
+    return Math.hypot(t.vx || 0, t.vy || 0) < 30 && this.inFight(t);
+  }
   /* F29 (Quill's hint): enemy heroes a zone centred on `t` would cover. */
   zoneCrowd(s, t) {
     let n = 0;
@@ -2695,6 +2724,7 @@ class Hero extends Unit {
           !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.unitHeld(t))) &&   // F29 (Quill's hint): a crowd in the box, or a held hero
           !(s.botCcOk && this.unitHeld(t)) &&   // F29 (Lumen's hint): a target that cannot run
           !(s.type === 'zone' && s.botMark && this.botMarkOk(s.botMark, t)) &&   // F29 (Ignis's hint): a target already carrying the mark
+          !(s.type === 'zone' && s.botFrontline && this.frontlineTarget(t)) &&   // F29 (Volt's hint): a frontliner, or a hero standing still in a fight
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2723,6 +2753,8 @@ class Hero extends Unit {
         }
         if (locked && !cc) return 860;
         if (cc && isHero && !locked) return 820;
+        // F29 (Volt's hint): a bouncing shot is best when a second enemy unit stands inside its bounce range of the target
+        if (s.bounce && s.botBounce && isHero && this.bounceCompany(s, t)) return 720;
         // F29 (Quill's hint): a boomerang is best at a hero walking toward him, so the return pass crosses them too
         if (s.boomerang && isHero && (t.vx || 0) * (this.x - t.x) + (t.vy || 0) * (this.y - t.y) > 40 * d) return 560;
         return isHero ? 500 : 220;
@@ -2753,6 +2785,10 @@ class Hero extends Unit {
           return this.markedHeroWithin({ tag: s.botMark.tag, stacks: 1 }, reach) ? 520 : 0;
         }
         if (near >= 2) return hot ? 900 : 880;
+        // F29 (Volt's hint): a botMelee ring (Flashover) is held for a melee hero reaching it (830) or, since a
+        // diver's window inside 240 is too short for the think tick to catch a melee there (measured: none in
+        // 16 minutes), for any hero inside it who is attacking this bot (800)
+        if (s.botMelee) return this.meleeThreat(s.radius + 20) ? 830 : this.diverInRing(s.radius + 20) ? 800 : 0;
         if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
         // F29 (Karn's hint): Iron Slam straight after a hook, while the mark's bonus still applies
         if (s.bonusVsMark && this.markedHeroInside(s)) return 900;
@@ -2798,6 +2834,8 @@ class Hero extends Unit {
         if (d >= s.range || !(isHero || farmOk)) return 0;
         // F29 (Ignis's hint): Pyroclasm centred on a target already carrying an Ember
         if (s.botMark && !s.botCrowd && isHero && this.botMarkOk(s.botMark, t)) return 860;
+        // F29 (Volt's hint): Thunderhead on the enemy frontliner, or on a hero standing still in a fight
+        if (s.botFrontline && isHero && this.frontlineTarget(t)) return 820;
         // F29 (Quill's hint): a crowd zone (botCrowd) wants 2+ heroes inside its radius around the target, or one who is held
         if (s.botCrowd) {
           if (!isHero) return 0;

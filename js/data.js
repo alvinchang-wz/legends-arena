@@ -397,19 +397,29 @@ const HEROES = [
   },
   {
     id: 'volt', name: 'Volt', role: 'Mage', icon: '⚡', color: '#fde047', projColor: '#fef08a',
-    desc: 'A stormcaller who shreds magic resist with every spark.',
+    desc: 'A sustained anti-tank battle mage: Chain Arc bounces through a crowd and every hit strips magic resist.',
     difficulty: 2, damageStyle: 'magic',
+    /* docs/design/heroes.md, Mages: Volt. The only retargeting projectile
+       (F14 bounce): Chain Arc stops on the first unit and arcs to up to
+       three more within 320 at 0.75 per hop (heroes count as 150 closer,
+       structures never). Static is heroes-only. Thunderhead's slow ramps
+       per tick (F28 slowPctLv). Bot fields: botHold 320; botBounce rates
+       Chain Arc highest with a second enemy unit inside its bounce range
+       of the target; botMelee holds Flashover for a melee hero inside its
+       ring (or 2+ heroes); botFrontline lets Thunderhead through the ult
+       gate on a Tank / Fighter, or on a hero standing still in a fight. */
+    botHold: 320,
     hp: 505, hpLv: 63, mp: 290, mpLv: 32, atk: 44, atkLv: 3.8,
     armor: 9, armorLv: 1.9, mr: 13, mrLv: 2.1,
-    range: 325, atkSpd: 0.88, speed: 270,
+    range: 325, atkSpd: 0.88, speed: 250,
     passive: {
       name: 'Static', icon: '⚡', id: 'static',
-      desc: 'Skill hits cut 8 Magic Resist for 4s, stacking to 5. The anti-tank mage: nobody else shreds resists.',
+      desc: 'Skill hits on enemy heroes apply a Static stack for 4s (max 5); each stack is 8 flat magic penetration against that target. Non-heroes never gain stacks.',
     },
     skills: [
-      { name: 'Arc Lance', icon: '↯', type: 'skillshot', cd: 6, mana: 50, dmgType: 'magic', dmg: 170, dmgLv: 20, scaleAp: 0.75, range: 680, speed: 1050, radius: 22, pierce: true, desc: 'Throw a bolt that chains through a line of enemies.' },
-      { name: 'Flashover', icon: '✳', type: 'nova', cd: 9, mana: 60, dmgType: 'magic', radius: 230, dmg: 140, dmgLv: 16, scaleAp: 0.55, stun: 0.5, desc: 'Detonate a shock around you, briefly stunning.' },
-      { name: 'Thunderhead', icon: '☁', type: 'zone', cd: 40, mana: 115, dmgType: 'magic', range: 600, radius: 220, delay: 0.4, ticks: 5, interval: 0.45, dmg: 64, dmgLv: 8, scaleAp: 0.28, desc: 'A storm cloud that strikes five times. Pays for the shred with softer ticks.' },
+      { name: 'Chain Arc', icon: '↯', type: 'skillshot', cd: 5, cdLv: -0.2, mana: 45, manaLv: 5, dmgType: 'magic', dmg: 160, dmgLv: 20, scaleAp: 0.75, range: 680, speed: 1100, radius: 22, pierce: false, bounce: { count: 3, range: 320, decay: 0.75 }, botBounce: true, desc: 'A bolt that stops on the first enemy for 160+20/rank (+75% MAGIC), then arcs to up to three more within 320 at 75% per hop (heroes first, never a structure).' },
+      { name: 'Flashover', icon: '✳', type: 'nova', cd: 10, cdLv: -0.4, mana: 60, manaLv: 4, dmgType: 'magic', radius: 240, dmg: 130, dmgLv: 16, scaleAp: 0.55, stun: 0.5, botMelee: true, desc: 'Discharge a shock in 240 around Volt: 130+16/rank (+55% MAGIC) and a 0.5s stun.' },
+      { name: 'Thunderhead', icon: '☁', type: 'zone', cd: [40, 35, 30], mana: [110, 130, 150], dmgType: 'magic', range: 600, radius: 240, delay: 0.4, ticks: 5, interval: 0.45, dmg: [70, 95, 120], scaleAp: 0.3, slowPct: 0.10, slowPctLv: 0.08, slowDur: 0.6, botFrontline: true, desc: 'A storm cloud in 240 that strikes five times over 2.2s for 70/95/120 (+30% MAGIC) each; the slow builds from 10% to 42% per strike (0.6s) and every strike applies Static.' },
     ],
   },
   {

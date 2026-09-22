@@ -725,9 +725,12 @@ const PASSIVES = {
     },
   },
 
+  /* Volt — skill hits on enemy HEROES stack Static (4 s, five at most),
+     8 flat magic penetration per stack against that target; creeps,
+     monsters and structures never carry it. */
   static: {
     onSkillHit(h, target) {
-      if (!target.marks || target.isStructure) return;
+      if (target.type !== 'hero' || !target.marks) return;
       const m = target.marks;
       m.static = (m.staticT > Game.time) ? Math.min(5, m.static + 1) : 1;
       m.staticT = Game.time + 4;

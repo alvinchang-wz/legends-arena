@@ -48,10 +48,12 @@ function reset() {
 reset();
 G.update(1 / 60);
 
-/* A creep of `team` parked at (x, y) for the rest of the test (reset removes it). */
+/* A creep of `team` parked at (x, y) for the rest of the test (reset removes
+   it): it still runs CC, shields and dots, but never walks its lane. */
 function creep(team, x, y) {
   const m = new sim.context.Minion(team, 'mid', 'melee');
   m._test = true; T.place(m, x, y); G.minions.push(m);
+  m.update = function (dt) { this.baseUpdate(dt); };
   return m;
 }
 
@@ -207,6 +209,123 @@ T.test('Ignis bot: Flame Fan inside 460; Pyroclasm only on a target carrying an 
   const x0 = ignis.x;
   for (let k = 0; k < 12; k++) Hero.prototype.botControl.call(ignis, 1 / 60);
   assert.ok(ignis.x < x0 - 5, `stepped away from the melee: ${ignis.x - x0}`);
+});
+
+/* ---------------- Volt ---------------- */
+
+T.test('Volt: base stats and skill numbers match the spec (the only bounce, Static heroes-only, a per-tick slow ramp)', () => {
+  reset();
+  const d = volt.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [505, 63, 290, 32, 44, 3.8, 9, 1.9, 13, 2.1, 325, 0.88, 250, 2]);
+  assert.equal(d.passive.id, 'static');
+  const [s1, s2, s3] = volt.skills;
+  assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.pierce, s1.dmg, s1.dmgLv, s1.scaleAp, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.bounce],
+    ['skillshot', 680, 1100, 22, false, 160, 20, 0.75, 5, -0.2, 45, 5, { count: 3, range: 320, decay: 0.75 }]);
+  assert.equal(rankVal(s1, 'dmg', 6), 260); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Arc cd at rank 6');
+  assert.deepEqual([s2.type, s2.radius, s2.dmg, s2.dmgLv, s2.scaleAp, s2.stun, s2.cd, s2.cdLv, s2.mana, s2.manaLv],
+    ['nova', 240, 130, 16, 0.55, 0.5, 10, -0.4, 60, 4]);
+  assert.equal(rankVal(s2, 'dmg', 6), 210); near(rankVal(s2, 'cd', 6), 8, 1e-9, 'Flashover cd at rank 6');
+  assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.interval, s3.dmg, s3.scaleAp, s3.slowPct, s3.slowPctLv, s3.slowDur, s3.cd, s3.mana],
+    ['zone', 600, 240, 0.4, 5, 0.45, [70, 95, 120], 0.3, 0.10, 0.08, 0.6, [40, 35, 30], [110, 130, 150]]);
+  for (const s of volt.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Volt: Chain Arc stops on the first unit, bounces to a second target within 320 at 0.75 (then 0.56), skips structures, and Static stacks on heroes only', () => {
+  reset();
+  T.place(volt, open.x, open.y);
+  const a = creep(1, open.x + 300, open.y), b = creep(1, open.x + 300, open.y + 200), c = creep(1, open.x + 300, open.y + 400);
+  const far = creep(1, open.x + 300, open.y + 800);   // 400 from c: out of the 320 hop
+  const hp = [a, b, c, far].map(m => m.hp);
+  assert.ok(volt.castSkill(0, { x: open.x + 300, y: open.y }));
+  T.frames(G, 60);
+  const dealt = [a, b, c, far].map((m, i) => hp[i] - m.hp);
+  assert.ok(dealt[0] > 0 && dealt[1] > 0 && dealt[2] > 0, `first, second and third hits: ${dealt}`);
+  assert.equal(dealt[3], 0, 'nothing 400 from the last victim');
+  near(dealt[1] / dealt[0], 0.75, 0.03, 'second hit at 0.75');
+  near(dealt[2] / dealt[0], 0.5625, 0.03, 'third hit at 0.75 x 0.75');
+  assert.ok(!a.marks || !a.marks.static, 'no Static on a creep');
+  // a hero bounce carries Static; a creep nearer than a hero is skipped for the hero (150 bias)
+  reset();
+  T.place(volt, open.x, open.y); T.place(bastion, open.x + 300, open.y); T.place(nadir, open.x + 300, open.y + 250);
+  creep(1, open.x + 300, open.y + 130);
+  assert.ok(volt.castSkill(0, { x: open.x + 300, y: open.y }));
+  T.frames(G, 40);
+  assert.equal(bastion.marks.static, 1, 'first hit: one Static');
+  assert.equal(nadir.marks.static, 1, 'the bounce preferred the hero 250 away over the creep at 130');
+  assert.ok(nadir.stats.dmgTaken > 0);
+  // Static: +8 flat magic pen per stack, five at most, 4 s
+  const pkt = { type: 'magic' };
+  volt.onDealDamage(bastion, 100, pkt);
+  assert.equal(pkt.pen.flat, 8, 'one stack: 8 pen');
+  for (let k = 0; k < 6; k++) volt.fire('onSkillHit', bastion, 10, volt.skills[0]);
+  assert.equal(bastion.marks.static, 5, 'capped at 5');
+  const pkt2 = { type: 'magic' };
+  volt.onDealDamage(bastion, 100, pkt2);
+  assert.equal(pkt2.pen.flat, 40, 'five stacks: 40 pen');
+  const pkt3 = { type: 'physical' };
+  volt.onDealDamage(bastion, 100, pkt3);
+  assert.ok(!pkt3.pen, 'physical damage gets no magic pen');
+  T.seconds(G, 4.1);
+  const pkt4 = { type: 'magic' };
+  volt.onDealDamage(bastion, 100, pkt4);
+  assert.ok(!pkt4.pen, 'lapsed after 4 s');
+});
+
+T.test('Volt: Thunderhead strikes five times over 2.2 s, its slow ramps 10% -> 42% per tick, every tick applies Static; Flashover stuns 0.5 s', () => {
+  reset();
+  T.place(volt, open.x, open.y); T.place(bastion, open.x + 400, open.y);
+  bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;   // read the slows raw
+  assert.ok(volt.castSkill(2, { x: open.x + 400, y: open.y }));
+  const z = G.zones[G.zones.length - 1];
+  assert.equal(z.ticks, 5);
+  const slows = [];
+  let hits = 0, lastTaken = 0;
+  for (let k = 0; k < 60 * 3; k++) {
+    G.update(1 / 60);
+    if (bastion.stats.dmgTaken !== lastTaken) { hits++; lastTaken = bastion.stats.dmgTaken; slows.push(bastion.cc.slowPct); }
+  }
+  assert.equal(hits, 5, 'five strikes');
+  assert.deepEqual(slows.map(v => Math.round(v * 100)), [10, 18, 26, 34, 42], 'the slow ramps per tick');
+  assert.equal(bastion.marks.static, 5, 'a Static per strike');
+  assert.ok(z.dead, 'gone after the fifth strike');
+  // Flashover
+  reset();
+  T.place(volt, open.x, open.y); T.place(bastion, open.x + 200, open.y); T.place(nadir, open.x + 300, open.y);
+  assert.ok(volt.castSkill(1, null));
+  near(bastion.cc.t.stun, 0.5 * (1 - Math.min(0.6, bastion.attrs.get('tenacity'))), 1e-6, 'stunned 0.5 s inside 240');
+  assert.ok(!nadir.cc.has('stun') && !nadir.stats.dmgTaken, 'outside the ring');
+});
+
+T.test('Volt bot: Chain Arc rates highest with a second enemy unit within 320 of the target; Flashover only for a melee inside its ring or 2+ heroes; Thunderhead on a frontliner or a hero standing still in a fight', () => {
+  reset();
+  T.place(volt, open.x, open.y); T.place(vesper, open.x + 500, open.y);
+  G.update(1 / 60);
+  assert.equal(volt.botSkillUrgency(0, vesper, 500, true, false), 500, 'a lone target: a normal poke');
+  T.place(hexa, open.x + 500, open.y + 250);
+  assert.equal(volt.botSkillUrgency(0, vesper, 500, true, false), 720, 'a second hero within 320 of the target: the arc bounces');
+  T.place(hexa, FAR.x, FAR.y);
+  creep(1, open.x + 500, open.y + 200);
+  assert.equal(volt.botSkillUrgency(0, vesper, 500, true, false), 720, 'a creep counts as company too');
+  assert.equal(volt.botSkillUrgency(1, vesper, 500, true, false), 0, 'Flashover: nobody in the ring');
+  T.place(vesper, open.x + 200, open.y);
+  assert.equal(volt.botSkillUrgency(1, vesper, 200, true, false), 0, 'a ranged hero in the ring: still held');
+  T.place(bastion, open.x + 200, open.y + 100);
+  assert.equal(volt.botSkillUrgency(1, bastion, 220, true, false), 880, 'two heroes in the ring');
+  T.place(vesper, FAR.x, FAR.y);
+  assert.equal(volt.botSkillUrgency(1, bastion, 220, true, false), 830, 'a melee hero reaching the ring');
+  T.place(bastion, FAR.x, FAR.y); T.place(vesper, open.x + 200, open.y);
+  vesper.aiTarget = volt;
+  assert.equal(volt.botSkillUrgency(1, vesper, 200, true, false), 800, 'a ranged hero in the ring who is on Volt: the ring answers the dive');
+  vesper.aiTarget = null;
+  // Thunderhead
+  T.place(bastion, open.x + 450, open.y); T.place(vesper, open.x + 450, open.y + 600);
+  assert.equal(volt.botSkillUrgency(2, bastion, 450, true, false), 820, 'a Tank at full HP: the frontliner');
+  vesper.vx = 200; vesper.vy = 0;
+  assert.equal(volt.botSkillUrgency(2, vesper, 450, true, false), 0, 'a healthy moving marksman, no crowd: held');
+  vesper.vx = 0; volt.lastDmgT = G.time;
+  assert.equal(volt.botSkillUrgency(2, vesper, 450, true, false), 820, 'standing still while Volt is in a fight');
+  assert.equal(volt.botHoldNow(), 320, 'holds 320');
 });
 
 T.done();
