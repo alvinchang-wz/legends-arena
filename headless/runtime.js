@@ -366,6 +366,7 @@ class HeadlessSimulator {
       lane: hero.lane,
       alive: !!hero.alive,
       respawnMs: milliseconds(hero.respawnT),
+      recallMs: milliseconds(hero.recallT),
       position: { x: round(hero.x), y: round(hero.y) },
       velocity: { x: round(hero.vx), y: round(hero.vy) },
       facingRad: round(hero.facing, 3),
