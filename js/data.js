@@ -75,16 +75,17 @@ function mitigation(defence, flatPen, pctPen) {
      immobilize  — rooted: cannot move, CAN attack and cast
      silence     — cannot cast, CAN move and attack
      stun        — nothing at all
-     airborne    — nothing at all, and displaces you
+     airborne    — nothing at all, displaces you, and IGNORES tenacity
+                   (docs/design/heroes.md F28: a launch is a launch)
      suppress    — nothing at all, and IGNORES tenacity
 
-   Tenacity shortens every type except suppression. */
+   Tenacity shortens every type except airborne and suppression. */
 const CC_TYPES = {
   slow:       { move: false, act: true,  cast: true,  tenacity: true,  icon: '❄', label: 'Slowed' },
   immobilize: { move: false, act: true,  cast: true,  tenacity: true,  icon: '🌿', label: 'Rooted' },
   silence:    { move: true,  act: true,  cast: false, tenacity: true,  icon: '🔇', label: 'Silenced' },
   stun:       { move: false, act: false, cast: false, tenacity: true,  icon: '💫', label: 'Stunned' },
-  airborne:   { move: false, act: false, cast: false, tenacity: true,  icon: '🌪', label: 'Airborne' },
+  airborne:   { move: false, act: false, cast: false, tenacity: false, icon: '🌪', label: 'Airborne' },
   suppress:   { move: false, act: false, cast: false, tenacity: false, icon: '⛓', label: 'Suppressed' },
 };
 /* Ordered hardest-first, for "what does the health bar pip show". */
@@ -110,7 +111,17 @@ const CC_PRIORITY = ['suppress', 'airborne', 'stun', 'silence', 'immobilize', 's
 
    crowd control — any CC_TYPES key as a duration in seconds, e.g.
      stun: 1.2, silence: 1.5, immobilize: 1.6, airborne: 0.7
-     slowPct + slowDur for slows, knockback for instant displacement.
+     slowPct + slowDur for slows, knockback for a tweened shove (F15).
+
+   rank scaling (docs/design/heroes.md F1, read through rankVal()):
+     cd / mana / dmg / heal / any CC key may be a per-rank array
+     ([46, 42, 38] for an ultimate), or a scalar with a `<key>Lv` delta
+     (cd: 8, cdLv: -0.4 -> 8, 7.6, ... 6). slowPctLv is the one exception:
+     it grows per zone TICK, not per rank (F28).
+   target-aware damage (F2): pctMaxHp (+pctMaxHpCap vs non-heroes),
+     missingPct / missingPctLv / missingCap, selfMissingPct / selfMissingCap,
+     bonusVsMark {tag, within, mult}, selfMissingBonus {perPct, per, max},
+     canCrit (one roll per cast, novas), dmgMult (overheat, F5).
 */
 const HEROES = [
   {

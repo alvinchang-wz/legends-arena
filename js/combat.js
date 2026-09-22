@@ -52,12 +52,18 @@ class Stats {
    live timers rather than caching flags, so a CC expiring mid-frame
    frees the unit on the same frame. */
 class CCState {
-  constructor() {
+  constructor(owner) {
+    this.owner = owner || null;  // the unit these timers belong to (hooks: onCC, self states)
     this.t = {};                 // type -> remaining seconds
     for (const k in CC_TYPES) this.t[k] = 0;
     this.slowPct = 0;
     this.immuneT = 0;            // purify / spell immunity window
     this.active = 0;             // how many timers are running: 0 lets the getters answer at once
+  }
+  /* F19: a self state (Weigh Anchor, Shade Step) can list CC kinds it ignores. */
+  immuneTo(kind) {
+    const o = this.owner;
+    return !!(o && o.state && o.state.t > 0 && o.state.s.ccImmune && o.state.s.ccImmune.indexOf(kind) >= 0);
   }
   recount() {
     let n = 0;
@@ -69,11 +75,14 @@ class CCState {
     const def = CC_TYPES[type];
     if (!def || !(dur > 0)) return 0;
     if (this.immuneT > 0 && type !== 'suppress') return 0;
+    if (this.immuneTo(type)) return 0;
     let d = dur;
     if (def.tenacity) d *= 1 - clamp(tenacity, 0, COMBAT.TENACITY_CAP);
     // CC does not stack, it refreshes: the longer of old and new wins
     if (d > this.t[type]) this.t[type] = d;
     this.recount();
+    // F28 / F18 / F23: the unit reacts (airborne drops a dash, a channel breaks, a taunt walks)
+    if (this.owner && this.owner.onCC) this.owner.onCC(type, d);
     return d;
   }
   applySlow(pct, dur, tenacity = 0) {
@@ -155,6 +164,8 @@ function resolveDamage(src, target, packet) {
       crit = true;
       amount *= COMBAT.CRIT_DMG_BASE + S.get('critDmg');
     }
+  } else if (packet.critRolled) {
+    crit = true;   // a nova with canCrit rolled once for the whole cast (F28); amount already scaled
   }
 
   /* --- attacker-side damage modifiers (passives, buffs) --- */
@@ -264,16 +275,64 @@ function resolveDamage(src, target, packet) {
   return dmg;
 }
 
-/* Apply every CC a skill definition carries, in one call. */
-function applySkillCC(src, target, s) {
+/* ============================================================
+   Rank scaling (docs/design/heroes.md F1)
+   ============================================================
+   A skill field at a rank. Arrays index by rank (an ultimate's
+   cd: [46, 42, 38]); a scalar with a sibling `<key>Lv` delta grows per
+   rank (cd: 8, cdLv: -0.4). Rank 0 (unlearned) reads as rank 1: nothing
+   unlearned ever casts, but tooltips and sub-skills still need a number.
+   `slowPctLv` is per zone tick (F28), never per rank, so it is skipped. */
+const RANK_TICK_KEYS = { slowPct: true };
+function rankVal(s, key, rank) {
+  if (!s) return undefined;
+  const v = s[key];
+  if (Array.isArray(v)) {
+    const r = rank > v.length ? v.length : rank > 1 ? rank : 1;
+    return v[(r | 0) - 1];
+  }
+  if (typeof v !== 'number' || RANK_TICK_KEYS[key]) return v;
+  const lv = s[key + 'Lv'];
+  return (typeof lv === 'number' && rank > 1) ? v + lv * (rank - 1) : v;
+}
+
+/* Apply every CC a skill definition carries, in one call. `rank` resolves
+   per-rank arrays (F1); `over` may carry a `slowPct` computed by the caller
+   (a zone tick's slowPctLv ramp, F28). */
+function applySkillCC(src, target, s, rank, over) {
   if (!s || !target.cc) return;
+  const r = rank || (src && src.skillRankOf ? src.skillRankOf(s) : 1);
   const ten = target.attrs ? target.attrs.get('tenacity') : 0;
   for (const type in CC_TYPES) {
-    if (type === 'slow') continue;
-    if (s[type]) target.cc.apply(type, s[type], ten);
+    if (type === 'slow' || type === 'taunt') continue;
+    if (s[type]) target.cc.apply(type, rankVal(s, type, r), ten);
   }
-  if (s.slowPct) target.cc.applySlow(s.slowPct, s.slowDur || 1.5, ten);
-  if (s.knockback) applyKnockback(src, target, s.knockback);
+  const slowPct = (over && over.slowPct !== undefined) ? over.slowPct : rankVal(s, 'slowPct', r);
+  if (slowPct) target.cc.applySlow(slowPct, rankVal(s, 'slowDur', r) || 1.5, ten);
+  if (s.taunt) applyTaunt(src, target, rankVal(s, 'taunt', r), ten);
+  if (s.knockback) applyKnockback(src, target, rankVal(s, 'knockback', r), s, r);
+}
+
+/* F28 chill lock. Every Chill stack (Mira's passive today, a lingering Frost
+   zone later) lands through here so `marks.chillImmuneT` is honoured in one
+   place: a target that has just thawed cannot be re-frozen until it passes.
+   `opts.immuneAfter` sets the lock on a freeze (Mira's kit will pass 2.5). */
+function applyChill(src, target, opts) {
+  if (!target.marks || !target.cc || target.isStructure || !target.alive) return false;
+  const m = target.marks;
+  if (m.chillImmuneT > Game.time) return false;
+  m.chill = (m.chill && m.chillT > Game.time) ? m.chill + 1 : 1;
+  m.chillT = Game.time + 4;
+  const ten = target.attrs ? target.attrs.get('tenacity') : 0;
+  if (m.chill >= 4) {
+    m.chill = 0;
+    target.cc.apply('stun', 0.8, ten);
+    if (opts && opts.immuneAfter) m.chillImmuneT = Game.time + opts.immuneAfter;
+    Game.fx.ring(target.x, target.y, target.radius + 26, THEME.ccSlow, 0.5);
+  } else {
+    target.cc.applySlow(0.08 * m.chill, 4, ten);
+  }
+  return true;
 }
 
 /* Instant displacement away from `src`. Not a timer — it resolves now and the
@@ -390,22 +449,8 @@ const PASSIVES = {
 
   /* Mira — stacking chill that freezes at four stacks. */
   frostbite: {
-    onSkillHit(h, target) { PASSIVES.frostbite._chill(h, target); },
-    onBasicHit(h, target) { PASSIVES.frostbite._chill(h, target); },
-    _chill(h, target) {
-      if (!target.marks || target.isStructure) return;
-      const m = target.marks;
-      m.chill = (m.chill && m.chillT > Game.time) ? m.chill + 1 : 1;
-      m.chillT = Game.time + 4;
-      const ten = target.attrs ? target.attrs.get('tenacity') : 0;
-      if (m.chill >= 4) {
-        m.chill = 0;
-        target.cc.apply('stun', 0.8, ten);
-        Game.fx.ring(target.x, target.y, target.radius + 26, THEME.ccSlow, 0.5);
-      } else {
-        target.cc.applySlow(0.08 * m.chill, 4, ten);
-      }
-    },
+    onSkillHit(h, target) { applyChill(h, target); },
+    onBasicHit(h, target) { applyChill(h, target); },
   },
 
   /* Karn — attacks cut cooldowns, hits build armor. */
@@ -658,5 +703,5 @@ const PASSIVES = {
 };
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, PASSIVES };
+  module.exports = { Stats, CCState, resolveDamage, applySkillCC, applyKnockback, rankVal, applyChill, PASSIVES };
 }

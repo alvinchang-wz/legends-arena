@@ -1733,6 +1733,11 @@ const Game = {
   },
 };
 
+/* The rule helpers of combat.js, reachable by name from outside the scripts
+   (the headless tests in tests/ drive them directly; the browser never
+   needs this table). Keep it in step with docs/design/heroes.md. */
+Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback };
+
 /* ============================================================
    Rendering
    ============================================================ */

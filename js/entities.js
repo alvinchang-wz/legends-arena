@@ -30,7 +30,7 @@ class Unit {
     this._px = x; this._py = y;
 
     this.attrs = new Stats();
-    this.cc = new CCState();
+    this.cc = new CCState(this);
     this.marks = {};             // passive stacks placed on this unit by others
     this.shields = [];           // [{amount, t}]
     this.dots = [];              // [{src, perSec, t, type, color, tag}]
@@ -515,21 +515,87 @@ class Hero extends Unit {
   /* Skill damage at its current rank. `s` may be a nested sub-skill (endNova),
      in which case it inherits the parent's rank via the explicit argument. */
   skillRankOf(s) {
-    const i = this.skills.indexOf(s);
+    const i = this.skills.indexOf(s._base || s);   // _base: a per-cast copy (overheat, F5)
     return i >= 0 ? Math.max(1, this.skillRank[i]) : 1;
   }
-  skillDmg(s, rank) {
-    const r = (rank !== undefined ? rank : this.skillRankOf(s)) - 1;
-    return (s.dmg || 0) + (s.dmgLv || 0) * r
+  /* Skill damage before mitigation (docs/design/heroes.md F2). The optional
+     `target` adds the victim-dependent terms: %-max-HP and missing-HP (capped
+     against non-heroes, never against structures), the consumeMark bonus
+     (F12), bonusVsMark and the caster's own missing-HP terms. Callers that
+     hit several units call this once per victim. */
+  skillDmg(s, rank, target) {
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    let dmg = (rankVal(s, 'dmg', r) || 0)
       + this.curAtk() * (s.scaleAd || 0)
       + this.magicPower() * (s.scaleAp || 0);
+    if (s.selfMissingBonus) {
+      const b = s.selfMissingBonus;
+      const missing = 1 - this.hpPct;
+      dmg *= 1 + Math.min(b.max || Infinity, missing / (b.per || 1) * (b.perPct || 0));
+    }
+    if (s.selfMissingPct) {
+      const cap = (s.selfMissingCap || 1) * this.maxHp;
+      dmg += Math.min(this.maxHp - this.hp, cap) * (rankVal(s, 'selfMissingPct', r) || 0);
+    }
+    if (target && !target.isStructure) {
+      const hero = target.type === 'hero';
+      if (s.pctMaxHp) {
+        let v = target.maxHp * (rankVal(s, 'pctMaxHp', r) || 0);
+        if (!hero && s.pctMaxHpCap) v = Math.min(v, s.pctMaxHpCap);
+        dmg += v;
+      }
+      if (s.missingPct) {
+        let v = (target.maxHp - target.hp) * (rankVal(s, 'missingPct', r) || 0);
+        if (!hero && s.missingCap) v = Math.min(v, s.missingCap);
+        dmg += v;
+      }
+      if (s.consumeMark && target.marks) dmg += markConsumeBonus(this, target, s.consumeMark, r);
+      if (s.bonusVsMark && target.marks) {
+        const b = s.bonusVsMark, at = target.marks[b.tag + 'At'];
+        if (at !== undefined && Game.time - at <= (b.within || 0)) dmg *= b.mult || 1;
+      }
+    }
+    if (s.dmgMult) dmg *= s.dmgMult;
+    return dmg;
   }
   skillHeal(s, rank) {
-    const r = (rank !== undefined ? rank : this.skillRankOf(s)) - 1;
-    return (s.heal || 0) + (s.healLv || 0) * r + this.magicPower() * (s.scaleAp || 0);
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    return (rankVal(s, 'heal', r) || 0) + this.magicPower() * (s.scaleAp || 0);
   }
-  /* Cost of a skill after cooldown reduction. */
-  cooldownFor(s) { return s.cd * (1 - this.cdr()); }
+  /* Cooldown of a skill at a rank after cooldown reduction (F1). Never
+     under one second, whatever the reduction. */
+  cooldownFor(s, rank) {
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    return Math.max(1, (rankVal(s, 'cd', r) || 0) * (1 - this.cdr()));
+  }
+  /* One skill hit on one victim: per-victim damage (F2), CC at rank (F1),
+     marks (F12) and the on-hit hooks. Novas, zones, dashes, blinkstrikes,
+     projectiles, traps and tethers all land through here. `o` may carry
+     `mult` (an explosion's 0.8), `pen`, `slowPct` (a zone tick's ramp),
+     `crit` (pre-rolled, F28), `noCC` and `zone` (centre stacks, F12). */
+  skillHit(u, s, rank, o) {
+    let amount = this.skillDmg(s, rank, u);
+    if (o && o.mult) amount *= o.mult;
+    let dealt = 0;
+    if (amount > 0) {
+      const pkt = { amount, type: s.dmgType || 'physical', skill: s };
+      if (o && o.pen) pkt.pen = o.pen;
+      if (o && o.crit) pkt.critRolled = true;
+      dealt = resolveDamage(this, u, pkt);
+    }
+    if (!(o && o.noCC)) applySkillCC(this, u, s, rank, o);
+    if (s.applyMark) applyMark(this, u, s, rank, o);
+    if (s.consumeMark) consumeMark(this, u, s, rank);
+    if (s.refreshMark) refreshMark(this, u, s.refreshMark);
+    if (dealt) this.onSkillLanded(u, dealt, s);
+    return dealt;
+  }
+  /* F28: the CC state calls back when a timer starts. An airborne drops a
+     dash in progress; a channel (F18) breaks on any hard CC. */
+  onCC(type) {
+    if (type === 'airborne') { this.dashS = null; this.basicRangeState = null; }
+    if (this.channelS && CHANNEL_BREAKERS[type]) this.cancelChannel(true);
+  }
 
   attackPacket() {
     return { amount: this.curAtk(), type: 'physical', canCrit: true, isBasic: true };
@@ -717,13 +783,17 @@ class Hero extends Unit {
   /* Nova: damage + CC everything in a radius. `rank` lets a nested sub-skill
      inherit the rank of the skill that spawned it. */
   doNova(s, rank) {
-    const dmg = this.skillDmg(s, rank);
-    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
-      if (dist(this, u) <= s.radius + u.radius) {
-        const dealt = resolveDamage(this, u, { amount: dmg, type: s.dmgType || 'physical', skill: s });
-        applySkillCC(this, u, s);
-        if (dealt) this.onSkillLanded(u, dealt, s);
+    const r = rank !== undefined ? rank : this.skillRankOf(s);
+    /* canCrit (F28): one roll for the whole cast, so a crit Cleave crits everyone */
+    let o = null;
+    if (s.canCrit) {
+      const chance = this.attrs.get('critChance');
+      if (chance > 0 && Math.random() < chance) {
+        o = { mult: COMBAT.CRIT_DMG_BASE + this.attrs.get('critDmg'), crit: true };
       }
+    }
+    for (const u of Game.enemyUnits(this.team, { neutral: true })) {
+      if (dist(this, u) <= s.radius + u.radius) this.skillHit(u, s, r, o);
     }
   }
 
@@ -750,7 +820,7 @@ class Hero extends Unit {
         if (s.buff) { this.buffAsMult = s.buff.asMult || 1; this.buffAsT = s.buff.dur || 3; }
         this.dashS = {
           dx: dir.x, dy: dir.y, remaining: s.dist, speed: s.speed,
-          dmg: s.dmg ? this.skillDmg(s) : 0, hitSet: new Set(), s,
+          dmg: s.dmg ? this.skillDmg(s, this.skillRank[i]) : 0, hitSet: new Set(), s,
           stopOnHero: !!s.stopOnHero, endNova: s.endNova || null,
           rank: this.skillRank[i],
         };
@@ -792,12 +862,7 @@ class Hero extends Unit {
         this.y = best.y + Math.sin(ang) * (best.radius + this.radius + 4);
         this.clampWorld();
         this.facing = Math.atan2(best.y - this.y, best.x - this.x);
-        const dealt = resolveDamage(this, best, {
-          amount: this.skillDmg(s), type: s.dmgType || 'physical', skill: s,
-          pen: { pct: s.physPenPct || 0 },
-        });
-        applySkillCC(this, best, s);
-        if (dealt) this.onSkillLanded(best, dealt, s);
+        this.skillHit(best, s, this.skillRank[i], { pen: { pct: s.physPenPct || 0 } });
         Game.fx.ring(this.x, this.y, 80, this.color, 0.35);
         Game.fx.slash(best.x, best.y, this.facing, this.team);
         break;
@@ -812,7 +877,7 @@ class Hero extends Unit {
       }
     }
     this.mana -= s.mana;
-    this.skillCd[i] = this.cooldownFor(s);
+    this.skillCd[i] = this.cooldownFor(s, this.skillRank[i]);
     Game.fx.skillCast(this, s, castAt);
     if (this.isPlayer) {
       if (i === 2) SFX.ult(); else SFX.skill();
@@ -916,9 +981,7 @@ class Hero extends Unit {
         for (const u of Game.enemyUnits(this.team, { neutral: true })) {
           if (!d.hitSet.has(u) && dist(this, u) < 70 + u.radius) {
             d.hitSet.add(u);
-            const dealt = resolveDamage(this, u, { amount: d.dmg, type: d.s.dmgType || 'physical', skill: d.s });
-            applySkillCC(this, u, d.s);
-            if (dealt) this.onSkillLanded(u, dealt, d.s);
+            this.skillHit(u, d.s, d.rank);
             if (d.stopOnHero && u.type === 'hero') d.remaining = 0;
           }
         }
@@ -2758,10 +2821,11 @@ class Projectile {
     });
   }
   static skillshot(src, s, dir) {
-    const idx = src.skills ? src.skills.indexOf(s) : -1;
+    const idx = src.skills ? src.skills.indexOf(s._base || s) : -1;
+    const rank = src.skillRankOf ? src.skillRankOf(s) : 1;
     return new Projectile({
-      kind: 'skillshot', x: src.x, y: src.y, src, team: src.team, s,
-      dx: dir.x, dy: dir.y, dmg: src.skillDmg(s), speed: s.speed, maxDist: s.range,
+      kind: 'skillshot', x: src.x, y: src.y, src, team: src.team, s, rank,
+      dx: dir.x, dy: dir.y, dmg: src.skillDmg(s, rank), speed: s.speed, maxDist: s.range,
       radius: s.radius || 24, pierce: !!s.pierce, explodeR: s.explodeR || 0,
       hook: !!s.hook, hitSet: new Set(), size: s.explodeR ? 13 : s.hook ? 9 : 10,
       color: src.color, icon: s.icon,
@@ -2771,11 +2835,12 @@ class Projectile {
     });
   }
   explode(cx, cy) {
+    const o = { mult: 0.8, noCC: true };
     for (const u of Game.enemyUnits(this.team, { neutral: true })) {
       if (!this.hitSet.has(u) && Math.hypot(u.x - cx, u.y - cy) <= this.explodeR + u.radius) {
         this.hitSet.add(u);
-        const dealt = resolveDamage(this.src, u, { amount: this.dmg * 0.8, type: this.dmgType, skill: this.s });
-        if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
+        if (this.src.skillHit) this.src.skillHit(u, this.s, this.rank, o);
+        else resolveDamage(this.src, u, { amount: this.dmg * 0.8, type: this.dmgType, skill: this.s });
       }
     }
     Game.fx.ring(cx, cy, this.explodeR, this.color, 0.4);
@@ -2806,9 +2871,12 @@ class Projectile {
       if (this.hitSet.has(u)) continue;
       if (Math.hypot(u.x - this.x, u.y - this.y) <= this.radius + u.radius) {
         this.hitSet.add(u);
-        const dealt = resolveDamage(this.src, u, { amount: this.dmg, type: this.dmgType, skill: this.s });
-        applySkillCC(this.src, u, this.s);
-        if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
+        if (this.src.skillHit) this.src.skillHit(u, this.s, this.rank);
+        else {
+          const dealt = resolveDamage(this.src, u, { amount: this.dmg, type: this.dmgType, skill: this.s });
+          applySkillCC(this.src, u, this.s, this.rank);
+          if (dealt && this.src.onSkillLanded) this.src.onSkillLanded(u, dealt, this.s);
+        }
         if (this.hook && u.type === 'hero') u.forced = { src: this.src, t: 0.6 };
         if (this.explodeR) this.explode(this.x, this.y);
         if (!this.pierce) { this.dead = true; Game.fx.spark(this.x, this.y, this.color, 6); return; }
@@ -2830,19 +2898,25 @@ class Zone {
     this.x = x; this.y = y; this.radius = s.radius;
     this.delay = s.delay || 0.6; this.delay0 = this.delay;
     this.ticks = s.ticks || 1; this.interval = s.interval || 0;
+    this.ticks0 = this.ticks;
     this.next = 0; this.dead = false; this.age = 0;
     this.color = owner.color;
-    this.dmg = owner.skillDmg(s);
+    this.rank = owner.skillRankOf ? owner.skillRankOf(s) : 1;
+    this.dmg = owner.skillDmg(s, this.rank);
   }
   tick() {
+    const s = this.s, ti = this.ticks0 - this.ticks;   // 0 for the first tick
     this.ticks--;
+    /* slowPctLv (F28): a multi-tick zone's slow ramps per tick, not per rank */
+    const o = s.slowPctLv ? { slowPct: Math.min(0.95, (s.slowPct || 0) + s.slowPctLv * ti), zone: this } : { zone: this };
     for (const u of Game.enemyUnits(this.team, { neutral: true })) {
       if (Math.hypot(u.x - this.x, u.y - this.y) <= this.radius + u.radius) {
-        const dealt = resolveDamage(this.owner, u, {
-          amount: this.dmg, type: this.s.dmgType || 'physical', skill: this.s,
-        });
-        applySkillCC(this.owner, u, this.s);
-        if (dealt && this.owner.onSkillLanded) this.owner.onSkillLanded(u, dealt, this.s);
+        if (this.owner.skillHit) this.owner.skillHit(u, s, this.rank, o);
+        else {
+          const dealt = resolveDamage(this.owner, u, { amount: this.dmg, type: s.dmgType || 'physical', skill: s });
+          applySkillCC(this.owner, u, s, this.rank, o);
+          if (dealt && this.owner.onSkillLanded) this.owner.onSkillLanded(u, dealt, s);
+        }
       }
     }
     if (Game.fx.zoneImpact) Game.fx.zoneImpact(this);
