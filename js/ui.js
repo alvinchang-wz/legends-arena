@@ -381,7 +381,7 @@ const UI = {
   },
   /* Scaling text for the select screen, where there is no hero instance yet. */
   scalingText(s) {
-    const parts = [`${s.dmg}`, `+${s.dmgLv || 0}/lv`];
+    const parts = Array.isArray(s.dmg) ? [s.dmg.join('/')] : [`${s.dmg}`, `+${s.dmgLv || 0}/lv`];   // per-rank arrays (F1)
     if (s.scaleAd) parts.push(`+${Math.round(s.scaleAd * 100)}% ATK`);
     if (s.scaleAp) parts.push(`+${Math.round(s.scaleAp * 100)}% MAGIC`);
     return parts.join(' ');
@@ -1343,7 +1343,8 @@ const UI = {
     const bar = this.els.ppMp.parentElement;
     if (bar && bar.dataset.resource !== p.resource) {
       bar.dataset.resource = p.resource;
-      bar.classList.toggle('hidden', p.resource === 'none');
+      // no bar for a cooldown hero, nor for an HP-cost hero with no mana pool at all (Marrow)
+      bar.classList.toggle('hidden', p.resource === 'none' || (p.resource === 'hp' && !p.maxMana));
     }
     this.els.ppMp.classList.toggle('overheat', p.resource === 'heat' && p.mana >= 100);
     this.setTxt(this.els.ppHpT, `${Math.ceil(p.hp)}/${p.maxHp}`);

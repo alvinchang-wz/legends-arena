@@ -545,19 +545,24 @@ const HEROES = [
   },
   {
     id: 'marrow', name: 'Marrow', role: 'Tank', icon: '🦴', color: '#e7e5e4', projColor: '#fafaf9',
-    desc: 'An ossuary knight who gets harder to kill the closer he is to dying.',
-    difficulty: 2, damageStyle: 'magic',
-    hp: 720, hpLv: 96, mp: 240, mpLv: 26, atk: 50, atkLv: 5.2,
+    desc: 'An ossuary knight who pays for every spell in blood and gets harder to kill the closer he is to dying.',
+    difficulty: 3, damageStyle: 'magic',
+    /* docs/design/heroes.md, Tanks: Marrow. No mana bar (F3/F6): every cast
+       costs a slice of max HP, paid after the effect and never lethal, and
+       the HP he spends is banked six seconds for Catacomb (the only
+       max-HP-shaped damage). Mana items and the blue rune give him nothing. */
+    resource: 'hp', hpFloor: 0,
+    hp: 750, hpLv: 102, mp: 0, mpLv: 0, atk: 50, atkLv: 5.2,
     armor: 19, armorLv: 3.0, mr: 20, mrLv: 3.0,
-    range: 85, atkSpd: 0.78, speed: 236,
+    range: 85, atkSpd: 0.78, speed: 244,
     passive: {
       name: 'Ossify', icon: '🦴', id: 'ossify',
-      desc: 'Take up to 25% less damage as your health falls (full reduction below 25% HP).',
+      desc: 'Take up to 25% less damage as HP falls, scaling linearly from 0% at full HP to 25% at or below 25% HP. Does not reduce true damage.',
     },
     skills: [
-      { name: 'Ribcage', icon: '☰', type: 'nova', cd: 8, mana: 50, dmgType: 'magic', radius: 220, dmg: 125, dmgLv: 14, scaleAp: 0.4, slowPct: 0.35, slowDur: 1.6, desc: 'Fan of bones that slows.' },
-      { name: 'Splint', icon: '✚', type: 'heal', cd: 12, mana: 60, heal: 90, healLv: 14, scaleAp: 0.35, radius: 280, shieldPct: 0.05, desc: 'Knit bone: heal nearby allies and shield them briefly.' },
-      { name: 'Catacomb', icon: '⚰', type: 'zone', cd: 43, mana: 110, dmgType: 'magic', range: 480, radius: 240, delay: 0.7, dmg: 240, dmgLv: 26, scaleAp: 0.6, airborne: 0.8, desc: 'The floor gives way, launching enemies.' },
+      { name: 'Ribcage', icon: '☰', type: 'nova', cd: 6, hpCost: 0.06, botMinHp: 0.2, dmgType: 'magic', radius: 220, dmg: 120, dmgLv: 15, scaleAd: 0.55, slowPct: 0.35, slowDur: 1.5, desc: 'A fan of bone erupts around Marrow, damaging and slowing. Costs 6% max HP.' },
+      { name: 'Splint', icon: '✚', type: 'heal', cd: 12, hpCost: 0.08, botHealHp: 0.6, heal: 100, healLv: 16, scaleAp: 0.35, radius: 300, desc: 'Heal every allied hero within 300, himself included. Costs 8% max HP.' },
+      { name: 'Catacomb', icon: '⚰', type: 'zone', cd: [42, 38, 34], hpCost: 0.1, dmgType: 'magic', range: 480, radius: 240, delay: 0.7, ticks: 1, dmg: [240, 275, 310], scaleAd: 0.7, airborne: 0.8, bank: { window: 6, pct: 1.0, capMaxHpPct: 0.2 }, desc: 'The floor gives way after 0.7s, launching everyone inside 0.8s, plus bonus damage equal to the HP Marrow paid for skills in the last 6s (cap 20% of his max HP). Costs 10% max HP.' },
     ],
   },
   {

@@ -837,9 +837,14 @@ const PASSIVES = {
     },
   },
 
+  /* Marrow — up to 25% less damage as he drops (0% at full HP, 25% at or
+     below 25%); true damage is not reduced. The bank holds the HP his
+     skills cost (F6, Hero.payCost) for Catacomb's bonus (F2, Hero.bankedHp). */
   ossify: {
-    onIncoming(h, src, dmg) {
-      const red = 0.25 * clamp(1 - h.hpPct / 0.75, 0, 1);
+    init(h) { h.pv = { bank: [] }; },
+    onIncoming(h, src, dmg, pkt) {
+      if (pkt && pkt.type === 'true') return dmg;
+      const red = 0.25 * clamp((1 - h.hpPct) / 0.75, 0, 1);
       return dmg * (1 - red);
     },
   },

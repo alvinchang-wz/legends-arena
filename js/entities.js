@@ -774,6 +774,7 @@ class Hero extends Unit {
        skill (o.selfMissing) so lifesteal off the first victim does not shrink it */
     if (o && o.selfMissing !== undefined) dmg += o.selfMissing;
     else if (s.selfMissingPct) dmg += this.selfMissingAmount(s, r);
+    if (s.bank) dmg += this.bankedHp(s.bank);   // Marrow's Catacomb: the HP his skills cost lately
     if (target && !target.isStructure) {
       const hero = target.type === 'hero';
       if (s.pctMaxHp) {
@@ -794,6 +795,16 @@ class Hero extends Unit {
     }
     if (s.dmgMult) dmg *= s.dmgMult;
     return dmg;
+  }
+  /* bank: {window, pct, capMaxHpPct} (F2/F6, Marrow's Catacomb). The HP
+     paid for skills in the last `window` seconds (Hero.payCost keeps
+     pv.bank), capped at capMaxHpPct of max HP, times pct. Bonus damage of
+     the skill's own type; nothing when the passive keeps no bank. */
+  bankedHp(b) {
+    if (!this.pv || !this.pv.bank) return 0;
+    let sum = 0;
+    for (const e of this.pv.bank) if (Game.time - e.t <= (b.window || 6)) sum += e.amt;
+    return Math.min(sum, this.maxHp * (b.capMaxHpPct || 1)) * (b.pct !== undefined ? b.pct : 1);
   }
   /* F21: selfMissingPct (per rank) of the caster's missing HP, capped at
      selfMissingCap of max HP. */
@@ -842,7 +853,11 @@ class Hero extends Unit {
       const amt = Math.min(this.hp - 1, Math.floor(this.maxHp * s.hpCost));
       if (amt > 0) {
         this.hp -= amt;
-        if (this.pv && this.pv.bank) this.pv.bank.push({ amt, t: Game.time });
+        if (this.pv && this.pv.bank) {
+          const bank = this.pv.bank;
+          bank.push({ amt, t: Game.time });
+          if (bank.length > 12) bank.splice(0, bank.length - 12);   // a match's worth never accumulates
+        }
       }
       return;
     }
@@ -2500,11 +2515,20 @@ class Hero extends Unit {
         return cc && isHero && !locked ? 780 : 360;
       case 'zone':
         if (d >= s.range || !(isHero || farmOk)) return 0;
+        if (s.bank) {   // F29 (Marrow's hint): Catacomb on 2+ heroes in its radius, best within 6 s of two other casts
+          let near = 0;
+          for (const h of Game.heroes) if (h.team !== this.team && h.alive && h.distTo(t) < s.radius + h.radius) near++;
+          if (near < 2 && !(isHero && t.hpPct < 0.35)) return 0;
+          let paid = 0;
+          if (this.pv && this.pv.bank) for (const e of this.pv.bank) if (Game.time - e.t <= (s.bank.window || 6)) paid++;
+          return paid >= 2 ? 880 : 720;
+        }
         if (cc && isHero && !locked) return 810;
         return isHero ? 520 : 210;
       case 'heal': {
         const patient = s.allyTarget ? this.pickAllyTarget(s, null) : this.lowestHealTarget(s.radius || 360);
-        if (!patient || patient.hpPct >= (this.advancedAI ? p.healAllyHp : 0.65)) return 0;
+        // botHealHp: the skill's own threshold (Marrow's Splint at 60%)
+        if (!patient || patient.hpPct >= (s.botHealHp || (this.advancedAI ? p.healAllyHp : 0.65))) return 0;
         return patient.hpPct < 0.4 ? 980 : 900;
       }
       case 'blinkstrike':
@@ -2731,7 +2755,7 @@ class Hero extends Unit {
        for the fight it is farming towards. The ultimate stays hero-only
        inside botSkillUrgency. */
     const farmOk = this.farmsWithSkills && !isHero &&
-      (!this.usesMana() || this.mana > this.maxMana * p.farmManaFloor) &&
+      (!this.usesMana() || !this.maxMana || this.mana > this.maxMana * p.farmManaFloor) &&   // no bar (Marrow): nothing to run dry
       !Game.heroes.some(e => e.team !== this.team && e.alive &&
         this.distTo(e) < p.acquireRange && Game.canSee(this.team, e));
     /* Crowd-control first, then damage, so a stun is not wasted on a target
