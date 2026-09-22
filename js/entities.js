@@ -171,7 +171,7 @@ class Hero extends Unit {
     super(0, 0, team);
     this.type = 'hero';
     this.def0 = def; this.name = def.name; this.icon = def.icon; this.color = def.color;
-    this.isPlayer = !!isPlayer; this.lane = lane; this.radius = 26;
+    this.isPlayer = !!isPlayer; this.lane = lane; this.radius = 38;      // 2.6 map px, the reference hero's collision radius
     this.ranged = def.range > 150; this.projColor = def.projColor || '#fff';
     this.level = 1; this.xp = 0; this.goldEarned = 0; this.gold = 0;
     this.kills = 0; this.deaths = 0; this.assists = 0; this.streak = 0;
@@ -2384,14 +2384,14 @@ class Tower extends Unit {
   constructor(x, y, team, isBase) {
     super(x, y, team);
     this.type = 'tower'; this.isStructure = true; this.isBase = !!isBase;
-    this.radius = isBase ? 64 : 42;
+    this.radius = isBase ? 150 : 100;     // the reference turret footprint is about 7 map px
     this.maxHp = this.hp = isBase ? 5600 : 3200;
     const A = this.attrs.base;
     A.maxHp = this.maxHp;
     A.armor = 45; A.mr = 45;
     A.physAtk = isBase ? 280 : 190;
     A.atkSpd = 0.8; A.speed = 0;
-    this.range = isBase ? 400 : 340;
+    this.range = isBase ? 470 : 410;     // 28 map px: the reference turret's range ring, measured on the phone
     this.ranged = true; this.projColor = THEME.gold;
     this.target = null;
     this.focusTarget = null; this.focusHits = 0;

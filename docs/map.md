@@ -71,7 +71,7 @@ The blockout `docs/drafts/draft-d.png` is the same data drawn flat.
 
 ## Provisional values
 
-Turret range (30 map px) is not in either source. Hero speed relative to the
+Turret range is 28 map px, measured from the range ring an enemy turret draws on the ground (phone, calibrated camera, 2026-09-21); turret footprint about 7 map px, hero collision radius 2.6 map px; the camera shows 106 map px across the screen at the hero. Hero speed relative to the
 board is untuned: the reference walks about 25 percent faster than ours.
 
 ## Drafts

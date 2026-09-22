@@ -250,7 +250,12 @@ const Game = {
     }
 
     UI.buildMinimapStatic();
-    this.cam.zoom = this.cam.zoomWant = clamp(CH / (this.isDuel() ? 900 : this.isTen() ? 1450 : 1400), 0.45, 1.3);
+    /* 5v5: the reference game shows about 106 map px of ground across the
+       screen at the hero (measured through its calibrated camera), so the
+       view width is fixed in map px; the other modes keep their height rule */
+    this.cam.zoom = this.cam.zoomWant = this.isDuel() || this.isTen()
+      ? clamp(CH / (this.isDuel() ? 900 : 1450), 0.45, 1.3)
+      : clamp(CW / (106 * MAP_K), 0.4, 1.6);
     if (typeof Mlbb !== 'undefined') Mlbb.onMatchStart();
     if (this.spectate) {
       this.cam.x = this.worldSize() / 2; this.cam.y = this.worldSize() / 2;
@@ -2101,7 +2106,7 @@ function drawHpBar(u, w, h, yOff, color) {
    Drawn for every unit BEFORE any body, so no figure ever stands on top of
    another unit's ring. The tilt turns all of these circles into ellipses. */
 function drawUnitGround(u) {
-  const r = u.radius;
+  const r = u.radius * (BODY_SCALE[u.type] || 1);
   const teamCol = u.team === TEAM_NEUTRAL ? THEME.neutral : TEAM_COLORS[u.team];
 
   // contact shadow, pushed slightly down-screen (the sun sits top-left)
@@ -2250,8 +2255,11 @@ function bodyShape(shape, r, cy, baseCol, teamCol) {
   ctx.shadowBlur = 0;
 }
 
+/* Bodies are drawn larger than their collision circle: the reference game's
+   heroes stand about a fifth of a lane's width tall on screen. */
+const BODY_SCALE = { hero: 1.4, minion: 1.15 };
 function drawUnitBody(u, emoji, size, shape) {
-  const r = u.radius;
+  const r = u.radius * (BODY_SCALE[u.type] || 1);
   const teamCol = u.team === TEAM_NEUTRAL ? THEME.neutral : TEAM_COLORS[u.team];
   // colourless units (minions, small camps) get a team-tinted armour tone so
   // sides read at a glance without stealing the heroes' saturated palette

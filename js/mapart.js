@@ -216,7 +216,7 @@ const MapArt = (() => {
 
   function paintTowerPads(g) {
     for (const t of TOWER_SPOTS) {
-      const R = 92;
+      const R = 118;
       g.fillStyle = 'rgba(20, 30, 14, 0.35)';
       g.beginPath(); g.ellipse(t.x + 10, t.y + 14, R * 1.08, R * 0.9, 0, 0, TAU); g.fill();
       g.fillStyle = PAL.plazaDark;
