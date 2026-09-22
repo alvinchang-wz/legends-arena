@@ -185,4 +185,111 @@ T.test('Nyx bot: Deathmark is held above 70% whatever the crowd and thrown under
   assert.ok(nyx.state && nyx.state.s.untargetable, 'Shade Step cast to escape');
 });
 
+/* ---------------- Wraith ---------------- */
+
+T.test('Wraith: base stats and skill numbers match the spec (the fast energy pool, the only basicRange state)', () => {
+  reset();
+  const d = wraith.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [500, 65, 0, 0, 66, 7.6, 11, 1.9, 9, 1.5, 90, 1.18, 280, 2]);
+  assert.equal(d.resource, 'energy');
+  assert.deepEqual([d.energy.max, d.energy.regen, d.energy.perBasic], [100, 8, 0]);
+  assert.equal(d.passive.id, 'afterimage');
+  const [s1, s2, s3] = wraith.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.energy, s1.dist, s1.speed, s1.dmg, s1.dmgLv, s1.scaleAd], ['dash', 5, 25, 360, 1200, 100, 14, 0.6]);
+  assert.equal(rankVal(s1, 'dmg', 6), 170);
+  assert.deepEqual([s2.type, s2.cd, s2.energy, s2.rangeSet, s2.count, s2.dur, s2.bonusDmg, s2.bonusDmgLv, s2.bonusScaleAd], ['basicRange', 8, 30, 300, 3, 4, 20, 3, 0.15]);
+  assert.deepEqual([s3.type, s3.cd, s3.energy, s3.range, s3.dmg, s3.dmgLv, s3.scaleAd, s3.silence], ['blinkstrike', [30, 27, 24], 40, 460, 240, 40, 0.85, 0.5]);
+  for (const s of wraith.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Wraith: energy is a flat 100 whatever the level, regenerates 8/s, ignores mana refunds; Phase Cut costs 25 and is refused short; Afterimage empowers the next basic +30% and returns 10 energy on a hero', () => {
+  reset();
+  assert.equal(wraith.maxMana, 100);
+  const lv = wraith.level; wraith.level = 12; wraith.recalcStats(false);
+  assert.equal(wraith.maxMana, 100, 'still 100 at level 12');
+  wraith.level = lv; wraith.recalcStats(false);
+  wraith.mana = 50;
+  T.seconds(G, 1);
+  near(wraith.mana, 58, 0.5, '8 per second');
+  wraith.gainMana(30);
+  near(wraith.mana, 58, 0.5, 'a mana refund does nothing');
+  T.place(wraith, open.x, open.y);
+  T.place(grom, open.x + 200, open.y);
+  wraith.mana = 20;
+  assert.equal(wraith.castSkill(0, grom), false, '20 energy: no Phase Cut');
+  wraith.mana = 50;
+  assert.ok(wraith.castSkill(0, grom));
+  near(wraith.mana, 25, 1e-9, '25 paid');
+  T.frames(G, 25);   // the dash carries her through him
+  assert.ok(grom.stats.dmgTaken > 0, 'Phase Cut hit');
+  assert.ok(wraith.pv.until > G.time, 'Afterimage window open');
+  T.place(wraith, grom.x - 100, grom.y); wraith.dashS = null;
+  const before = grom.stats.dmgTaken, e0 = wraith.mana;
+  basic(wraith, grom);
+  const empowered = grom.stats.dmgTaken - before;
+  assert.ok(wraith.mana > e0 + 10 - 1e-6 && wraith.mana < e0 + 10 + 8, `10 energy back (plus the regen of the swing): ${wraith.mana - e0}`);
+  assert.ok(!(wraith.pv.until > G.time), 'window spent');
+  const before2 = grom.stats.dmgTaken;
+  basic(wraith, grom);
+  const plain = grom.stats.dmgTaken - before2;
+  near(empowered / plain, 1.3, 0.03, 'the empowered swing dealt +30%');
+});
+
+T.test('Wraith: Phantom Blades sets her range to 300 for 3 thrown basics carrying +20 +3/rank (+15% ATK), then ends; Haunt lands on the aimed hero, silences 0.5 s and costs 40 energy', () => {
+  reset();
+  T.place(wraith, open.x, open.y);
+  T.place(grom, open.x + 250, open.y);
+  assert.equal(wraith.range, 90);
+  assert.ok(wraith.castSkill(1, null));
+  assert.equal(wraith.range, 300, 'range reads 300');
+  assert.equal(wraith.basicRangeState.count, 3);
+  near(wraith.mana, 70, 1e-9, '30 energy');
+  wraith.atkCd = 0; wraith.tryAttack(grom);
+  const p = G.projectiles.find(q => q.src === wraith && q.kind === 'homing');
+  assert.ok(p, 'a thrown blade');
+  near(p.packet.amount, wraith.curAtk() * 1.15 + 20 + 3 * 5, 1e-6, 'the bonus at rank 6 folded into the basic');
+  assert.equal(wraith.basicRangeState.count, 2);
+  T.frames(G, 30);
+  assert.ok(grom.stats.dmgTaken > 0, 'it landed');
+  basic(wraith, grom); basic(wraith, grom);
+  assert.equal(wraith.basicRangeState, null, 'three thrown: over');
+  assert.equal(wraith.range, 90);
+  // Haunt on the aimed hero, not the nearest
+  reset();
+  T.place(wraith, open.x, open.y);
+  T.place(grom, open.x + 200, open.y);
+  T.place(nyx, open.x + 400, open.y);
+  nyx.hp = nyx.maxHp * 0.3;
+  wraith.botFireSkill(2, grom, 200, true, false);
+  assert.ok(wraith.distTo(nyx) < 120, 'blinked onto the lowest hero in reach');
+  assert.ok(nyx.stats.dmgTaken > 0 && nyx.cc.has('silence'), 'struck and silenced');
+  assert.equal(grom.stats.dmgTaken, 0);
+  near(wraith.mana, 60, 1e-9, '40 energy');
+});
+
+T.test('Wraith bot: Phase Cut only from 55 energy; Phantom Blades for a target 150-300 away; Haunt on a low hero; under 30 energy with a hero inside 400 she backs off for a moment', () => {
+  reset();
+  T.place(wraith, open.x, open.y);
+  T.place(grom, open.x + 300, open.y);
+  wraith.mana = 50;
+  assert.equal(wraith.botSkillUrgency(0, grom, 300, true, false), 0, '50 energy: Phase Cut held');
+  wraith.mana = 60;
+  assert.equal(wraith.botSkillUrgency(0, grom, 300, true, false), 360, '60 energy: a routine dash');
+  wraith.mana = 100;
+  assert.equal(wraith.botSkillUrgency(1, grom, 100, true, false), 0, 'in melee reach: no blades');
+  assert.equal(wraith.botSkillUrgency(1, grom, 200, true, false), 560, '200 away: blades');
+  assert.equal(wraith.botSkillUrgency(1, grom, 320, true, false), 0, 'past 300: none');
+  assert.equal(wraith.botSkillUrgency(2, grom, 400, true, false), 0, 'a healthy lone hero: Haunt held');
+  grom.hp = grom.maxHp * 0.3;
+  assert.equal(wraith.botSkillUrgency(2, grom, 400, true, false), 870, 'a low hero: Haunt');
+  grom.hp = grom.maxHp;
+  // the energy retreat
+  wraith.mana = 20; wraith.aiTarget = grom;
+  assert.ok(wraith.heuristicStateStep(), 'under 30 energy with a hero inside 400: step back');
+  assert.ok(wraith.fleeT > 0 && wraith.aiTarget === null);
+  wraith.fleeT = 0; wraith.mana = 60;
+  assert.equal(wraith.heuristicStateStep(), false, 'with energy back: fights');
+});
+
 T.done();

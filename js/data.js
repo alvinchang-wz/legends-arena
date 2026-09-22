@@ -533,19 +533,33 @@ const HEROES = [
   },
   {
     id: 'wraith', name: 'Wraith', role: 'Assassin', icon: '👤', color: '#64748b', projColor: '#cbd5e1',
-    desc: 'A afterimage killer whose next strike is always the loud one.',
-    difficulty: 3, damageStyle: 'physical',
-    hp: 500, hpLv: 65, mp: 220, mpLv: 24, atk: 66, atkLv: 7.6,
+    desc: 'The energy skirmisher: a 100-point pool that refills in seconds, cooldowns under 6 s, small hits that add up because she casts three times as often as anyone; she dips in and out and throws spectral blades while kiting.',
+    difficulty: 2, damageStyle: 'physical',
+    /* docs/design/heroes.md, Assassins: Wraith. The only fast energy pool
+       (F3/F4): a flat 100 at every level, 8/s of its own, item-immune, +10
+       from an Afterimage basic on a hero; mana items, the blue rune and
+       mana burn do nothing to it. Phantom Blades is the roster's only
+       basic-range state (F25): three 300-range thrown basics with a bonus.
+       Bot fields: Phase Cut only from 55 energy (botMinMana); energy
+       .botRetreatBelow makes her back off for a moment under 30 energy with
+       a hero inside 400 (the dash takes her out when it is affordable);
+       botRetreatHp 0.35 sets her retreat line; Haunt goes on the lowest
+       hero in reach (botLowest); Phantom Blades wants a target 150-300 away
+       (the basicRange rule). */
+    resource: 'energy',
+    energy: { max: 100, regen: 8, perBasic: 0, botRetreatBelow: 30 },
+    botRetreatHp: 0.35,
+    hp: 500, hpLv: 65, mp: 0, mpLv: 0, atk: 66, atkLv: 7.6,
     armor: 11, armorLv: 1.9, mr: 9, mrLv: 1.5,
     range: 90, atkSpd: 1.18, speed: 280,
     passive: {
       name: 'Afterimage', icon: '👻', id: 'afterimage',
-      desc: 'After a skill hits, your next basic attack within 3s deals 30% bonus physical damage.',
+      desc: 'After any skill hits, her next basic attack within 3s deals +30% damage and, if it hits a hero, restores 10 energy.',
     },
     skills: [
-      { name: 'Phase Cut', icon: '╱', type: 'dash', cd: 8, mana: 40, dmgType: 'physical', dist: 360, speed: 1200, dmg: 120, dmgLv: 15, scaleAd: 0.65, desc: 'Dash through, carving everyone in the path.' },
-      { name: 'Shred', icon: '✕', type: 'nova', cd: 7, mana: 40, dmgType: 'physical', radius: 200, dmg: 115, dmgLv: 14, scaleAd: 0.65, desc: 'A close burst of cuts.' },
-      { name: 'Haunt', icon: '☠', type: 'blinkstrike', cd: 30, mana: 95, dmgType: 'physical', range: 460, dmg: 265, dmgLv: 30, scaleAd: 0.85, silence: 0.5, desc: 'Blink onto a target for a quick cut. Smaller than Deathmark, back 14s sooner — the skirmisher to Nyx.' },
+      { name: 'Phase Cut', icon: '╱', type: 'dash', cd: 5, energy: 25, mana: 0, dmgType: 'physical', dist: 360, speed: 1200, dmg: 100, dmgLv: 14, scaleAd: 0.6, botMinMana: 55, desc: 'A 360 blink-dash at 1200 that cuts everything on the line for 100+14/rank (+60% ATK). 25 energy.' },
+      { name: 'Phantom Blades', icon: '⟡', type: 'basicRange', cd: 8, energy: 30, mana: 0, rangeSet: 300, count: 3, dur: 4, dmgType: 'physical', bonusDmg: 20, bonusDmgLv: 3, bonusScaleAd: 0.15, desc: 'Her next 3 basic attacks within 4s are 300-range spectral throws (full basic rules) dealing +20 +3/rank (+15% ATK) bonus physical damage each. 30 energy.' },
+      { name: 'Haunt', icon: '☠', type: 'blinkstrike', cd: [30, 27, 24], energy: 40, mana: 0, dmgType: 'physical', range: 460, dmg: 240, dmgLv: 40, scaleAd: 0.85, silence: 0.5, botLowest: true, desc: 'Blink onto the nearest hero within 460 for 240/280/320 (+85% ATK) and a 0.5s silence. 40 energy; back in 30/27/24s.' },
     ],
   },
   {

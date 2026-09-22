@@ -508,7 +508,7 @@ T.test('Lumen: base stats and skill numbers match the spec; Focus is a flat 100 
   assert.deepEqual([s3.type, s3.cd, s3.energy, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAd, s3.stun, s3.slowPct],
     ['zone', [40, 34, 28], 50, 950, 100, 1.0, 1, [380, 500, 620], 1.2, undefined, undefined]);
   assert.deepEqual([lumen.costOf(s1, 6), lumen.costOf(s2, 6), lumen.costOf(s3, 3)], [30, 0, 50]);
-  assert.equal(sim.context.HEROES.filter(h => h.resource === 'energy').length, 1, 'the only battery hero');
+  assert.equal(sim.context.HEROES.filter(h => h.resource === 'energy' && h.energy && h.energy.stillRegen).length, 1, 'the only battery hero (Wraith runs the fast pool)');
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.dashBack)).length, 1, 'the only dash-back');
   assert.ok(sim.context.HEROES.every(h => h.hp >= d.hp), 'lowest HP in the game');
   for (const s of lumen.skills) assert.ok(s.desc && s.desc.length > 20);

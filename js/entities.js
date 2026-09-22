@@ -2301,6 +2301,14 @@ class Hero extends Unit {
       return n;
     })();
     const finishing = nearest && this.botCanKill(nearest) && dist(this, nearest) < 620;
+    /* F29 (Wraith's hint): a fast-energy hero under energy.botRetreatBelow with a hero inside 400
+       backs off for a moment while the pool refills (the dash takes her out while she can still pay for it) */
+    const en = this.def0.energy;
+    if (en && en.botRetreatBelow && this.resource === 'energy' && this.mana < en.botRetreatBelow && !finishing &&
+        this.fleeT <= 0 && this.aiState !== 'retreat' && nearest && dist(this, nearest) < 400) {
+      this.fleeT = 1.5; this.aiTarget = null; this.botEscapeCast();
+      return true;
+    }
 
     if (this.aiState === 'retreat') {
       if (this.hpPct > p.reengageHp || finishing) this.aiState = 'push';

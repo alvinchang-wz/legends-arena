@@ -822,14 +822,23 @@ const PASSIVES = {
     },
   },
 
+  /* Wraith — any skill hit opens a 3 s window; the next basic in it deals
+     +30% and, when it lands on a hero, gives 10 energy back (her fast pool
+     has no perBasic of its own, F4). The window is spent by the swing in
+     onDealDamage; onBasicHit reads the stamp to pay the energy. */
   afterimage: {
-    init(h) { h.pv = { until: 0 }; },
+    init(h) { h.pv = { until: 0, spentAt: -1 }; },
     onSkillHit(h) { h.pv.until = Game.time + 3; },
     onDealDamage(h, target, amount, pkt) {
       if (!pkt || !pkt.isBasic || !h.pv || Game.time > h.pv.until) return amount;
-      h.pv.until = 0;
+      h.pv.until = 0; h.pv.spentAt = Game.time;
       Game.fx.ring(target.x, target.y, 22, h.color, 0.3);
       return amount * 1.3;
+    },
+    onBasicHit(h, target) {
+      if (!h.pv || h.pv.spentAt !== Game.time || target.type !== 'hero') return;
+      h.pv.spentAt = -1;
+      h.gainEnergy(10);
     },
   },
 
