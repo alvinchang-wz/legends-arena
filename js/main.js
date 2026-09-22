@@ -358,7 +358,8 @@ const Game = {
     this.resume();
     this.state = 'end';
     this.lastWinner = winnerTeam;
-    if (typeof Features !== 'undefined') Features.saveHistory(winnerTeam);
+    // the profile only hears about matches the player played to a result
+    if (typeof Features !== 'undefined') Features.recordMatch(winnerTeam);
     UI.showEnd(winnerTeam === TEAM_BLUE);
     if (this.spectate && this.autoTrain) {
       setTimeout(() => {

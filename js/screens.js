@@ -201,8 +201,13 @@ const Screens = {
     try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; }
   },
 
+  /* Only real results. Rows written before Features.recordMatch existed can
+     be a hero with an empty scoreline and a zero clock — an abandoned or
+     spectated match that was saved anyway — and they are still in players'
+     local storage, so they are filtered here as well as at the source. */
   history() {
-    return this.readJSON('legends.history', []).filter(r => r && r.hero);
+    const floor = (typeof Features !== 'undefined' && Features.MIN_MATCH_SECONDS) || 30;
+    return this.readJSON('legends.history', []).filter(r => r && r.hero && (r.clock || 0) >= floor);
   },
 
   featuredHero() {

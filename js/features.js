@@ -105,7 +105,6 @@ const Features = {
     this.seedMap();
     for (const h of Game.heroes) this.prepHero(h);
     this.applyCosmeticTints();
-    this.bumpMastery();
     if (typeof Mlbb !== 'undefined') Mlbb.bindSelect();
   },
 
@@ -617,6 +616,26 @@ const Features = {
       localStorage.setItem('legends.mastery', JSON.stringify(m));
     } catch (e) { /* ignore */ }
   },
+
+  /* The one place a match becomes part of the profile, called by
+     Game.endGame. A match counts when the player was in it and it ended with
+     a winner — a spectated or attract match is nobody's result, and a match
+     that never really ran is not one either. Mastery used to be bumped in
+     onMatchStart instead, so the lobby's match counter went up the moment a
+     match loaded and kept the point when the player walked away from it;
+     history used to be written for any end, which is where the lobby's
+     "0/0/0 · 0 min · WIN" rows came from. */
+  MIN_MATCH_SECONDS: 30,
+  recordMatch(winnerTeam) {
+    const p = Game.player;
+    if (!p) return false;
+    if (winnerTeam !== TEAM_BLUE && winnerTeam !== TEAM_RED) return false;
+    if (!(Game.time >= this.MIN_MATCH_SECONDS)) return false;
+    this.bumpMastery();
+    this.saveHistory(winnerTeam);
+    return true;
+  },
+
   saveHistory(winnerTeam) {
     try {
       const row = {
