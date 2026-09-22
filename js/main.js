@@ -1159,6 +1159,25 @@ const Game = {
     }
     return best;
   },
+  /* F9: does an enemy barrier lie across the path (ax,ay)->(bx,by)? `len`
+     caps the path (a homing shot only travels its step). Proper segment
+     intersection: a projectile that ends exactly on the line still counts. */
+  barrierBlocks(team, ax, ay, bx, by, len) {
+    if (len !== undefined) {
+      const dx = bx - ax, dy = by - ay, d = hyp(dx, dy);
+      if (d > len && d > 0) { bx = ax + dx / d * len; by = ay + dy / d * len; }
+    }
+    for (const o of this.objects) {
+      if (o.dead || o.mode !== 'barrier' || o.team === team) continue;
+      const r = (o.bx - o.ax) * (by - ay) - (o.by - o.ay) * (bx - ax);
+      if (Math.abs(r) < 1e-9) continue;   // parallel
+      const qx = ax - o.ax, qy = ay - o.ay;
+      const t = (qx * (by - ay) - qy * (bx - ax)) / r;        // along the barrier
+      const u = (qx * (o.by - o.ay) - qy * (o.bx - o.ax)) / r; // along the path
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return o;
+    }
+    return null;
+  },
   /* F16: register a tether (see the Tether class). */
   addTether(spec) {
     const t = new Tether(spec);
@@ -1755,6 +1774,8 @@ const Game = {
    (the headless tests in tests/ drive them directly; the browser never
    needs this table). Keep it in step with docs/design/heroes.md. */
 Game.rules = { rankVal, applySkillCC, applyChill, applyKnockback, applyDisplacement, applyPullTo };
+Game.PlacedObject = PlacedObject;
+Game.Tether = Tether;
 
 /* ============================================================
    Rendering
@@ -3175,6 +3196,42 @@ function render() {
 
   // projectiles: a comet — motion streak behind a glowing core. The streak
   // uses last frame's position so it needs no per-projectile bookkeeping
+  // placed objects (F9): traps show to their own side (and to an enemy who
+  // has walked within enemyVisibleWithin), lanterns as a soft ring, barriers as a wall
+  for (const o of Game.objects) {
+    if (o.dead || !inView(o.x, o.y, 320)) continue;
+    const col = o.color || TEAM_COLORS[o.team];
+    if (o.mode === 'trap') {
+      const p = Game.player;
+      const mine = !p || p.team === o.team;
+      if (!mine && !(o.s.enemyVisibleWithin && p.alive && dist(p, o) <= o.s.enemyVisibleWithin)) continue;
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      ctx.rotate(Math.PI / 4);
+      const sz = o.armed ? 11 : 8;
+      ctx.fillStyle = rgba(col, o.armed ? 0.85 : 0.45);
+      ctx.fillRect(-sz, -sz, sz * 2, sz * 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.strokeRect(-sz, -sz, sz * 2, sz * 2);
+      ctx.restore();
+      if (mine) {
+        ctx.beginPath(); ctx.arc(o.x, o.y, o.radius, 0, TAU);
+        ctx.strokeStyle = rgba(col, 0.25); ctx.lineWidth = 1; ctx.setLineDash([6, 6]); ctx.stroke(); ctx.setLineDash([]);
+      }
+    } else if (o.mode === 'pulse') {
+      const k = 1 - (o.tickT / (o.s.tick || 1));
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.radius, 0, TAU);
+      ctx.fillStyle = rgba(col, 0.06 + 0.06 * k); ctx.fill();
+      ctx.strokeStyle = rgba(col, 0.5); ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(o.x, o.y, 14 + 4 * Math.sin(Game.time * 5), 0, TAU);
+      ctx.fillStyle = rgba(col, 0.9); ctx.fill();
+    } else if (o.mode === 'barrier') {
+      ctx.strokeStyle = rgba(col, 0.85); ctx.lineWidth = 7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(o.ax, o.ay); ctx.lineTo(o.bx, o.by); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(o.ax, o.ay - 6); ctx.lineTo(o.bx, o.by - 6); ctx.stroke();
+    }
+  }
+
   // tethers (F16): a line between the two units, pulsing as it nears its end
   for (const t of Game.tethers) {
     if (t.dead || !t.src || !t.target) continue;

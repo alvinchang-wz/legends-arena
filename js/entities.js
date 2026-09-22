@@ -73,9 +73,15 @@ class Unit {
   clampWorld() { Game.clampPoint(this, 40); }
 
   /* --- shields --- */
-  addShield(amount, dur) {
+  /* A tagged shield (Wick's lantern) refreshes the one already there instead
+     of stacking another on top. */
+  addShield(amount, dur, tag) {
     if (amount <= 0) return;
-    this.shields.push({ amount, t: dur });
+    if (tag) {
+      const ex = this.shields.find(sh => sh.tag === tag);
+      if (ex) { ex.amount = Math.max(ex.amount, amount); ex.t = Math.max(ex.t, dur); return; }
+    }
+    this.shields.push({ amount, t: dur, tag });
   }
   /* Spend shield charges oldest-first; returns how much of `dmg` they ate. */
   absorbWithShield(dmg) {
@@ -848,6 +854,15 @@ class Hero extends Unit {
       },
     });
   }
+  /* F9: put an object down; `maxActive` per owner and mode drops the oldest. */
+  placeObject(mode, s, x, y, rank, dir) {
+    const max = s.maxActive || 1;
+    const mine = Game.objects.filter(o => !o.dead && o.owner === this && o.mode === mode);
+    for (let i = 0; i + max <= mine.length; i++) mine[i].dead = true;
+    const o = new PlacedObject(this, s, x, y, rank || this.skillRankOf(s), mode, dir);
+    Game.objects.push(o);
+    return o;
+  }
   /* F17: the allied hero a cast lands on. The one nearest the aim point
      within range; with no aim (bots, an untouched joystick) the lowest-HP
      ally in range. `self: false` excludes the caster. */
@@ -1129,6 +1144,25 @@ class Hero extends Unit {
         if (!victims.length) return false;   // nothing to chain: no cost
         for (const v of victims) this.tetherTo(v, s, rank);
         castAt = { x: victims[0].x, y: victims[0].y };
+        break;
+      }
+      case 'trap':       // F9: an armed object at the aim point, hero-only by default
+      case 'object': {   // F9: a pulsing lantern at the aim point
+        const reach = s.range || 400;
+        let tx = point ? point.x : this.x + dir.x * reach;
+        let ty = point ? point.y : this.y + dir.y * reach;
+        const dd = Math.hypot(tx - this.x, ty - this.y);
+        if (dd > reach) { tx = this.x + (tx - this.x) / dd * reach; ty = this.y + (ty - this.y) / dd * reach; }
+        const spot = Game.clampPoint({ x: tx, y: ty }, 40);
+        if (Game.wallAt(spot.x, spot.y, 12)) return false;   // nothing is planted inside rock
+        this.placeObject(s.type === 'trap' ? 'trap' : 'pulse', s, spot.x, spot.y, rank, dir);
+        castAt = spot;
+        break;
+      }
+      case 'barrier': {  // F9: a wall segment across the aim direction that eats enemy projectiles
+        const off = s.offset || 80;
+        const o = this.placeObject('barrier', s, this.x + dir.x * off, this.y + dir.y * off, rank, dir);
+        castAt = { x: o.x, y: o.y };
         break;
       }
       case 'link': {     // F16 friendly: heal the ally once, then keep a link on them
@@ -2169,6 +2203,15 @@ class Hero extends Unit {
         if (!patient || patient.hpPct >= 0.8) return 0;
         return patient.hpPct < 0.45 ? 900 : 620;
       }
+      case 'trap':       // F9: plant under an approaching hero
+        if (!isHero || d >= (s.range || 400)) return 0;
+        return 330;
+      case 'object':     // F9: a lantern goes down where the fight is
+        if (!isHero || d >= 700) return 0;
+        return 350;
+      case 'barrier':    // F9: raise it against a ranged hero
+        if (!isHero || !t.ranged || d >= 640 || d < 120) return 0;
+        return 380;
     }
     return 0;
   }
@@ -2202,6 +2245,15 @@ class Hero extends Unit {
         break;
       case 'link':
         this.castSkill(i, null);
+        break;
+      case 'trap':
+        this.castSkill(i, Game.aimLeadPoint(this, t, 400));
+        break;
+      case 'object':
+        this.castSkill(i, { x: this.x + (t.x - this.x) * 0.5, y: this.y + (t.y - this.y) * 0.5 });
+        break;
+      case 'barrier':
+        this.castSkill(i, t);
         break;
     }
   }
@@ -3187,11 +3239,13 @@ class Projectile {
   }
   update(dt) {
     if (this.dead) return;
+    const px = this.x, py = this.y;   // for the barrier crossing test (F9)
     if (this.kind === 'homing') {
       const t = this.target;
       if (!t || !t.alive) { this.dead = true; return; }
       const d = dist(this, t);
       const step = this.speed * dt;
+      if (Game.objects.length && Game.barrierBlocks(this.team, px, py, t.x, t.y, Math.min(d, step + t.radius))) { this.dead = true; return; }
       if (d <= step + t.radius) {
         const dealt = resolveDamage(this.src, t, this.packet);
         if (dealt && this.src.onBasicLanded) this.src.onBasicLanded(t, dealt);
@@ -3207,6 +3261,9 @@ class Projectile {
     const step = this.speed * dt;
     this.x += this.dx * step; this.y += this.dy * step;
     this.traveled += step;
+    if (Game.objects.length && Game.barrierBlocks(this.team, px, py, this.x, this.y)) {
+      this.dead = true; Game.fx.spark(this.x, this.y, this.color, 4); return;
+    }
     for (const u of Game.enemyUnits(this.team, { neutral: true })) {
       if (this.hitSet.has(u)) continue;
       if (Math.hypot(u.x - this.x, u.y - this.y) <= this.radius + u.radius) {
@@ -3231,6 +3288,79 @@ class Projectile {
       if (this.explodeR) this.explode(this.x, this.y);
       this.dead = true;
     }
+  }
+}
+
+/* ================= Placed object (docs/design/heroes.md F9) =================
+   Something a hero leaves on the ground: untargetable, expires at t <= 0,
+   drawn each frame. Three modes:
+     trap    — arms after armDelay, then the first enemy (hero, when heroOnly)
+               overlapping triggerRadius takes the skill and is revealed; the
+               trap is spent. Outlives its owner.
+     pulse   — every `tick` seconds shields allied heroes in allyRadius (tag
+               'lantern': refreshed, never stacked) and reveals enemy heroes in
+               revealRadius for the rest of its life. Dies with its owner.
+     barrier — a segment across the cast direction; enemy projectiles that
+               cross it are removed (Game.barrierBlocks). Units, dashes, novas
+               and zones pass. Dies with its owner. */
+class PlacedObject {
+  constructor(owner, s, x, y, rank, mode, dir) {
+    this.owner = owner; this.team = owner.team; this.s = s; this.rank = rank || 1;
+    this.x = x; this.y = y; this.mode = mode; this.dead = false; this.age = 0;
+    this.color = owner.color;
+    this.t = mode === 'trap' ? (s.lifetime || 20) : (s.dur || 5);
+    this.armT = mode === 'trap' ? (s.armDelay || 0) : 0;
+    this.tickT = 0;
+    this.radius = mode === 'trap' ? (s.triggerRadius || 100) : mode === 'pulse' ? (s.allyRadius || 300) : 0;
+    if (mode === 'barrier') {
+      const d = dir || { x: 1, y: 0 }, half = (s.length || 200) / 2;
+      this.ax = x - d.y * half; this.ay = y + d.x * half;
+      this.bx = x + d.y * half; this.by = y - d.x * half;
+    }
+  }
+  get armed() { return this.armT <= 0; }
+  update(dt) {
+    if (this.dead) return;
+    this.age += dt; this.t -= dt;
+    if (this.t <= 0) { this.dead = true; return; }
+    if (this.mode === 'trap') { this.updateTrap(dt); return; }
+    if (!this.owner.alive) { this.dead = true; return; }
+    if (this.mode === 'pulse') this.updatePulse(dt);
+  }
+  updateTrap(dt) {
+    if (this.armT > 0) { this.armT -= dt; return; }
+    const s = this.s, r = this.radius, x = this.x, y = this.y;
+    const list = s.heroOnly === false ? Game.enemyUnits(this.team, { neutral: true }) : Game.heroes;
+    for (const u of list) {
+      if (u.team === this.team || !u.alive || u.untargetable) continue;
+      const dx = u.x - x, dy = u.y - y, rr = r + u.radius;
+      if (dx * dx + dy * dy > rr * rr) continue;
+      this.dead = true;
+      this.owner.skillHit(u, s, this.rank);
+      if (s.revealDur && u.type === 'hero') u.revealT = Math.max(u.revealT || 0, s.revealDur);
+      Game.fx.ring(x, y, r, this.color, 0.4);
+      Game.fx.spark(x, y, this.color, 8);
+      return;
+    }
+  }
+  updatePulse(dt) {
+    this.tickT -= dt;
+    if (this.tickT > 0) return;
+    const s = this.s;
+    this.tickT += s.tick || 1;
+    const shield = (rankVal(s, 'shield', this.rank) || 0) + this.owner.magicPower() * (s.shieldScaleAp || 0);
+    const ar = s.allyRadius || 300, rr = s.revealRadius || 0;
+    for (const h of Game.heroes) {
+      if (!h.alive) continue;
+      const d = hyp(h.x - this.x, h.y - this.y);
+      if (h.team === this.team) {
+        if (shield > 0 && d <= ar + h.radius) h.addShield(shield, s.shieldDur || 2, 'lantern');
+      } else if (rr && d <= rr + h.radius) {
+        h.revealT = Math.max(h.revealT || 0, this.t);
+        h.marks.lanternRevealed = Game.time + this.t;
+      }
+    }
+    Game.fx.ring(this.x, this.y, ar, this.color, 0.3);
   }
 }
 
