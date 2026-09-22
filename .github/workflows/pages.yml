@@ -5,9 +5,11 @@ name: Deploy GitHub Pages
 # strict CSP, a robots.txt, and, when the GATE_PASSPHRASE repository secret
 # is set, a passphrase gate in front of the game.
 
+# The site is built from main; the overnight branch is built too and served
+# under /preview/ (same gate) so work in progress can be played remotely.
 on:
   push:
-    branches: [main]
+    branches: [main, overnight]
   workflow_dispatch:
 
 permissions:
@@ -27,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,6 +39,18 @@ jobs:
           WEB_HOSTED: "1"
           WEB_GATE: ${{ secrets.GATE_PASSPHRASE }}
         run: node scripts/build-www.js
+      - name: Check out the preview branch
+        uses: actions/checkout@v4
+        with:
+          ref: overnight
+          path: preview-src
+      - name: Build the preview bundle under /preview/
+        env:
+          WEB_HOSTED: "1"
+          WEB_GATE: ${{ secrets.GATE_PASSPHRASE }}
+        run: |
+          cd preview-src && node scripts/build-www.js && cd ..
+          mkdir -p www/preview && cp -r preview-src/www/. www/preview/
       - uses: actions/configure-pages@v5
         with:
           enablement: true
