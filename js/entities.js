@@ -331,10 +331,12 @@ class TeamBrain {
         if (dx * dx + dy * dy < 280 * 280) heat++;
       }
       this.heat.set(s, heat);
+      /* Worth walking back for: an inner turret, an inhibitor or the base.
+         An outer turret is a lane's own business — pulling three heroes out
+         of three lanes for it loses more than it saves. */
       if (heat >= 3) {
-        // inner turrets, inhibitors and the base are worth defending; outers are not
         const deep = s.isBase || s.type === 'inhibitor' || (s.frac !== undefined && s.frac <= 0.27);
-        const score = heat + (deep ? 10 : 0) + (1 - s.hpPct) * 4;
+        const score = heat + (1 - s.hpPct) * 4;
         if (deep && score > hottestScore) { hottestScore = score; this.hottest = s; }
       }
     }
@@ -422,7 +424,7 @@ class TeamBrain {
       }
       const ourLord = G.minions.some(m => m.alive && m.team === this.team && m.kind === 'lord');
       if (wonFight || ourLord || mine - theirs >= 2 || (skip && (o.phase === 'prep' || o.phase === 'contest'))) {
-        this.planUntil = G.time + (skip ? 30 : 20);
+        this.planUntil = G.time + 30;
         this.pushLane = skip ? this.laneFarFrom(o.pos) : this.chooseLane();
         const ne = this.waves[this.pushLane] && this.waves[this.pushLane].nextEnemy;
         rally = ne ? this.ourSideOf(ne, 300) : G.basePoint(1 - this.team);
@@ -482,12 +484,8 @@ class TeamBrain {
     const o = this.objective;
     if (!o.pos || (o.phase !== 'prep' && o.phase !== 'contest')) return false;
     if (this.aliveCount(this.team) < 3) return true;
-    const gold = this.lanes.top;
-    if (gold) {
-      for (const s of gold.own) {
-        if (s.alive && (this.heat.get(s) || 0) >= 3 && s.frac !== undefined && s.frac >= 0.39) return true;
-      }
-    }
+    // an inhibitor or the crystal under pressure outranks any pit
+    if (this.hottest && (this.hottest.isBase || this.hottest.type === 'inhibitor')) return true;
     return this.enemyPowerAt(o.pos.x, o.pos.y, 1000) > this.allyPowerAt(o.pos.x, o.pos.y, 1000) * 1.35;
   }
 
@@ -551,8 +549,8 @@ class TeamBrain {
       }
       /* Contest: a laner too far from the pit to arrive before it is decided
          keeps its lane instead of walking across the map into a fight that
-         is already over. */
-      if ((role === 'gold' || role === 'exp') && far > 2600) {
+         is already over. Nobody skips the Lord: it ends games. */
+      if (o.kind !== 'lord' && (role === 'gold' || role === 'exp') && far > 2600) {
         this.assign(h, 'lane', h.lane, null, 'fast', false, null); return;
       }
       this.assign(h, 'objective', null, o.unit, 'hold', false, o.pos);
@@ -574,19 +572,15 @@ class TeamBrain {
       const squad = this.heroes();
       squad.sort((a, b) => (b.botRole() === 'Tank' || b.botRole() === 'Support' ? 1 : 0) - (a.botRole() === 'Tank' || a.botRole() === 'Support' ? 1 : 0) || b.hpPct - a.hpPct);
       const rank = squad.indexOf(h);
-      /* Four on the objective lane and the jungler taking the enemy camps
-         beside it: a 3-2 split reads as five heroes wandering, and the
-         closeness measurement (check 8) is what a fight feels like. */
-      if (plan === 'end' || rank < 4 || !this.rally) {
-        if (lordMinion && rank >= 2 && rank <= 3 && plan !== 'end') {
-          this.assign(h, 'escort', null, lordMinion, 'fast', false, null); return;
-        }
-        this.assign(h, 'rally', this.pushLane, null, 'fast', false, this.rally);
-        return;
+      /* Everyone on the objective lane. The design's 3-2 split is the right
+         shape for a team that can hold two lanes at once; five bots that
+         trickle in twos lose the fight that the push was for, and check 8
+         measures exactly that. Two heroes peel off to walk a Lord minion
+         when there is one, because it does the sieging for them. */
+      if (lordMinion && plan !== 'end' && rank >= 3) {
+        this.assign(h, 'escort', null, lordMinion, 'fast', false, null); return;
       }
-      if (role === 'jungle') { this.assign(h, 'jungle', null, this.routeCamp(h, true), 'hold', false, null); return; }
-      const other = Game.pushLanes().find(l => l !== this.pushLane && l !== 'mid') || 'mid';
-      this.assign(h, 'lane', other, null, 'fast', false, null);
+      this.assign(h, 'rally', this.pushLane, null, 'fast', false, this.rally);
       return;
     }
 
@@ -3311,6 +3305,9 @@ class Hero extends Unit {
       if (!Game.canSee(this.team, u)) continue;
       if (!this.canEngage(u)) continue;
       if (d > notice) {
+        /* A hero still walking to its rally does not peel off after someone
+           a screen away; that is how a five-man push arrives in twos. */
+        if (goal.kind === 'rally' && goal.point && dist(this, goal.point) > 900 && !this.botCanKill(u)) continue;
         /* Join a fight an ally is already in, but do not wander off a last-hit
            to a hero nobody is contesting — unless they are isolated, recalling,
            or already dead-to-burst. */
@@ -4849,8 +4846,14 @@ class Hero extends Unit {
       case 'rally':
       case 'gank':
       case 'objective': {
-        const q = goal.point || (goal.target && { x: goal.target.x, y: goal.target.y }) ||
+        let q = goal.point || (goal.target && { x: goal.target.x, y: goal.target.y }) ||
           this.laneWaveAnchor(goal.lane) || this.laneWaveAnchor('mid');
+        /* Arrived, nothing in sight: walk the rally lane's wave rather than
+           stand on the spot. Standing still is not grouping, it is five
+           heroes giving the other team the map for free. */
+        if (goal.kind === 'rally' && q && dist(this, q) < 300 && !this.enemyHeroWithin(900)) {
+          q = this.laneWaveAnchor(goal.lane) || q;
+        }
         m.movePoint = q ? { x: q.x, y: q.y } : null;
         /* Waiting in a bush before a pit fight is only a wait if you do not
            shoot the first creep that walks past it (§5.4). */
@@ -4969,8 +4972,8 @@ class Hero extends Unit {
       const cut = this.interceptPoint(t);
       m.movePoint = { x: cut.x, y: cut.y };
     }
-    if (m.movePoint && brain && !this.canEngage(t) && brain.dangerAt(m.movePoint.x, m.movePoint.y) >= 8 &&
-        brain.dangerAt(this.x, this.y) < 8) {
+    if (m.movePoint && brain && (this.turretHits >= 1 || !this.canEngage(t)) &&
+        brain.dangerAt(m.movePoint.x, m.movePoint.y) >= 8 && brain.dangerAt(this.x, this.y) < 8) {
       m.movePoint = null;      // that step is into a turret ring we may not dive
     }
   }

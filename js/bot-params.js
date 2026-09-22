@@ -18,8 +18,7 @@ const BOT_PARAMS = {
   chaseRange: 980,        // give-up-chase radius
   heroBias: 240,          // prefer heroes over minions (score bonus)
   lowHpBias: 210,         // prefer wounded heroes (score bonus, scaled by missing HP)
-  structPenalty: 70,      // deprioritize towers (score penalty)
-  diveHp: 0.88,           // HP fraction needed to fight under an enemy tower
+  diveHp: 0.88,           // legacy: only the !advancedAI branch of the neural controller reads it
   castChance: 0.97,       // per-think-tick chance to use a ready skill
   farmManaFloor: 0.28,    // spend skills on creeps only above this mana fraction
   ultExecuteHp: 0.68,     // use the ultimate on targets below this HP fraction
@@ -36,7 +35,6 @@ const BOT_PARAMS = {
   fightPowerRatio: 1.42,  // flee only when visibly outclassed, not even fights
   focusBias: 170,         // help an ally finish the hero they are already hitting
   stickyBias: 90,         // avoid changing targets every think tick
-  lastHitBias: 340,       // secure a killable minion when no hero is more urgent
   killBias: 260,          // prioritize heroes within roughly two basic attacks of death
   healAllyHp: 0.68,       // supports heal a nearby wounded teammate, not only themselves
   isolateBias: 220,       // collapse on a lone visible hero
@@ -62,7 +60,7 @@ const BOT_PARAMS = {
   outnumberMargin: 2,     // flee when outnumbered locally by this many (always on)
 
   /* Macro (bot-ai.md §4-5). */
-  engageAllies: 1,        // allies within 600 of the target needed to dive a live turret
+  engageAllies: 2,        // allies within 600 of the target needed to dive a live turret
   turretHitsMax: 2,       // turret shots taken before the leash pulls you out
   gankWindow: 15,         // seconds a gank goal lives
   prepWindow: 45,         // seconds before an epic spawns that the team prepares
