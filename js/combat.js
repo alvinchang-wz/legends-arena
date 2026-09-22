@@ -578,21 +578,15 @@ const PASSIVES = {
     },
   },
 
-  /* Ignis — skill hits stack Embers; the third ignites for damage over time. */
-  combustion: {
-    onSkillHit(h, target) {
-      if (!target.marks) return;
-      const m = target.marks;
-      m.ember = (m.ember && m.emberT > Game.time) ? m.ember + 1 : 1;
-      m.emberT = Game.time + 4;
-      if (m.ember >= 3) {
-        m.ember = 0;
-        target.addDot({
-          src: h, total: 90 + h.magicPower() * 0.5, dur: 3, type: 'magic',
-          color: THEME.magic, tag: 'ignite',
-        });
-        Game.fx.ring(target.x, target.y, target.radius + 22, THEME.magic, 0.45);
-      }
+  /* Ignis — the Embers are his skills' mark (F12 applyMark on Flame Fan and
+     Pyroclasm, consumed by Flashburn); the passive only reads them: a basic
+     on a hero carrying one lands +25 (+20% MAGIC) bonus magic damage as a
+     packet of its own (no crit, no drain, no passive re-entry). */
+  kindling: {
+    onBasicHit(h, target) {
+      if (target.type !== 'hero' || !markStacks(target, 'ember')) return;
+      resolveDamage(h, target, { amount: 25 + h.magicPower() * 0.2, type: 'magic', noPassive: true, lifestealMult: 0 });
+      Game.fx.spark(target.x, target.y, h.color, 3);
     },
   },
 

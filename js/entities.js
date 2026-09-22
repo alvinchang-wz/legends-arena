@@ -2585,6 +2585,39 @@ class Hero extends Unit {
   /* F29 (Lumen's hint): a unit that cannot run right now — slowed, rooted,
      stunned, airborne, suppressed or channelling. */
   unitHeld(u) { return !!(u && u.cc && (u.cc.has('slow') || !u.cc.canMove || u.channelS)); }
+  /* F29 (Ignis's / Mira's hint): does `t` carry at least botMark.stacks of
+     the botMark.tag mark (a skill-owned mark or a passive's, F12)? */
+  botMarkOk(bm, t) {
+    return !!(bm && t && t.type === 'hero' && t.marks && markStacks(t, bm.tag) >= (bm.stacks || 1));
+  }
+  /* The nearest visible enemy hero inside `r` carrying the botMark stacks, or null. */
+  markedHeroWithin(bm, r) {
+    let best = null, bd = r;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable) continue;
+      const d = this.distTo(e);
+      if (d < bd && this.botMarkOk(bm, e) && Game.canSee(this.team, e)) { bd = d; best = e; }
+    }
+    return best;
+  }
+  /* F29: the distance a botHold hero keeps from its target right now. The
+     def's botHold, shrunk to a mark-consuming skill's ring while that skill
+     is ready and a hero within its botMark.walkIn carries the stacks (Ignis
+     walks in for Flashburn); replaced by a live tether's botKiteHold (Hexa
+     backs off to 400-580 while her thread holds). 0 when the def has none. */
+  botHoldNow() {
+    let hold = this.def0.botHold || 0;
+    if (!hold) return 0;
+    for (let i = 0; i < 3; i++) {
+      const s = this.skills[i], bm = s && s.botMark;
+      if (!bm || !bm.walkIn || this.skillRank[i] < 1 || this.skillCd[i] > 0 || !this.canAfford(s, this.skillRank[i])) continue;
+      // walkInStacks: the stacks that start the walk (Ignis goes in at one Ember: the ring pays per stack)
+      if (this.markedHeroWithin({ tag: bm.tag, stacks: bm.walkInStacks || bm.stacks }, bm.walkIn)) hold = Math.min(hold, (s.radius || 260) - 60);
+    }
+    const tt = this.liveTether();
+    if (tt && tt.s && tt.s.botKiteHold) hold = tt.s.botKiteHold;
+    return hold;
+  }
   /* F29 (Quill's hint): enemy heroes a zone centred on `t` would cover. */
   zoneCrowd(s, t) {
     let n = 0;
@@ -2661,6 +2694,7 @@ class Hero extends Unit {
           !(s.type === 'zone' && s.wallStun && s.knockback && this.wallShoveDir(t, s.knockback + 10)) &&   // F29 (Tide's hint): a wall to throw at
           !(s.type === 'zone' && s.botCrowd && (this.zoneCrowd(s, t) >= 2 || this.unitHeld(t))) &&   // F29 (Quill's hint): a crowd in the box, or a held hero
           !(s.botCcOk && this.unitHeld(t)) &&   // F29 (Lumen's hint): a target that cannot run
+          !(s.type === 'zone' && s.botMark && this.botMarkOk(s.botMark, t)) &&   // F29 (Ignis's hint): a target already carrying the mark
           !(s.type === 'nova' && this.tetherEscaping(s.radius))) return 0;
     }
     const locked = isHero && this.unitLockedDown(t);
@@ -2706,6 +2740,18 @@ class Hero extends Unit {
         for (const h of Game.heroes) {
           if (h.team !== this.team && h.alive && this.distTo(h) < nr + h.radius) near++;
         }
+        /* F29 (Ignis's hint): a mark-consuming ring (botMark with walkIn) fires only when a
+           hero inside `within` carries the stacks, or when he is under botOwnHpBelow with
+           anyone in the ring; at 0 Embers it is harmless, so it is never a crowd tool */
+        if (s.consumeMark && s.botMark && s.botMark.walkIn) {
+          if (ownLow && near >= 1) return 860;
+          const reach = s.botMark.within || s.radius;
+          if (this.markedHeroWithin(s.botMark, reach)) return 880;
+          /* against bots that step out of a 0.9 s meteor a third Ember is a once-a-match event
+             (measured: one 3-Ember window in 16 minutes), so a hero inside the ring carrying
+             any Ember is still worth the ring as a routine nuke (+65 +20% MAGIC per stack) */
+          return this.markedHeroWithin({ tag: s.botMark.tag, stacks: 1 }, reach) ? 520 : 0;
+        }
         if (near >= 2) return hot ? 900 : 880;
         if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
         // F29 (Karn's hint): Iron Slam straight after a hook, while the mark's bonus still applies
@@ -2750,6 +2796,8 @@ class Hero extends Unit {
         return cc && isHero && !locked ? 780 : 360;
       case 'zone':
         if (d >= s.range || !(isHero || farmOk)) return 0;
+        // F29 (Ignis's hint): Pyroclasm centred on a target already carrying an Ember
+        if (s.botMark && !s.botCrowd && isHero && this.botMarkOk(s.botMark, t)) return 860;
         // F29 (Quill's hint): a crowd zone (botCrowd) wants 2+ heroes inside its radius around the target, or one who is held
         if (s.botCrowd) {
           if (!isHero) return 0;
@@ -3422,10 +3470,15 @@ class Hero extends Unit {
           ? Math.max(40, this.range * 0.42)
           : Math.max(70, this.range + this.radius + target.radius + 8);
       }
-      // botHold (F29, Lumen's hint): a sniper keeps at least this much distance while it fits her reach
-      if (this.ranged)
-        return Math.max(170, Math.min(this.def0.botHold || 0, this.range + this.radius + target.radius - 28),
-          Math.min(this.range * 0.84, this.range + this.radius + target.radius - 28)) + fear;
+      // botHold (F29, Lumen's and the mages' hints): a hold hero keeps exactly this distance while
+      // it fits its reach (Hero.botHoldNow shrinks it for a walk-in or a tether kite)
+      if (this.ranged) {
+        const reach = this.range + this.radius + target.radius - 28;
+        const hold = this.botHoldNow();
+        // a tether kite (Hexa) stands past her reach on purpose; any other hold stays inside it
+        if (hold) return Math.max(170, hold > reach && !this.liveTether() ? reach : hold) + fear;
+        return Math.max(170, Math.min(this.range * 0.84, reach)) + fear;
+      }
       return Math.max(45, this.range + this.radius + target.radius - 16);
     })();
     let best = null, bestScore = -Infinity;
@@ -3559,7 +3612,9 @@ class Hero extends Unit {
           /* A marksman with a melee hero inside 250 steps straight away from
              him during attack recovery (the orbit below is chosen around the
              target, which is not where the diver is). Rock behind: orbit. */
-          const melee = this.ranged && this.botRole() === 'Marksman' ? this.meleeThreat(250) : null;
+          const role = this.botRole(), hold = this.botHoldNow();
+          // a mage walking in for a mark payoff (the hold shrunk under 250, Ignis) does not step back from the melee it is walking at
+          const melee = this.ranged && (role === 'Marksman' || role === 'Mage') && !(hold && hold < 250) ? this.meleeThreat(250) : null;
           const kx = melee ? this.x + (this.x - melee.x) / Math.max(1, this.distTo(melee)) * 120 : 0;
           const ky = melee ? this.y + (this.y - melee.y) / Math.max(1, this.distTo(melee)) * 120 : 0;
           if (melee && !Game.wallAt(kx, ky, this.radius + 4)) {
@@ -3575,7 +3630,9 @@ class Hero extends Unit {
         }
       } else if (t.type === 'hero') {
         const cut = this.interceptPoint(t);
-        if (this.ranged && t.hpPct > 0.42 && !this.botCanKill(t) && t.recallT <= 0) {
+        /* a botHold hero (the mages, Lumen) always closes to its hold point, never to melee,
+           whatever the target's health; the walk-in for a mark payoff shrinks the hold instead */
+        if (this.ranged && (this.botHoldNow() || (t.hpPct > 0.42 && !this.botCanKill(t))) && t.recallT <= 0) {
           if (!this.combatPoint || this.combatPointT <= 0) {
             this.combatPoint = this.chooseCombatPoint(t);
             this.combatPointT = 0.28 + rand(0, 0.14);

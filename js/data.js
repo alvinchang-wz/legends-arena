@@ -152,19 +152,32 @@ const HEROES = [
   },
   {
     id: 'ignis', name: 'Ignis', role: 'Mage', icon: '🔥', color: '#fb923c', projColor: '#ffb066',
-    desc: 'A pyromancer with devastating burst damage.',
+    desc: 'A short-range burst mage: stack Embers with a fan of flame and a meteor, then step in and detonate them.',
     difficulty: 2, damageStyle: 'magic',
-    hp: 500, hpLv: 64, mp: 300, mpLv: 34, atk: 46, atkLv: 4,
-    armor: 10, armorLv: 2, mr: 12, mrLv: 2,
-    range: 330, atkSpd: 0.9, speed: 255,
+    /* docs/design/heroes.md, Mages: Ignis. The only hero whose skills consume
+       marks (F12): Flame Fan (the roster's only cone, F11) and Pyroclasm
+       apply Embers (three at most, 4 s), Flashburn reads them per victim,
+       adds damage per stack, stuns at three unless the victim's stunLockT
+       (1.5 s after any Ignis stun) is running, and deletes them. No escape.
+       Bot fields: botHold keeps him 330 from his target; botMark on
+       Pyroclasm asks for a target carrying an Ember; botMark on Flashburn
+       fires it at 880 on a hero with 3 Embers inside `within` (520 with
+       any Ember: a third one is a once-a-match event against bots that
+       step out of the meteor), its walkIn shrinks the hold to the ring
+       while an Embered hero (walkInStacks) is within 400 and the skill is
+       ready, and botOwnHpBelow fires it under 30% HP. */
+    botHold: 330,
+    hp: 500, hpLv: 64, mp: 300, mpLv: 34, atk: 46, atkLv: 4.0,
+    armor: 10, armorLv: 2.0, mr: 12, mrLv: 2.0,
+    range: 330, atkSpd: 0.9, speed: 250,
     passive: {
-      name: 'Combustion', icon: '🔥', id: 'combustion',
-      desc: 'Skills apply an Ember stack for 4s. At 3 stacks the target ignites, taking 90 (+50% MAGIC) magic damage over 3s and losing the stacks.',
+      name: 'Kindling', icon: '🔥', id: 'kindling',
+      desc: 'Basic attacks against an Embered hero deal +25 (+20% MAGIC) bonus magic damage. Embers show as flame pips on the target\'s HP bar.',
     },
     skills: [
-      { name: 'Fireball', icon: '☄️', type: 'skillshot', cd: 7, mana: 55, dmgType: 'magic', dmg: 190, dmgLv: 22, scaleAp: 0.85, range: 700, speed: 800, radius: 26, explodeR: 150, desc: 'Hurl a fireball that explodes on the first enemy hit.' },
-      { name: 'Blazing Ring', icon: '🔆', type: 'nova', cd: 9, mana: 60, dmgType: 'magic', radius: 250, dmg: 150, dmgLv: 18, scaleAp: 0.6, slowPct: 0.35, slowDur: 1.5, desc: 'Erupt in flames, damaging and slowing nearby enemies.' },
-      { name: 'Meteor', icon: '💥', type: 'zone', cd: 42, mana: 120, dmgType: 'magic', range: 640, radius: 240, delay: 0.95, dmg: 320, dmgLv: 34, scaleAp: 0.95, stun: 0.65, desc: 'Call a meteor that devastates and stuns an area.' },
+      { name: 'Flame Fan', icon: '🔥', type: 'cone', cd: 6, cdLv: -0.3, mana: 45, manaLv: 5, dmgType: 'magic', angle: 60, length: 480, dmg: 150, dmgLv: 20, scaleAp: 0.75, applyMark: { tag: 'ember', max: 3, dur: 4, stacks: 1 }, desc: 'An instant 60-degree fan of flame 480 long: 150+20/rank (+75% MAGIC) and one Ember (max 3, 4s) on every enemy inside.' },
+      { name: 'Flashburn', icon: '🔆', type: 'nova', cd: 9, cdLv: -0.4, mana: 60, manaLv: 5, dmgType: 'magic', radius: 260, dmg: 110, dmgLv: 15, scaleAp: 0.45, consumeMark: { tag: 'ember', dmg: 65, dmgLv: 0, scaleAp: 0.20, stunAtStacks: 3, stunDur: 0.6, stunLock: 1.5 }, botMark: { tag: 'ember', stacks: 3, within: 240, walkIn: 400, walkInStacks: 1 }, botOwnHpBelow: 0.3, desc: 'A ring of flame in 260 that consumes Embers: 110+15/rank (+45% MAGIC) plus 65 (+20% MAGIC) per Ember; at 3 Embers the victim is stunned 0.6s (not again within 1.5s of an Ignis stun). The Embers are spent.' },
+      { name: 'Pyroclasm', icon: '💥', type: 'zone', cd: [40, 35, 30], mana: [110, 130, 150], dmgType: 'magic', range: 640, radius: 230, delay: 0.9, ticks: 1, dmg: [280, 360, 440], scaleAp: 1.0, stun: 0.5, applyMark: { tag: 'ember', max: 3, dur: 4, stacks: 1, centreStacks: { within: 100, stacks: 2 } }, botMark: { tag: 'ember', stacks: 1 }, desc: 'A meteor after 0.9s: 280/360/440 (+100% MAGIC) in 230 and a 0.5s stun; 2 Embers within 100 of the centre, 1 on the rim.' },
     ],
   },
   {
