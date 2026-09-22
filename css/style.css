@@ -189,6 +189,11 @@ kbd {
 .allyBar { height: calc(4px * var(--hud-scale)); background: rgba(0,0,0,0.6); border-radius: 2px; overflow: hidden; }
 .allyBar > i { display: block; height: 100%; background: var(--hp); }
 .allyBar.mp > i { background: var(--mana); }
+/* Match the player bar's resource colours (.mpBar[data-resource]) on ally cards. */
+.allyBar.mp[data-resource="energy"] > i { background: #f59e0b; }
+.allyBar.mp[data-resource="heat"] > i { background: #ea580c; }
+.allyBar.mp[data-resource="hp"] > i { background: #dc2626; }
+.allyBar.mp.hidden { display: none; }
 .allyUlt {
   font-size: calc(11px * var(--hud-scale)); width: calc(15px * var(--hud-scale));
   text-align: center; opacity: 0.28;

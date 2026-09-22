@@ -190,9 +190,11 @@ heroes (27x real time; observation encoding is most of the cost).
 
 ## Things noticed in the game (not changed here)
 
-- Bots fill their item slots with consumables and wards (`hpPotion`,
-  `manaPotion`, `stealthWard`, `flask`, `controlWard`, `sweeper` are the six
-  most-held items across the 20-match batch, 128-196 of 200 heroes each) and
-  rarely buy stat items (boots and `windtalker` at most 29 of 200). The median
-  hero ends the match holding 8,700 unspent gold. `ItemAI.score` /
-  `recommend` in `js/items.js` is the place to look.
+- Bot shopping has since been reworked (`ItemAI.score` / `recommend` in
+  `js/items.js`). Measured again over a 40-match random-lineup batch, the
+  most-held items are `hpPotion` (42% of 400 heroes), `arcaneboots` (42%),
+  `warriorboots` (41%), `ruin` (41%), `flask` (31%) and `starfall` (23%):
+  boots and stat items, not six slots of trinkets. A hero ends the match with
+  a median of 3 of 6 slots filled and a median of about 990 unspent gold
+  (p90 1,670), so gold is broadly converted, but half of all heroes still
+  finish with over 1,000 in the bank.

@@ -885,11 +885,17 @@ const UI = {
       if (h.team !== player.team || h === player) continue;
       const el = document.createElement('div');
       el.className = 'allyCard';
+      /* Same rule as the player's own bar: colour it by what the ally actually
+         spends (mana / energy / heat), show a mana bar for a hybrid HP hero
+         with a pool (Pact), and drop the bar for a cooldown hero (Torren) or
+         an HP-cost hero with no pool at all (Marrow). */
+      const res = h.resource === 'hp' && h.maxMana ? 'mana' : h.resource;
+      const noBar = h.resource === 'none' || (h.resource === 'hp' && !h.maxMana);
       el.innerHTML = `<span class="allyIcon">${this.heroIcon(h, 24)}</span>
         <span class="allyLv">1</span>
         <span class="allyBars">
           <span class="allyBar"><i></i></span>
-          <span class="allyBar mp"><i></i></span>
+          <span class="allyBar mp${noBar ? ' hidden' : ''}" data-resource="${res}"><i></i></span>
         </span>
         <span class="allyUlt">${this.icon(`skill:${h.def0.id}:2`, 18, h.skills[2].icon)}</span>
         <span class="allySpell">${h.spell ? this.icon('spell:' + h.spell.id, 16, h.spell.icon) : ''}</span>
