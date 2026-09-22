@@ -44,8 +44,7 @@ light = ((lab == 3) | (lab == 7) | (lab == 0)).astype(np.uint8)
 n, cl, st, _ = cv2.connectedComponentsWithStats(light, 8)
 big = np.zeros(n, bool); big[1:] = st[1:, cv2.CC_STAT_AREA] > 4000
 laneband = cv2.dilate(big[cl].astype(np.uint8), np.ones((3, 3), np.uint8))
-river = ((lab == 4) | (lab == 6)).astype(np.uint8)
-bushness[(laneband > 0) | (river > 0)] = 0
+bushness[laneband > 0] = 0                              # river water sits below the bush threshold on its own
 # glyph lines (the bright arrows on the lanes) are cluster 0, never bush
 bushness[lab == 0] = 0
 
@@ -70,24 +69,25 @@ rock_s[inner_dark > 0] = 0
 # ---------------------------------------------------------------- trace the 0.5 iso-line at 4x
 UP = 4
 def trace(f, min_area):
-    big_ = cv2.resize(f, (W * UP, H * UP), interpolation=cv2.INTER_CUBIC)
+    big_ = cv2.resize(f, (W * UP, H * UP), interpolation=cv2.INTER_LINEAR)     # linear: no ringing at sharp edges
     hi = (big_ > 0.5).astype(np.uint8)
     cnts, hier = cv2.findContours(hi, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     out = []
     for i, c in enumerate(cnts):
         if hier[0][i][3] != -1: continue                 # holes: an enclosed pocket is not walkable anyway
         if cv2.contourArea(c) < min_area * UP * UP: continue
-        # lossless-ish simplification: 0.15 picture px
-        simp = cv2.approxPolyDP(c, 0.15 * UP, True).reshape(-1, 2).astype(np.float64)
+        # sub-pixel simplification: 0.3 picture px drops the micro-zigzags, keeps every real bend
+        simp = cv2.approxPolyDP(c, 0.3 * UP, True).reshape(-1, 2).astype(np.float64)
         if len(simp) < 3: continue
         pts = (simp + 0.5) / UP - 0.5                    # 4x pixel centres -> picture coordinates (pixel index = pixel centre, as OpenCV's warp/resize use)
         out.append(pts)
     return out
 # a symmetric half-pixel blur removes single-pixel jaggies of the anti-aliasing
 # without moving an edge (the 0.5 iso-line of a blurred straight edge stays put)
-rock_s = cv2.GaussianBlur(rock_s, (0, 0), 0.6)
-bush_s = cv2.GaussianBlur(bush_s, (0, 0), 0.7)
-rock_polys = trace(rock_s, 3.0)
+rock_s = cv2.GaussianBlur(rock_s, (0, 0), 0.7)
+bush_s = cv2.GaussianBlur(bush_s, (0, 0), 0.9)
+bush_s = np.minimum(bush_s, 1 - rock_s)                 # where a bush meets rock, its edge is the rock's edge
+rock_polys = trace(rock_s, 1.5)
 bush_polys = trace(bush_s, 6.0)
 print('rocks %d (%d vertices), bushes %d (%d vertices)' % (len(rock_polys), sum(len(p) for p in rock_polys), len(bush_polys), sum(len(p) for p in bush_polys)))
 

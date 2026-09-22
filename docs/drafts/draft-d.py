@@ -291,7 +291,8 @@ print(f'walls {sum(1 for w in WALLS if not w.get("hidden"))} polygons ({sum(len(
 print(f'wall fidelity to the reference mask (IoU) {fidelity:.3f} | unreachable camps: {unreach or "none"} | unreachable towers: {unreachT} | enclosed pockets: {enclosed}')
 
 # ---------------------------------------------------------------- blockout
-S = 3.0; PAD = 24
+SS = 4                          # supersampling: the blockout is drawn at 4x and downscaled, so edges are anti-aliased
+S = 3.0 * SS; PAD = 24 * SS
 img = Image.new('RGB', (int(SIDE * S) + PAD * 2, int(SIDE * S) + PAD * 2), (24, 24, 24))
 dr = ImageDraw.Draw(img, 'RGBA')
 Pm = lambda x, y: ((x - X0) * S + PAD, (y - Y0) * S + PAD)
@@ -306,24 +307,26 @@ TEAM = [(221, 157, 98), (151, 210, 145)]
 for t in TOWERS:
     x, y = Pm(t['x'], t['y']); rr = 30 * S; col = TEAM[t['team']]
     dr.ellipse([x - rr, y - rr, x + rr, y + rr], fill=col + (24,))
-    for k in range(0, 40, 2): dr.arc([x - rr, y - rr, x + rr, y + rr], k * 9, (k + 1) * 9, fill=col + (200,), width=2)
+    for k in range(0, 40, 2): dr.arc([x - rr, y - rr, x + rr, y + rr], k * 9, (k + 1) * 9, fill=col + (200,), width=2 * SS)
 for w in WALLS:
     if w.get('hidden'): continue
     dr.polygon([Pm(*p) for p in w['poly']], fill=(143, 143, 143))
 for b in BUSHES:
-    dr.polygon([Pm(*p) for p in b['poly']], fill=(48, 66, 48), outline=(90, 150, 90))
+    dr.polygon([Pm(*p) for p in b['poly']], fill=(48, 66, 48), outline=(90, 150, 90), width=SS)
 for v in (VOID_A, VOID_B):
     dr.polygon([Pm(*p) for p in v], fill=(24, 24, 24))
 for cp in CAMPS:
     big = cp['kind'] in ('blueBuff', 'redBuff'); x, y = Pm(cp['x'], cp['y']); rr = (9 if big else 7) * S
     dr.ellipse([x - rr, y - rr, x + rr, y + rr], fill=(40, 44, 51))
-    for k in range(0, 30, 2): dr.arc([x - rr, y - rr, x + rr, y + rr], k * 12, (k + 1) * 12, fill=(110, 120, 150), width=2)
+    for k in range(0, 30, 2): dr.arc([x - rr, y - rr, x + rr, y + rr], k * 12, (k + 1) * 12, fill=(110, 120, 150), width=2 * SS)
     if big: dr.ellipse([x - 4 * S, y - 4 * S, x + 4 * S, y + 4 * S], fill=(110, 160, 255) if cp['kind'] == 'blueBuff' else (255, 150, 80))
 for t in TOWERS:
-    x, y = Pm(t['x'], t['y']); dr.rectangle([x - 9, y - 9, x + 9, y + 9], fill=TEAM[t['team']], outline=(24, 24, 24), width=2)
+    x, y = Pm(t['x'], t['y']); dr.rectangle([x - 9 * SS, y - 9 * SS, x + 9 * SS, y + 9 * SS], fill=TEAM[t['team']], outline=(24, 24, 24), width=2 * SS)
 for i, (b, f) in enumerate([(BASE_A, FOUNTAIN_A), (BASE_B, FOUNTAIN_B)]):
-    x, y = Pm(*b); rr = 11 * S; dr.ellipse([x - rr, y - rr, x + rr, y + rr], fill=(68, 54, 41) if i == 0 else (52, 65, 51), outline=TEAM[i], width=3)
-    x, y = Pm(*f); dr.ellipse([x - 6, y - 6, x + 6, y + 6], outline=TEAM[i], width=2)
+    x, y = Pm(*b); rr = 11 * S; dr.ellipse([x - rr, y - rr, x + rr, y + rr], fill=(68, 54, 41) if i == 0 else (52, 65, 51), outline=TEAM[i], width=3 * SS)
+    x, y = Pm(*f); dr.ellipse([x - 6 * SS, y - 6 * SS, x + 6 * SS, y + 6 * SS], outline=TEAM[i], width=2 * SS)
+img = img.resize((img.size[0] // SS, img.size[1] // SS), Image.LANCZOS); dr = ImageDraw.Draw(img, 'RGBA'); S /= SS; PAD //= SS
+Pm = lambda x, y: ((x - X0) * S + PAD, (y - Y0) * S + PAD)
 try: font = ImageFont.truetype('segoeuib.ttf', 20); small = ImageFont.truetype('segoeui.ttf', 14)
 except Exception: font = small = ImageFont.load_default()
 for text, p in [('TOP', (CX, EDGE_T - 19)), ('BOTTOM', (CX, 2 * CY - EDGE_T + 19)), ('MID', (CX, CY - 8)), ('Lord', (LORD[0], LORD[1] - 32)), ('Turtle', (TURTLE[0], TURTLE[1] + 32)), ('A', BASE_A), ('B', BASE_B)]:
