@@ -300,6 +300,7 @@ class Hero extends Unit {
     this.basicRangeState = null;   // F25 {s, rank, count, t}: basics are thrown at rangeSet
     this.basicMod = null;     // F7 {s, rank, t, asMult}: basics are piercing volleys
     this.recast = null;       // F22 {x, y, until, skillIdx, s}: a Return is open on that button
+    this.buffState = null;    // {s, t}: the self steroid running (Cinder's Furnace upgrades her burn while it lasts)
     /* F8 charge skills: charges banked per skill and the seconds left on the
        one charge that is recharging (one at a time, never reduced by cdr) */
     this.skillCharges = [0, 0, 0];
@@ -1082,7 +1083,7 @@ class Hero extends Unit {
     this.alive = false;
     this.deaths++; this.deathStreak++; this.streak = 0;
     this.dashS = null; this.forced = null; this.recallT = 0; this.hot = null;
-    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null; this.basicMod = null; this.recast = null;
+    this.state = null; this.untargetable = false; this.channelS = null; this.basicRangeState = null; this.basicMod = null; this.recast = null; this.buffState = null;
     this.cc.clear(); this.shields = []; this.dots = []; this.marks = {};
     this.runes = {};
     this.curTarget = null; this.aiTarget = null;
@@ -1512,6 +1513,7 @@ class Hero extends Unit {
         break;
       }
       case 'buff': {
+        this.buffState = { s, t: s.dur || 3 };
         if (s.atkMult) { this.buffAtkMult = s.atkMult; this.buffAtkT = s.dur; }
         if (s.spdAdd) this.addTimedBuff('speed', s.spdAdd, s.dur);
         if (s.tenacityAdd) this.addTimedBuff('tenacity', s.tenacityAdd, s.dur);
@@ -1571,6 +1573,7 @@ class Hero extends Unit {
     if (this.buffAtkT > 0) this.buffAtkT -= dt;
     if (this.buffAsT > 0) this.buffAsT -= dt;
     if (this.basicMod) { this.basicMod.t -= dt; if (this.basicMod.t <= 0) this.basicMod = null; }
+    if (this.buffState) { this.buffState.t -= dt; if (this.buffState.t <= 0) this.buffState = null; }
     if (this.basicRangeState) { this.basicRangeState.t -= dt; if (this.basicRangeState.t <= 0) this.endBasicRange(); }
     if (this.recast && Game.time >= this.recast.until) this.recast = null;   // F22: an unused Return just closes
     if (this.revealT > 0) this.revealT -= dt;
@@ -2577,13 +2580,22 @@ class Hero extends Unit {
         /* heroes inside the ring, whoever the bot's own target is: a crowd is
            worth the cast even when the target itself stands outside */
         let near = 0;
+        const hot = !!(s.overheat && this.overheatReady());   // F5: the Overheated variant's ring counts
+        const nr = hot && s.overheat.radius ? s.overheat.radius : s.radius;
         for (const h of Game.heroes) {
-          if (h.team !== this.team && h.alive && this.distTo(h) < s.radius + h.radius) near++;
+          if (h.team !== this.team && h.alive && this.distTo(h) < nr + h.radius) near++;
         }
-        if (near >= 2) return 880;
+        if (near >= 2) return hot ? 900 : 880;
         if (i === 2 && this.tetherEscaping(s.radius)) return 880;   // F29 (Anchor's hint)
         // F29 (Karn's hint): Iron Slam straight after a hook, while the mark's bonus still applies
         if (s.bonusVsMark && this.markedHeroInside(s)) return 900;
+        /* F29 (Cinder's hint): at 100 Heat the Overheated Haymaker wants 2+ heroes in its
+           wider ring (900, above); with one hero it is held for Coal Dash when a
+           marksman or mage is within the dash's reach and the dash is ready */
+        if (s.overheat && this.overheatReady()) {
+          const dash = this.skills[1];
+          if (dash && dash.type === 'dash' && this.skillCd[1] <= 0 && this.carryWithin(dash.dist || 320)) return 0;
+        }
         // F29 (Brass's hint): a crowd tool waits for 2+ heroes inside, or one hero inside who is on an
         // ally (botAllyWithin: with that ally close enough to matter)
         if (s.botCrowd) {
@@ -2603,6 +2615,8 @@ class Hero extends Unit {
         if (s.botGuardAlly && isHero && this.guardTarget(s.dist)) return 800;
         // F29 (Omen's hint): fresh from a takedown, Pass onto the next-lowest hero in reach
         if (s.resetOnKill && !s.stopOnHero && this.chainTarget(s.dist)) return 800;
+        // F29 (Cinder's hint): at 100 Heat the Overheated Coal Dash goes onto the nearest marksman or mage in reach
+        if (s.overheat && isHero && this.overheatReady() && this.carryWithin(s.dist)) return 850;
         if (d <= 150 || d >= s.dist + 100) return 0;
         if (!(isHero || (farmOk && (s.dmg || s.endNova)))) return 0;
         if (isHero && this.advancedAI && !this.gapCloseLegal(t)) return 0;
@@ -2633,6 +2647,8 @@ class Hero extends Unit {
         return t.hpPct < 0.35 ? 870 : 540;
       case 'buff':
         if (!isHero || d >= 300) return 0;
+        // F29 (Cinder's hint): a steroid with botOwnHpBelow (Furnace) waits until she is hurt
+        if (s.botOwnHpBelow) return ownLow ? 720 : 0;
         return 420;
       case 'tether': {   // F16: chain a hero in reach
         if (!isHero) return 0;
@@ -2772,6 +2788,8 @@ class Hero extends Unit {
     if (!s.stopOnHero) {
       // F29 (Omen's hint): after a kill or assist the step goes through the next-lowest hero
       if (s.resetOnKill) { const c = this.chainTarget(s.dist); if (c) return c; }
+      // F29 (Cinder's hint): the Overheated Coal Dash lands on the nearest marksman or mage in reach
+      if (s.overheat && this.overheatReady()) { const c = this.carryWithin(s.dist); if (c) return c; }
       /* F29 (Tide's hint): Surge to the open side of a target standing next to
          a wall, so the target ends up between Tide and the rock for the wave */
       if (s.botOpenSide) {
@@ -2846,6 +2864,22 @@ class Hero extends Unit {
       const role = e.def0 && e.def0.role;
       const carry = role === 'Marksman' || role === 'Mage' ? 1 : 0;
       if (carry > bc || (carry === bc && e.hpPct < bh)) { bc = carry; bh = e.hpPct; best = e; }
+    }
+    return best;
+  }
+  /* F29 (Cinder's hint): the gauge is full, so the next cast Overheats (F5). */
+  overheatReady() { return this.resource === 'heat' && this.mana >= 100; }
+  /* F29 (Cinder's hint): the nearest visible enemy marksman or mage between
+     100 and `reach` away, or null. */
+  carryWithin(reach) {
+    let best = null, bd = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
+      const role = e.def0 && e.def0.role;
+      if (role !== 'Marksman' && role !== 'Mage') continue;
+      const d = this.distTo(e);
+      if (d > reach || d <= 100 || d >= bd) continue;
+      bd = d; best = e;
     }
     return best;
   }

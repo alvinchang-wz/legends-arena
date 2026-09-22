@@ -539,19 +539,29 @@ const HEROES = [
   },
   {
     id: 'cinder', name: 'Cinder', role: 'Fighter', icon: '🧨', color: '#ea580c', projColor: '#fdba74',
-    desc: 'A coal-fist brawler who burns what she cannot break.',
-    difficulty: 1, damageStyle: 'magic',
-    hp: 650, hpLv: 86, mp: 215, mpLv: 24, atk: 57, atkLv: 6.2,
-    armor: 15, armorLv: 2.5, mr: 14, mrLv: 2.2,
-    range: 118, atkSpd: 1.06, speed: 246,
+    desc: 'A coal-fist brawler who runs on Heat instead of mana and overheats into a bigger, controlling cast.',
+    difficulty: 2, damageStyle: 'magic',
+    /* docs/design/heroes.md, Fighters: Cinder. The roster's only rage-style
+       resource (F5): a 0-100 Heat gauge fed by hits (+8 on a hero, +4 on
+       anything else, per basic or skill hit) and by any enemy hero carrying
+       her burn (+2/s), decaying 5/s after 4 s out of combat. Skills are
+       free; at 100 the next cast is Overheated (the skill's `overheat`
+       overrides) and the gauge empties. burnTag names Live Coal's dot so the
+       burn-up reads the right tag. Furnace's burnUpgrade doubles the burn
+       while it runs; botOwnHpBelow: bots stoke it under 60% HP. */
+    resource: 'heat',
+    heat: { gainBasicHero: 8, gainBasic: 4, gainSkillHero: 8, gainSkill: 4, burnPerSec: 2, decay: 5, decayDelay: 4, burnTag: 'coal' },
+    hp: 660, hpLv: 88, mp: 0, mpLv: 0, atk: 58, atkLv: 6.4,
+    armor: 16, armorLv: 2.6, mr: 15, mrLv: 2.3,
+    range: 118, atkSpd: 1.06, speed: 250,
     passive: {
       name: 'Live Coal', icon: '🔶', id: 'livecoal',
-      desc: 'Basic attacks apply a 3s burn for 25 (+20% MAGIC) magic damage. Skills refresh it.',
+      desc: 'Basic attacks and skills apply a 3s burn of 25 (+20% MAGIC) magic damage; reapplying refreshes it. During Furnace the burn is 50 (+40% MAGIC).',
     },
     skills: [
-      { name: 'Haymaker', icon: '✊', type: 'nova', cd: 7, mana: 45, dmgType: 'magic', radius: 200, dmg: 145, dmgLv: 17, scaleAp: 0.55, desc: 'A burning haymaker around you.' },
-      { name: 'Coal Dash', icon: '☄', type: 'dash', cd: 10, mana: 50, dist: 320, speed: 980, endNova: { radius: 170, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4, slowPct: 0.25, slowDur: 1.2 }, desc: 'Dash and detonate cinders on landing.' },
-      { name: 'Furnace', icon: '♨', type: 'buff', cd: 43, mana: 95, atkMult: 1.25, spdAdd: 50, hotPct: 0.18, dur: 5.5, desc: 'Stoke the furnace: attack, speed, and regeneration.' },
+      { name: 'Haymaker', icon: '✊', type: 'nova', cd: 7, cdLv: -0.4, mana: 0, dmgType: 'magic', radius: 200, dmg: 140, dmgLv: 17, scaleAp: 0.55, overheat: { radius: 260, dmgMult: 1.4, slowPct: 0.4, slowDur: 1.5 }, desc: 'A burning haymaker around Cinder. Overheated: 260 radius, 40% more damage and a 40% slow for 1.5s.' },
+      { name: 'Coal Dash', icon: '☄', type: 'dash', cd: 10, cdLv: -0.4, mana: 0, dist: 320, speed: 980, endNova: { radius: 170, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4 }, overheat: { endNova: { radius: 220, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4, stun: 0.5 } }, desc: 'Dash 320 and detonate cinders on landing (no CC). Overheated: a 220 blast that stuns 0.5s.' },
+      { name: 'Furnace', icon: '♨', type: 'buff', cd: [42, 38, 34], mana: 0, atkMult: 1.25, spdAdd: 50, hotPct: 0.18, dur: 6, burnUpgrade: true, overheat: { dur: 9, tenacityAdd: 0.35 }, botOwnHpBelow: 0.6, desc: 'Stoke the furnace 6s: +25% basic damage, +50 speed, 18% max HP over time and a burn twice as hot. Overheated: 9s and +35% tenacity.' },
     ],
   },
   {

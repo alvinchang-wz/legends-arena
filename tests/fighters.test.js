@@ -644,4 +644,137 @@ T.test('Tide bot: Breaker and High Water prefer a target with a wall behind the 
   void s1; void s3;
 });
 
+/* ---------------- Cinder ---------------- */
+
+T.test('Cinder: a Heat hero (0-100, free skills) whose gauge gains per hit, burns up on a burning enemy and decays out of combat; base stats match the spec', () => {
+  reset();
+  const d = cinder.def0;
+  assert.equal(d.resource, 'heat');
+  assert.deepEqual(d.heat, { gainBasicHero: 8, gainBasic: 4, gainSkillHero: 8, gainSkill: 4, burnPerSec: 2, decay: 5, decayDelay: 4, burnTag: 'coal' });
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed],
+    [660, 88, 0, 0, 58, 6.4, 16, 2.6, 15, 2.3, 118, 1.06, 250]);
+  assert.equal(cinder.maxMana, 100); assert.equal(cinder.mana, 0, 'starts cold');
+  for (const s of cinder.skills) { assert.equal(s.mana, 0); assert.equal(cinder.costOf(s, 1), 0); assert.ok(cinder.canAfford(s, 1)); }
+  cinder.gainMana(50);
+  assert.equal(cinder.mana, 0, 'mana refunds never touch Heat');
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 120, open.y);
+  cinder.onBasicLanded(torren, 10);
+  assert.equal(cinder.mana, 8, '+8 per basic on a hero');
+  const m = new sim.context.Minion(0, 'mid', 'melee');
+  T.place(m, open.x - 120, open.y); G.minions.push(m); m.update = () => {};
+  cinder.onBasicLanded(m, 10);
+  assert.equal(cinder.mana, 12, '+4 on a creep');
+  cinder.dots = []; torren.dots = [];
+  assert.ok(cinder.castSkill(0, torren));
+  assert.equal(cinder.mana, 12 + 8 + 4, '+8 for the skill hit on the hero, +4 on the creep');
+  assert.ok(torren.dots.some(x => x.tag === 'coal' && x.src === cinder), 'Live Coal burn on the hero');
+  // burn-up: +2/s while an enemy hero carries her burn, no decay meanwhile
+  const h0 = cinder.mana;
+  T.seconds(G, 1);
+  assert.ok(Math.abs(cinder.mana - (h0 + 2)) < 0.3, `+2/s while Torren burns: ${cinder.mana - h0}`);
+  // decay: 5/s once 4 s have passed with no damage dealt or taken and nothing burning
+  torren.dots = []; cinder.lastDmgT = G.time - 4.5;
+  const h1 = cinder.mana;
+  T.seconds(G, 1);
+  assert.ok(Math.abs(cinder.mana - (h1 - 5)) < 0.3, `-5/s out of combat: ${cinder.mana - h1}`);
+  m.alive = false; G.minions.splice(G.minions.indexOf(m), 1);
+});
+
+T.test('Cinder: skill numbers match the spec; at 100 Heat Haymaker overheats (260, x1.4, slow 40% 1.5 s) and the gauge empties', () => {
+  reset();
+  const [s1, s2, s3] = cinder.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.overheat], ['nova', 7, -0.4, 200, 140, 17, 0.55, { radius: 260, dmgMult: 1.4, slowPct: 0.4, slowDur: 1.5 }]);
+  assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.dist, s2.speed, s2.dmg, s2.endNova, s2.overheat.endNova],
+    ['dash', 10, -0.4, 320, 980, undefined, { radius: 170, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4 }, { radius: 220, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4, stun: 0.5 }]);
+  assert.deepEqual([s3.type, s3.cd, s3.atkMult, s3.spdAdd, s3.hotPct, s3.dur, s3.burnUpgrade, s3.overheat], ['buff', [42, 38, 34], 1.25, 50, 0.18, 6, true, { dur: 9, tenacityAdd: 0.35 }]);
+  assert.ok(Math.abs(cinder.cooldownFor(s1, 6) - 5) < 1e-9); assert.ok(Math.abs(cinder.cooldownFor(s2, 6) - 8) < 1e-9);
+  // a cold Haymaker: 200 radius, no slow
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 150, open.y); T.place(brass, open.x - 250, open.y);
+  assert.ok(cinder.castSkill(0, torren));
+  const plain = torren.maxHp - torren.hp;
+  assert.ok(plain > 0 && brass.hp === brass.maxHp && !torren.cc.has('slow'), 'cold: 200 radius, no slow');
+  assert.equal(cinder.mana, 8 + 0, 'a normal cast just adds its hit');
+  // hot: wider, harder, slowing, and the gauge resets
+  reset();
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 150, open.y); T.place(brass, open.x - 250, open.y);
+  cinder.mana = 100;
+  assert.ok(cinder.castSkill(0, torren));
+  const hot = torren.maxHp - torren.hp;
+  assert.ok(Math.abs(hot / plain - 1.4) < 0.03, `x1.4: ${hot / plain}`);
+  assert.ok(brass.hp < brass.maxHp, 'Brass at 250 is inside the 260 ring');
+  assert.ok(Math.abs(torren.cc.slowPct - 0.4) < 1e-9 && torren.cc.t.slow > 1.4 && torren.cc.t.slow <= 1.5, 'slow 40% 1.5 s');
+  assert.equal(cinder.mana, 0, 'the gauge empties on an overheat');
+  assert.ok(cinder.skillCd[0] > 4.9 && cinder.skillCd[0] <= 5, 'cooldown from the base skill');
+});
+
+T.test('Cinder: Coal Dash slams 170 on landing with no CC; overheated it is a 220 blast that stuns 0.5 s', () => {
+  reset();
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 320, open.y + 240);   // 240 off the landing: only the hot 220 (+ body) blast reaches
+  assert.ok(cinder.castSkill(1, { x: open.x + 320, y: open.y }));
+  assert.equal(cinder.dashS.dmg, 0, 'no path damage');
+  T.seconds(G, 0.5);
+  assert.equal(torren.hp, torren.maxHp, 'cold: 170 does not reach 240 away');
+  reset();
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 320, open.y + 240);
+  cinder.mana = 100;
+  assert.ok(cinder.castSkill(1, { x: open.x + 320, y: open.y }));
+  assert.equal(cinder.mana, 0);
+  T.seconds(G, 0.5);
+  assert.ok(torren.hp < torren.maxHp, 'hot: the 220 blast reaches');
+  assert.ok(torren.cc.t.stun > 0.3 && torren.cc.t.stun <= 0.5, `stun 0.5: ${torren.cc.t.stun}`);
+  assert.ok(cinder.mana >= 8 && cinder.mana < 9, `the landing hit re-heats her (+8, then +2/s while he burns): ${cinder.mana}`);
+});
+
+T.test('Cinder: Furnace gives +25% basic damage, +50 speed, 18% max HP over 6 s and doubles the burn; overheated it runs 9 s with +35% tenacity', () => {
+  reset();
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 150, open.y);
+  const spd0 = cinder.curSpeed(), atk0 = cinder.curAtk();
+  assert.ok(cinder.castSkill(2, null));
+  assert.equal(cinder.skillCd[2], 34);
+  assert.ok(Math.abs(cinder.curAtk() - atk0 * 1.25) < 1e-6, '+25% attack');
+  assert.ok(Math.abs(cinder.curSpeed() - (spd0 + 50)) < 1e-6, '+50 speed');
+  assert.ok(cinder.hot && Math.abs(cinder.hot.rate * 6 - cinder.maxHp * 0.18) < 1, '18% max HP over 6 s');
+  assert.ok(cinder.buffState && Math.abs(cinder.buffState.t - 6) < 1e-9 && cinder.buffState.s.burnUpgrade, 'the furnace state runs 6 s');
+  assert.equal(cinder.attrs.get('tenacity'), 0, 'no tenacity when cold');
+  torren.dots = [];
+  cinder.onBasicLanded(torren, 10);
+  const burn = torren.dots.find(x => x.tag === 'coal');
+  assert.ok(Math.abs(burn.perSec * 3 - (50 + cinder.magicPower() * 0.4)) < 1e-6, `burn 50 (+40% MAGIC) over 3 s during Furnace: ${burn.perSec * 3}`);
+  T.seconds(G, 6.1);
+  assert.equal(cinder.buffState, null, 'over after 6 s');
+  torren.dots = [];
+  cinder.onBasicLanded(torren, 10);
+  assert.ok(Math.abs(torren.dots.find(x => x.tag === 'coal').perSec * 3 - (25 + cinder.magicPower() * 0.2)) < 1e-6, 'back to 25 (+20% MAGIC)');
+  // overheated: 9 s and tenacity
+  reset();
+  T.place(cinder, open.x, open.y);
+  cinder.mana = 100;
+  assert.ok(cinder.castSkill(2, null));
+  assert.ok(cinder.buffState && Math.abs(cinder.buffState.t - 9) < 1e-9, '9 s');
+  assert.ok(Math.abs(cinder.attrs.get('tenacity') - 0.35) < 1e-9, '+35% tenacity');
+  assert.ok(cinder.hot && Math.abs(cinder.hot.t - 9) < 1e-9);
+  assert.equal(cinder.mana, 0);
+});
+
+T.test('Cinder bot: at 100 Heat, Haymaker on 2+ heroes inside 260, else Coal Dash onto the nearest marksman or mage within 320; Furnace once under 60% HP', () => {
+  reset();
+  T.place(cinder, open.x, open.y); T.place(torren, open.x + 150, open.y); T.place(zephyr, open.x, open.y + 310);   // outside the hot ring (260 + a body), inside the dash
+  G.update(1 / 60);
+  cinder.mana = 50;
+  assert.ok(cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false) > 0 && cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false) < 900, 'cold: the ordinary nova rule');
+  cinder.mana = 100;
+  assert.equal(cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false), 0, 'hot with one hero in the ring and a marksman in dash reach: hold the Haymaker');
+  assert.equal(cinder.botSkillUrgency(1, torren, cinder.distTo(torren), true, false), 850, 'the Overheated dash goes for the marksman');
+  assert.equal(cinder.dashPick(cinder.skills[1], torren), zephyr);
+  T.place(zephyr, open.x, open.y + 240);
+  assert.equal(cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false), 900, 'two heroes inside the hot 260 ring: Haymaker');
+  T.place(zephyr, open.x, open.y + 900);
+  assert.ok(cinder.botSkillUrgency(0, torren, cinder.distTo(torren), true, false) > 0, 'nobody to dash onto: the Haymaker is not wasted forever');
+  // Furnace waits for 60%
+  assert.equal(cinder.botSkillUrgency(2, torren, cinder.distTo(torren), true, false), 0, 'healthy: hold');
+  cinder.hp = cinder.maxHp * 0.55;
+  assert.equal(cinder.botSkillUrgency(2, torren, cinder.distTo(torren), true, false), 720, 'under 60% in a fight: stoke it');
+  cinder.hp = cinder.maxHp; cinder.mana = 0;
+});
+
 T.done();

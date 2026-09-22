@@ -827,11 +827,15 @@ const PASSIVES = {
     },
   },
 
+  /* Cinder — every basic and skill hit burns 25 (+20% MAGIC) over 3 s,
+     refreshed on re-apply; while a burnUpgrade buff (Furnace) runs the
+     burn is 50 (+40% MAGIC). The 'coal' tag is what her Heat burn-up reads. */
   livecoal: {
     _burn(h, target) {
       if (!target.addDot || target.isStructure) return;
+      const hot = h.buffState && h.buffState.t > 0 && h.buffState.s.burnUpgrade;
       target.addDot({
-        src: h, total: 25 + h.magicPower() * 0.2, dur: 3,
+        src: h, total: hot ? 50 + h.magicPower() * 0.4 : 25 + h.magicPower() * 0.2, dur: 3,
         type: 'magic', color: h.color, tag: 'coal',
       });
     },
