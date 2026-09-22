@@ -2532,9 +2532,8 @@ class Hero extends Unit {
       case 'object':     // F9: a lantern goes down where the fight is
         if (!isHero || d >= 700) return 0;
         return 350;
-      case 'barrier':    // F9: raise it against a ranged hero
-        if (!isHero || !t.ranged || d >= 640 || d < 120) return 0;
-        return 380;
+      case 'barrier':    // F9 / F29 (Bastion's hint): a gate against a ranged hero within 700 who is on an ally
+        return this.barrierThreat() ? 520 : 0;
       case 'channel': {  // F18: a channelled nova wants a crowd in its radius and no interrupt waiting
         const pr = (s.payload && s.payload.radius) || 300;
         if (!isHero || d >= pr + t.radius - 40) return 0;
@@ -2587,6 +2586,35 @@ class Hero extends Unit {
       }
     }
     return null;
+  }
+
+  /* F29 (Bastion's bot hint): the ranged enemy hero a gate should face — the
+     nearest visible one between 120 and 700 away who is attacking or aiming
+     at one of our heroes. Whatever the bot's own target is, the gate answers
+     the archer. */
+  barrierThreat() {
+    let best = null, bd = Infinity;
+    for (const e of Game.heroes) {
+      if (e.team === this.team || !e.alive || !e.ranged || e.untargetable) continue;
+      const d = this.distTo(e);
+      if (d >= 700 || d < 120 || d >= bd || !Game.canSee(this.team, e)) continue;
+      if (!this.rangedThreatensAlly(e)) continue;
+      bd = d; best = e;
+    }
+    return best;
+  }
+  /* Is this enemy ranged hero attacking or aiming at one of our heroes (self
+     included)? Its current target, or any allied hero inside its reach plus
+     a step. */
+  rangedThreatensAlly(e) {
+    const ct = e.curTarget;
+    if (ct && ct.type === 'hero' && ct.team === this.team && ct.alive) return true;
+    const reach = (e.range || 300) + 120;
+    for (const a of Game.heroes) {
+      if (a.team !== this.team || !a.alive) continue;
+      if (a.distTo(e) <= reach) return true;
+    }
+    return false;
   }
 
   /* F29 (Grom's bot hint): a stopOnHero dash is a pick, so it goes at the
@@ -2643,7 +2671,7 @@ class Hero extends Unit {
         this.castSkill(i, { x: this.x + (t.x - this.x) * 0.5, y: this.y + (t.y - this.y) * 0.5 });
         break;
       case 'barrier':
-        this.castSkill(i, t);
+        this.castSkill(i, this.barrierThreat() || t);
         break;
       case 'channel':
         this.castSkill(i, t);

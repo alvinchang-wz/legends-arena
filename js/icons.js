@@ -768,7 +768,11 @@ const Icons = (() => {
   GLYPHS['skill:cinder:1'] = g => { g.beginPath(); g.moveTo(18, 30); g.quadraticCurveTo(50, 10, 70, 60); g.setLineDash([8, 6]); g.lineWidth = 4; g.strokeStyle = '#ea580c'; g.stroke(); g.setLineDash([]); g.beginPath(); g.ellipse(70, 72, 16, 6, 0, 0, T2); g.stroke(); };
   GLYPHS['skill:cinder:2'] = g => { ring(g, 50, 58, 22, 5, '#ea580c'); spark4(g, 50, 28, 10, '#fdba74'); };
   GLYPHS['skill:bastion:0'] = g => { g.fillStyle = '#78716c'; g.fillRect(22, 30, 56, 12); g.fillRect(28, 42, 8, 32); g.fillRect(64, 42, 8, 32); };
-  GLYPHS['skill:bastion:1'] = g => { arrow(g, 14, 50, 86, 50, 8, '#a8a29e', 2); };
+  GLYPHS['skill:bastion:1'] = g => {                                 // Gatehouse: a raised gate that eats arrows
+    g.fillStyle = '#78716c'; g.fillRect(18, 26, 10, 54); g.fillRect(72, 26, 10, 54); g.fillRect(18, 20, 64, 10);
+    for (let x = 34; x <= 66; x += 8) { g.fillStyle = '#a8a29e'; g.fillRect(x - 2, 30, 4, 46); }
+    seg(g, 6, 58, 30, 52, 4, '#d6d3d1'); spark4(g, 32, 52, 6, '#fafaf9');
+  };
   GLYPHS['skill:bastion:2'] = g => { path(g, [[50, 14], [82, 32], [82, 68], [50, 86], [18, 68], [18, 32]]); g.lineWidth = 4; g.strokeStyle = '#78716c'; g.stroke(); g.fillStyle = 'rgba(120,113,108,0.3)'; g.fill(); };
   GLYPHS['skill:marrow:0'] = g => { for (let i = -2; i <= 2; i++) rot(g, 50, 70, i * 0.32, () => { g.fillStyle = '#e7e5e4'; g.fillRect(-3, -40, 6, 36); }); };
   GLYPHS['skill:marrow:1'] = g => { g.fillStyle = '#e7e5e4'; g.fillRect(46, 22, 8, 40); g.fillRect(30, 48, 40, 8); spark4(g, 50, 22, 7, '#fafaf9'); };

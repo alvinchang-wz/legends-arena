@@ -524,19 +524,23 @@ const HEROES = [
   },
   {
     id: 'bastion', name: 'Bastion', role: 'Tank', icon: '🏰', color: '#78716c', projColor: '#d6d3d1',
-    desc: 'A walking keep who shares armor with whoever stands in his shadow.',
-    difficulty: 1, damageStyle: 'physical',
-    hp: 740, hpLv: 100, mp: 230, mpLv: 25, atk: 52, atkLv: 5.4,
+    desc: 'A walking keep who stands in front of his carries and eats the arrows meant for them.',
+    difficulty: 2, damageStyle: 'physical',
+    hp: 740, hpLv: 100, mp: 240, mpLv: 26, atk: 52, atkLv: 5.4,
     armor: 24, armorLv: 3.8, mr: 17, mrLv: 2.6,
-    range: 88, atkSpd: 0.80, speed: 242,
+    range: 88, atkSpd: 0.80, speed: 248,
     passive: {
       name: 'Rampart', icon: '☗', id: 'rampart',
-      desc: 'Every 8s, grant nearby allied heroes a shield equal to 8% of your max HP for 3s.',
+      desc: 'Every 8s allied heroes within 420 (including Bastion) gain a shield equal to 8% of Bastion\'s max HP for 3s.',
     },
+    /* docs/design/heroes.md, Tanks: Bastion. Gatehouse is the roster's only
+       projectile denial (F9 barrier): a fixed 260 segment 90 ahead that
+       deletes enemy skillshots and ranged basics for 3 s; units, dashes,
+       novas and zones pass. The mirror of Grom: he pushes, never pulls. */
     skills: [
-      { name: 'Portcullis', icon: '⊓', type: 'nova', cd: 8, mana: 50, dmgType: 'physical', radius: 230, dmg: 120, dmgLv: 14, scaleAd: 0.45, stun: 0.7, desc: 'Slam a gate down, stunning nearby enemies.' },
-      { name: 'Sally', icon: '⇉', type: 'dash', cd: 13, mana: 55, dmgType: 'physical', dist: 380, speed: 850, dmg: 90, dmgLv: 11, scaleAd: 0.4, stopOnHero: true, slowPct: 0.4, slowDur: 1.5, desc: 'A committed sally that slows the first hero.' },
-      { name: 'Siege Law', icon: '⬡', type: 'zone', cd: 44, mana: 115, dmgType: 'physical', range: 420, radius: 260, delay: 0.4, dmg: 220, dmgLv: 24, scaleAd: 0.5, immobilize: 1.4, desc: 'Claim ground: enemies inside are rooted.' },
+      { name: 'Portcullis', icon: '⊓', type: 'nova', cd: 8, mana: 50, dmgType: 'physical', radius: 230, dmg: 110, dmgLv: 14, scaleAd: 0.45, stun: 0.6, desc: 'Drop the gate on everyone around Bastion: stun 0.6s.' },
+      { name: 'Gatehouse', icon: '⊓', type: 'barrier', cd: 16, mana: 70, length: 260, offset: 90, dur: 3.0, desc: 'Raise a fixed stone gate 90 units ahead for 3s that destroys enemy skillshots and arrows crossing it; units walk through.' },
+      { name: 'Hold the Line', icon: '⬡', type: 'nova', cd: [40, 36, 32], mana: 105, dmgType: 'physical', radius: 320, dmg: 200, dmgLv: 28, scaleAd: 0.5, knockback: 70, slowPct: 0.5, slowDur: 1.5, desc: 'Shove every enemy within 320 away 70 units and slow them 50% for 1.5s.' },
     ],
   },
   {

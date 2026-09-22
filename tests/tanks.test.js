@@ -188,4 +188,121 @@ T.test('Grom bot: Bull Charge goes at the lowest-HP ranged hero it can reach', (
   assert.equal(grom.dashPick(grom.skills[1], tide), tide, 'no ranged hero in reach: the target itself');
 });
 
+/* ---------------- Bastion ---------------- */
+
+T.test('Bastion: base stats and skill numbers match the spec', () => {
+  const d = bastion.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [740, 100, 240, 26, 52, 5.4, 24, 3.8, 17, 2.6, 88, 0.80, 248, 2]);
+  const [s1, s2, s3] = d.skills;
+  assert.deepEqual([s1.type, s1.cd, s1.mana, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAd, s1.stun], ['nova', 8, 50, 230, 110, 14, 0.45, 0.6]);
+  assert.deepEqual([s2.type, s2.cd, s2.mana, s2.length, s2.offset, s2.dur], ['barrier', 16, 70, 260, 90, 3.0]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.radius, s3.dmg, s3.dmgLv, s3.scaleAd, s3.knockback, s3.slowPct, s3.slowDur],
+    ['nova', [40, 36, 32], 105, 320, 200, 28, 0.5, 70, 0.5, 1.5]);
+  assert.equal(rankVal(s3, 'dmg', 3), 256);
+  assert.equal(rankVal(s3, 'cd', 2), 36);
+});
+
+T.test('Bastion: Rampart shields allied heroes within 420 (himself included) for 8% of his max HP every 8 s', () => {
+  reset();
+  T.place(bastion, open.x, open.y);
+  T.place(mira, open.x + 300, open.y);
+  T.place(tide, open.x + 600, open.y);
+  T.place(grom, open.x + 200, open.y);   // an enemy
+  bastion.pv.t = 0.05;
+  T.frames(G, 4);
+  assert.equal(bastion.shields.length, 1, 'self');
+  assert.equal(mira.shields.length, 1, 'ally within 420');
+  assert.equal(tide.shields.length, 0, 'ally outside 420');
+  assert.equal(grom.shields.length, 0, 'enemy');
+  assert.ok(Math.abs(mira.shields[0].amount - bastion.maxHp * 0.08) < 1, `8% of Bastion's max HP: ${mira.shields[0].amount}`);
+  assert.ok(mira.shields[0].t > 2.9 && mira.shields[0].t <= 3, 'for 3 s');
+  assert.ok(bastion.pv.t > 7.8, 'next pulse in 8 s');
+});
+
+T.test('Bastion: Portcullis stuns 0.6 s around him; Hold the Line shoves 70 outward and slows 50% for 1.5 s', () => {
+  reset();
+  T.place(bastion, open.x, open.y);
+  T.place(grom, open.x + 180, open.y);
+  T.place(nyx, open.x - 280, open.y);
+  T.place(zephyr, open.x + 400, open.y);
+  assert.ok(bastion.castSkill(0, grom));
+  const expectStun = 0.6 * (1 - Math.min(0.6, grom.attrs.get('tenacity')));   // Grom's emblem carries tenacity
+  assert.ok(Math.abs(grom.cc.t.stun - expectStun) < 1e-6, `stun 0.6 before tenacity: ${grom.cc.t.stun} vs ${expectStun}`);
+  assert.ok(grom.hp < grom.maxHp);
+  assert.equal(nyx.cc.t.stun, 0, 'outside 230');
+  assert.ok(bastion.castSkill(2, grom));
+  assert.ok(nyx.hp < nyx.maxHp, 'inside 320');
+  assert.equal(zephyr.hp, zephyr.maxHp, 'outside 320');
+  assert.ok(Math.abs(nyx.cc.slowPct - 0.5) < 1e-9 && nyx.cc.t.slow > 1.45);
+  assert.ok(nyx.forced && nyx.forced.mode === 'slide' && Math.abs(nyx.forced.dist - 70) < 1e-9, 'a 70 tween');
+  T.frames(G, 20);
+  assert.ok(nyx.x < open.x - 280 - 55, `pushed away on his side: ${open.x - 280 - nyx.x}`);
+  assert.ok(grom.x > open.x + 180 + 55, `and on the other: ${grom.x - (open.x + 180)}`);
+  assert.ok(bastion.mana < bastion.maxMana - 155 + 2, '50 + 105 mana paid');
+  assert.ok(bastion.skillCd[2] > 31.5 && bastion.skillCd[2] <= 32, `rank-3 cooldown 32 (a third of a second in): ${bastion.skillCd[2]}`);
+});
+
+T.test('Bastion: Gatehouse is a fixed 260 gate 90 ahead for 3 s that deletes enemy skillshots and arrows, not novas or units', () => {
+  reset();
+  T.place(bastion, open.x, open.y);
+  T.place(zephyr, open.x + 500, open.y);   // enemy marksman behind the gate line
+  T.place(mira, open.x - 150, open.y);     // the ally he stands in front of
+  assert.ok(bastion.castSkill(1, zephyr));
+  const gate = G.objects.find(o => o.owner === bastion && !o.dead);
+  assert.ok(gate && gate.mode === 'barrier');
+  assert.ok(Math.abs(gate.x - (open.x + 90)) < 1e-6 && Math.abs(gate.y - open.y) < 1e-6, 'centred 90 ahead');
+  assert.ok(Math.abs(Math.hypot(gate.bx - gate.ax, gate.by - gate.ay) - 260) < 1e-6, '260 long');
+  assert.ok(gate.t > 2.9 && gate.t <= 3, 'lasts 3 s');
+  // an enemy skillshot and an enemy arrow both die on the gate
+  const hp0 = mira.hp, bhp0 = bastion.hp;
+  assert.ok(zephyr.castSkill(0, mira));
+  zephyr.curTarget = bastion; zephyr.atkCd = 0; zephyr.tryAttack(bastion);
+  assert.ok(G.projectiles.length >= 2, `a bolt and an arrow in flight: ${G.projectiles.length}`);
+  T.seconds(G, 1.2);
+  assert.equal(mira.hp, hp0, 'the bolt never crossed');
+  assert.equal(bastion.hp, bhp0, 'nor the arrow');
+  assert.equal(G.projectiles.filter(p => !p.dead).length, 0);
+  // the gate is fixed: Bastion walking away leaves it where it was
+  T.place(bastion, open.x - 400, open.y);
+  G.update(1 / 60);
+  assert.ok(Math.abs(gate.x - (open.x + 90)) < 1e-6);
+  // an enemy nova goes through
+  T.place(grom, open.x + 150, open.y + 40);
+  T.place(bastion, open.x, open.y);
+  const b1 = bastion.hp;
+  assert.ok(grom.castSkill(0, bastion));
+  assert.ok(bastion.hp < b1, 'Shockwave (a nova) ignores the gate');
+  T.seconds(G, 2);
+  assert.ok(gate.dead, 'expired');
+});
+
+T.test('Bastion bot: Gatehouse goes up against a ranged enemy within 700 who is on an ally, whatever his own target is', () => {
+  reset();
+  T.place(bastion, open.x, open.y);
+  T.place(mira, open.x - 200, open.y);      // the carry he guards
+  T.place(zephyr, open.x + 450, open.y);    // enemy marksman
+  T.place(nyx, open.x + 300, open.y);       // enemy melee, his own target
+  zephyr.curTarget = mira;
+  assert.equal(bastion.barrierThreat(), zephyr);
+  assert.equal(bastion.botSkillUrgency(1, nyx, bastion.distTo(nyx), true, false), 520, 'the archer aims at the ally');
+  zephyr.curTarget = null;
+  T.place(zephyr, open.x + 650, open.y);    // 850 from Mira, 650 from Bastion: attacking nobody in reach
+  assert.equal(bastion.barrierThreat(), null, 'not threatening anyone');
+  assert.equal(bastion.botSkillUrgency(1, nyx, bastion.distTo(nyx), true, false), 0);
+  T.place(zephyr, open.x + 380, open.y);    // Bastion himself is now in her reach
+  assert.equal(bastion.barrierThreat(), zephyr, 'an ally (himself) inside her range');
+  T.place(zephyr, open.x + 750, open.y);
+  zephyr.curTarget = mira;
+  assert.equal(bastion.barrierThreat(), null, 'beyond 700');
+  T.place(zephyr, FAR.x, FAR.y);
+  assert.equal(bastion.botSkillUrgency(1, nyx, bastion.distTo(nyx), true, false), 0, 'a melee alone: nothing to block');
+  // the gate is aimed at the archer, not at the melee target
+  T.place(zephyr, open.x + 400, open.y + 400); zephyr.curTarget = mira;
+  bastion.botFireSkill(1, nyx, bastion.distTo(nyx), true, false);
+  const gate = G.objects.find(o => o.owner === bastion && !o.dead);
+  assert.ok(gate);
+  assert.ok(Math.abs(Math.atan2(gate.y - open.y, gate.x - open.x) - Math.PI / 4) < 1e-6, 'faces Zephyr');
+});
+
 T.done();
