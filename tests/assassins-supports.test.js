@@ -89,7 +89,7 @@ T.test('Nyx: base stats and skill numbers match the spec (the execute assassin: 
   const [s1, s2, s3] = nyx.skills;
   assert.deepEqual([s1.type, s1.dist, s1.speed, s1.dmgType, s1.dmg, s1.dmgLv, s1.scaleAd, s1.cd, s1.mana], ['dash', 340, 1100, 'physical', 130, 16, 0.7, 8, 45]);
   assert.equal(rankVal(s1, 'dmg', 6), 210);
-  assert.deepEqual([s2.type, s2.dur, s2.untargetable, s2.speedPct, s2.noAttack, s2.cd, s2.mana], ['selfState', 0.8, true, 0.3, true, 12, 40]);
+  assert.deepEqual([s2.type, s2.dur, s2.untargetable, s2.speedPct, s2.noAttack, s2.cd, s2.mana], ['selfState', 0.8, true, 0.3, true, 10.5, 40]);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.dmg, s3.dmgLv, s3.scaleAd, s3.missingPct, s3.missingPctLv, s3.missingCap, s3.physPenPct],
     ['blinkstrike', [42, 38, 34], 100, 500, 260, 40, 1.0, 0.2, 0.05, 400, 0.22]);
   assert.equal(rankVal(s3, 'dmg', 3), 340); near(rankVal(s3, 'missingPct', 3), 0.3, 1e-9, 'Deathmark missing share at rank 3');
@@ -305,15 +305,15 @@ T.test('Sable: base stats and skill numbers match the spec (the only hero-only p
   assert.equal(d.passive.id, 'venom');
   const [s1, s2, s3] = sable.skills;
   assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.heroOnly, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce],
-    ['skillshot', 5, -0.2, 40, true, 90, 12, 0.5, 560, 1000, 20, false]);
+    ['skillshot', 5, -0.2, 40, true, 105, 14, 0.5, 560, 1000, 20, false]);
   assert.deepEqual(s1.applyMark, { tag: 'venom', max: 3, dur: 4, stacks: 1, dot: { pctMaxHp: 0.015, pctPerMp: 0.0001, perSec: true, dur: 4, capNonHero: 40 } });
-  assert.equal(rankVal(s1, 'dmg', 6), 150); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Needle cd at rank 6');
+  assert.equal(rankVal(s1, 'dmg', 6), 175); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Needle cd at rank 6');
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAp],
     ['dash', 9, -0.3, 45, 300, 1100, 110, 14, 0.5]);
   assert.equal(s2.applyMark, s1.applyMark, 'Lunge applies the same Venom (one stack, the same dot)');
   assert.equal(rankVal(s2, 'dmg', 6), 180); near(rankVal(s2, 'cd', 6), 7.5, 1e-9, 'Lunge cd at rank 6');
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.dmg, s3.dmgLv, s3.scaleAp, s3.pctMaxHp, s3.pctMaxHpCap, s3.slowPct, s3.slowDur, s3.refreshMark],
-    ['blinkstrike', [38, 34, 30], 100, 460, 220, 40, 0.7, [0.08, 0.10, 0.12], 500, 0.5, 1.5, { tag: 'venom' }]);
+    ['blinkstrike', [38, 34, 30], 100, 460, 220, 40, 0.7, [0.09, 0.11, 0.13], 500, 0.5, 1.5, { tag: 'venom' }]);
   assert.ok(!s3.consumeMark, 'Kiss refreshes, never consumes');
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'skillshot' && s.heroOnly)).length, 1, 'the only hero-only projectile');
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.pctMaxHp)).length, 1, 'the only %-max-HP skill');
@@ -374,13 +374,13 @@ T.test('Sable: Needle flies through a creep to the hero behind it and applies Ve
   near(cdot.perSec, 40, 1e-6, 'capped at 40 per second per stack against a non-hero');
 });
 
-T.test('Sable: Kiss blinks in for base + 8/10/12% of max HP (cap 500 vs non-heroes), slows 50% for 1.5 s and refreshes every Venom stack to full without consuming them', () => {
+T.test('Sable: Kiss blinks in for base + 9/11/13% of max HP (cap 500 vs non-heroes), slows 50% for 1.5 s and refreshes every Venom stack to full without consuming them', () => {
   reset();
   const s3 = sable.skills[2];
   T.place(sable, open.x, open.y);
   T.place(grom, open.x + 300, open.y);
-  near(sable.skillDmg(s3, 3, grom), 300 + sable.magicPower() * 0.7 + 0.12 * grom.maxHp, 1e-6, 'rank 3: 12% of max HP');
-  near(sable.skillDmg(s3, 1, grom), 220 + sable.magicPower() * 0.7 + 0.08 * grom.maxHp, 1e-6, 'rank 1: 8%');
+  near(sable.skillDmg(s3, 3, grom), 300 + sable.magicPower() * 0.7 + 0.13 * grom.maxHp, 1e-6, 'rank 3: 13% of max HP');
+  near(sable.skillDmg(s3, 1, grom), 220 + sable.magicPower() * 0.7 + 0.09 * grom.maxHp, 1e-6, 'rank 1: 9%');
   const big = creep(0, open.x + 600, open.y);
   big.maxHp = 9000; big.hp = 9000;
   near(sable.skillDmg(s3, 3, big), 300 + sable.magicPower() * 0.7 + 500, 1e-6, 'capped at 500 vs a non-hero');
@@ -439,7 +439,7 @@ T.test('Rook: base stats and skill numbers match the spec (airborne on both gap-
   reset();
   const d = rook.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [560, 74, 200, 22, 64, 7.0, 14, 2.3, 11, 1.7, 98, 1.05, 278, 3]);
+    [540, 72, 200, 22, 64, 7.0, 13, 2.2, 10, 1.6, 98, 1.05, 278, 3]);
   assert.equal(d.passive.id, 'stoop');
   const [s1, s2, s3] = rook.skills;
   assert.deepEqual([s1.type, s1.cd, s1.mana, s1.dist, s1.speed, s1.stopOnHero, s1.dmg, s1.dmgLv, s1.scaleAd, s1.airborne], ['dash', 10, 45, 380, 1150, true, 120, 15, 0.6, 0.5]);
@@ -761,7 +761,7 @@ T.test('Sylva: base stats and skill numbers match the spec (the only single-ally
     ['link', 12, -0.6, 70, 5, { range: 520, self: false }, 100, 16, 0.55]);
   assert.deepEqual(s2.link, { dur: 4, interval: 0.5, tickHeal: 20, tickHealLv: 3, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 });
   assert.equal(rankVal(s2, 'heal', 6), 180); near(rankVal(s2, 'cd', 6), 9, 1e-9, 'Vine Link cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 95);
-  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius], ['heal', [55, 48, 41], [120, 150, 180], [150, 210, 270], 0.5, 420]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius], ['heal', [58, 52, 46], [120, 150, 180], [140, 190, 240], 0.5, 420]);
   assert.deepEqual(s3.link, { all: true, dur: 6, interval: 0.5, tickHeal: [12, 17, 22], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 });
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'link')).length, 1, 'the only ally link');
   assert.ok(!sylva.skills.some(s => s.stun || s.immobilize || s.silence || s.airborne || s.shieldPct), 'no hard CC, no shield');
@@ -837,9 +837,9 @@ T.test('Sylva: Canopy heals every allied hero within 420 and links them all, her
   const mana0 = sylva.mana;
   assert.ok(sylva.castSkill(2, null));
   near(sylva.mana, mana0 - 180 + 12 * 3, 1e-6, '180 mana at rank 3, Verdant Gift per hero healed (herself included)');
-  const heal = 270 + sylva.magicPower() * 0.5;
+  const heal = 240 + sylva.magicPower() * 0.5;
   assert.ok(Math.abs(pact.hp - Math.min(pact.maxHp, pact.maxHp * 0.4 + (180 + sylva.magicPower() * 0.55) + heal)) < 1e-6, `the vined ally healed again: ${pact.hp} of ${pact.maxHp}`);
-  near(wraith.hp, wraith.maxHp * 0.5 + heal, 1e-6, '270 (+50% MAGIC) to an ally in 420');
+  near(wraith.hp, wraith.maxHp * 0.5 + heal, 1e-6, '240 (+50% MAGIC) to an ally in 420');
   assert.ok(Math.abs(sylva.hp - (sylva.maxHp * 0.5 + heal)) < 1e-6, 'and herself');
   assert.equal(bastion.hp, bastion.maxHp * 0.5, 'past 420: nothing');
   const links = G.tethers.filter(t => !t.dead && t.src === sylva);
@@ -904,8 +904,8 @@ T.test('Pact: base stats and skill numbers match the spec (the hybrid resource: 
     ['skillshot', 6, -0.3, 45, 4, 140, 17, 0.6, 600, 860, 24, undefined]);
   assert.equal(rankVal(s1, 'dmg', 6), 225); assert.equal(pact.costOf(s1, 6), 65);
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.hpCost, s2.allyTarget, s2.heal, s2.healLv, s2.healFromCost, s2.scaleAp, s2.mana],
-    ['heal', 11, -0.6, 0.12, { range: 520, self: false }, 0, 20, 2.0, 0.45, undefined]);
-  near(rankVal(s2, 'cd', 6), 8, 1e-9, 'Offering cd at rank 6'); assert.equal(pact.costOf(s2, 6), 0, 'no mana');
+    ['heal', 12, -0.6, 0.12, { range: 520, self: false }, 0, 20, 1.8, 0.45, undefined]);
+  near(rankVal(s2, 'cd', 6), 9, 1e-9, 'Offering cd at rank 6'); assert.equal(pact.costOf(s2, 6), 0, 'no mana');
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.dmgType, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.immobilize, s3.silence, s3.suppress],
     ['zone', [50, 44, 38], [100, 120, 140], 'true', 480, 200, 0.6, 1, [190, 250, 310], 0.4, 1.0, 1.0, undefined]);
   assert.equal(pact.usesMana(), true, 'the mana bar is live');
@@ -914,7 +914,7 @@ T.test('Pact: base stats and skill numbers match the spec (the hybrid resource: 
   for (const s of pact.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
 });
 
-T.test('Pact: Offering pays 12% of her max HP after the effect (never lethal, no mana, no damage event) and heals one ally for 200% of it +20/rank (+45% MAGIC); refused under 25% HP; no ally in reach, no cost', () => {
+T.test('Pact: Offering pays 12% of her max HP after the effect (never lethal, no mana, no damage event) and heals one ally for 180% of it +20/rank (+45% MAGIC); refused under 25% HP; no ally in reach, no cost', () => {
   reset();
   T.place(pact, open.x, open.y);
   T.place(sylva, open.x + 200, open.y);
@@ -922,8 +922,8 @@ T.test('Pact: Offering pays 12% of her max HP after the effect (never lethal, no
   sylva.hp = sylva.maxHp * 0.4; wraith.hp = wraith.maxHp * 0.5;
   const mana0 = pact.mana, paid = Math.floor(pact.maxHp * 0.12);
   assert.ok(pact.castSkill(1, null), 'no aim: the lowest ally');
-  const heal = paid * 2 + 20 * 5 + pact.magicPower() * 0.45;
-  near(sylva.hp, sylva.maxHp * 0.4 + heal, 1e-6, `healed 200% of ${paid} +100 (+45% MAGIC)`);
+  const heal = paid * 1.8 + 20 * 5 + pact.magicPower() * 0.45;
+  near(sylva.hp, sylva.maxHp * 0.4 + heal, 1e-6, `healed 180% of ${paid} +100 (+45% MAGIC)`);
   assert.equal(wraith.hp, wraith.maxHp * 0.5, 'one ally only');
   assert.equal(pact.hp, pact.maxHp - paid, 'the blood was paid');
   assert.equal(pact.mana, mana0, 'no mana');

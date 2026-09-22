@@ -233,7 +233,7 @@ const HEROES = [
     },
     skills: [
       { name: 'Shadow Strike', icon: '🌑', type: 'dash', cd: 8, mana: 45, dmgType: 'physical', dist: 340, speed: 1100, dmg: 130, dmgLv: 16, scaleAd: 0.7, desc: 'Dash 340 units through enemies in a line for 130+16/rank (+70% ATK) physical damage to everyone on the path.' },
-      { name: 'Shade Step', icon: '🌫', type: 'selfState', cd: 12, mana: 40, dur: 0.8, untargetable: true, speedPct: 0.3, noAttack: true, botClose: 200, desc: 'Vanish for 0.8s: untargetable, skipped by projectiles, novas and zones, +30% move speed; she cannot attack or cast, and dots on her keep ticking.' },
+      { name: 'Shade Step', icon: '🌫', type: 'selfState', cd: 10.5, mana: 40, dur: 0.8, untargetable: true, speedPct: 0.3, noAttack: true, botClose: 200, desc: 'Vanish for 0.8s: untargetable, skipped by projectiles, novas and zones, +30% move speed; she cannot attack or cast, and dots on her keep ticking.' },
       { name: 'Deathmark', icon: '☠️', type: 'blinkstrike', cd: [42, 38, 34], mana: 100, dmgType: 'physical', range: 500, dmg: 260, dmgLv: 40, scaleAd: 1.0, missingPct: 0.2, missingPctLv: 0.05, missingCap: 400, physPenPct: 0.22, botExecuteHp: 0.5, botNeverAbove: 0.7, desc: 'Blink behind the nearest hero within 500 and strike for 260/300/340 (+100% ATK) plus 20/25/30% of its missing HP (cap 400 vs non-heroes), ignoring 22% of its armor. No CC.' },
     ],
   },
@@ -268,9 +268,9 @@ const HEROES = [
       { name: 'Vine Link', icon: '🌿', type: 'link', cd: 12, cdLv: -0.6, mana: 70, manaLv: 5, allyTarget: { range: 520, self: false }, heal: 100, healLv: 16, scaleAp: 0.55,
         link: { dur: 4, interval: 0.5, tickHeal: 20, tickHealLv: 3, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 },
         desc: 'Bind a vine to the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim): heal 100+16/rank (+55% MAGIC) at once, then 8 ticks of 20+3/rank (+15% MAGIC) over 4s while they stay within 650; the ally gains +40 move speed and Sylva +12 armor and magic resist while linked. Recasting replaces the vine. No ally in reach, no cost.' },
-      { name: 'Canopy', icon: '🌳', type: 'heal', cd: [55, 48, 41], mana: [120, 150, 180], heal: [150, 210, 270], scaleAp: 0.5, radius: 420, botHealCount: { n: 2, hp: 0.55 }, botHealHp: 0.35,
+      { name: 'Canopy', icon: '🌳', type: 'heal', cd: [58, 52, 46], mana: [120, 150, 180], heal: [140, 190, 240], scaleAp: 0.5, radius: 420, botHealCount: { n: 2, hp: 0.55 }, botHealHp: 0.35,
         link: { all: true, dur: 6, interval: 0.5, tickHeal: [12, 17, 22], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 },
-        desc: 'Heal every allied hero within 420 for 150/210/270 (+50% MAGIC), then link all of them (herself included) for 6s: 12 ticks of 12/17/22 (+8% MAGIC) and +40 move speed, snapping past 550. A Canopy vine never replaces a stronger Vine Link on the same ally.' },
+        desc: 'Heal every allied hero within 420 for 140/190/240 (+50% MAGIC), then link all of them (herself included) for 6s: 12 ticks of 12/17/22 (+8% MAGIC) and +40 move speed, snapping past 550. A Canopy vine never replaces a stronger Vine Link on the same ally.' },
     ],
   },
   {
@@ -612,15 +612,15 @@ const HEROES = [
       desc: 'Hero kills grant 18% spell vamp for 5s, assists 8% for 3s. Basic attacks on a Venomed hero refresh the Venom timer (once per stack lifetime).',
     },
     skills: [
-      { name: 'Needle', icon: '┊', type: 'skillshot', cd: 5, cdLv: -0.2, mana: 40, heroOnly: true, dmgType: 'magic', dmg: 90, dmgLv: 12, scaleAp: 0.5, range: 560, speed: 1000, radius: 20, pierce: false,
+      { name: 'Needle', icon: '┊', type: 'skillshot', cd: 5, cdLv: -0.2, mana: 40, heroOnly: true, dmgType: 'magic', dmg: 105, dmgLv: 14, scaleAp: 0.5, range: 560, speed: 1000, radius: 20, pierce: false,
         applyMark: SABLE_VENOM,
-        desc: 'A venom dart (560 range, radius 20) that passes through minions and monsters and hits the first hero for 90+12/rank (+50% MAGIC), applying Venom: 1.5% (+0.01% per MAGIC) of max HP per second per stack for 4s, up to 3 stacks.' },
+        desc: 'A venom dart (560 range, radius 20) that passes through minions and monsters and hits the first hero for 105+14/rank (+50% MAGIC), applying Venom: 1.5% (+0.01% per MAGIC) of max HP per second per stack for 4s, up to 3 stacks.' },
       { name: 'Lunge', icon: '→', type: 'dash', cd: 9, cdLv: -0.3, mana: 45, dmgType: 'magic', dist: 300, speed: 1100, dmg: 110, dmgLv: 14, scaleAp: 0.5,
         applyMark: SABLE_VENOM, botMark: { tag: 'venom', stacks: 2 }, botHoldMark: { tag: 'venom', stacks: 3 },
         desc: 'Lunge 300 units through enemies for 110+14/rank (+50% MAGIC), coating each in one Venom stack (the same 1.5% of max HP per second per stack).' },
-      { name: 'Kiss', icon: '💋', type: 'blinkstrike', cd: [38, 34, 30], mana: 100, dmgType: 'magic', range: 460, dmg: 220, dmgLv: 40, scaleAp: 0.7, pctMaxHp: [0.08, 0.10, 0.12], pctMaxHpCap: 500, slowPct: 0.5, slowDur: 1.5,
+      { name: 'Kiss', icon: '💋', type: 'blinkstrike', cd: [38, 34, 30], mana: 100, dmgType: 'magic', range: 460, dmg: 220, dmgLv: 40, scaleAp: 0.7, pctMaxHp: [0.09, 0.11, 0.13], pctMaxHpCap: 500, slowPct: 0.5, slowDur: 1.5,
         refreshMark: { tag: 'venom' }, botMark: { tag: 'venom', stacks: 3 },
-        desc: 'Blink in and bite the nearest hero within 460 for 220/260/300 (+70% MAGIC) plus 8/10/12% of its max HP (cap 500 vs non-heroes), slow 50% for 1.5s, and refresh every Venom stack to full duration.' },
+        desc: 'Blink in and bite the nearest hero within 460 for 220/260/300 (+70% MAGIC) plus 9/11/13% of its max HP (cap 500 vs non-heroes), slow 50% for 1.5s, and refresh every Venom stack to full duration.' },
     ],
   },
   {
@@ -639,8 +639,8 @@ const HEROES = [
        reach (the stopOnHero pick); Skyfall goes at the marksman or mage in
        reach (botCarry) whatever its health; the Return is pressed under 45%
        HP or with 2+ enemy heroes inside 300 (the recast rule). */
-    hp: 560, hpLv: 74, mp: 200, mpLv: 22, atk: 64, atkLv: 7.0,
-    armor: 14, armorLv: 2.3, mr: 11, mrLv: 1.7,
+    hp: 540, hpLv: 72, mp: 200, mpLv: 22, atk: 64, atkLv: 7.0,
+    armor: 13, armorLv: 2.2, mr: 10, mrLv: 1.6,
     range: 98, atkSpd: 1.05, speed: 278,
     passive: {
       name: 'Stoop', icon: '⬇', id: 'stoop',
@@ -695,9 +695,9 @@ const HEROES = [
       desc: 'Basic attacks grant +5% attack speed for 3s, stacking to 8. A Crosscut that hits an enemy hero grants 2 stacks.',
     },
     skills: [
-      { name: 'Crosscut', icon: '✕', type: 'nova', cd: 6, cdLv: -0.3, mana: 40, manaLv: 3, dmgType: 'physical', radius: 190, dmg: 120, dmgLv: 14, scaleAd: 0.8, canCrit: true, desc: 'A tight X of steel around Omen that can critically strike.' },
+      { name: 'Crosscut', icon: '✕', type: 'nova', cd: 6, cdLv: -0.3, mana: 40, manaLv: 3, dmgType: 'physical', radius: 190, dmg: 120, dmgLv: 14, scaleAd: 0.68, canCrit: true, desc: 'A tight X of steel around Omen that can critically strike.' },
       { name: 'Pass', icon: '↦', type: 'dash', cd: 10, cdLv: -0.4, mana: 45, dmgType: 'physical', dist: 300, speed: 1050, dmg: 90, dmgLv: 11, scaleAd: 0.6, resetOnKill: 1, resetOnAssist: 0.5, botRetreatWhenDown: 0.4, desc: 'Step through the target; a hero kill resets it fully, an assist refunds half.' },
-      { name: 'Duelist\'s End', icon: '†', type: 'dash', cd: [38, 34, 30], mana: 120, dmgType: 'physical', dist: 420, speed: 1200, dmg: [240, 300, 360], scaleAd: 1.1, stopOnHero: true, stun: 0.8, resetOnKill: 0.5, botExecuteHp: 0.6, botAllyEngaged: true, desc: 'A committed lunge that stops on the first hero and stuns 0.8s; a kill refunds half the cooldown.' },
+      { name: 'Duelist\'s End', icon: '†', type: 'dash', cd: [38, 34, 30], mana: 120, dmgType: 'physical', dist: 420, speed: 1200, dmg: [220, 275, 330], scaleAd: 1.1, stopOnHero: true, stun: 0.8, resetOnKill: 0.5, botExecuteHp: 0.6, botAllyEngaged: true, desc: 'A committed lunge that stops on the first hero and stuns 0.8s; a kill refunds half the cooldown.' },
     ],
   },
   {
@@ -719,9 +719,9 @@ const HEROES = [
       desc: 'Basic attacks slow by 12% for 1s. Slowed heroes take 8% bonus magic damage from Tide.',
     },
     skills: [
-      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 8, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 145, dmgLv: 18, scaleAp: 0.6, range: 560, speed: 750, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
+      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 7.5, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 145, dmgLv: 18, scaleAp: 0.6, range: 560, speed: 750, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
       { name: 'Surge', icon: '⤳', type: 'dash', cd: 10, cdLv: -0.4, mana: 55, dmgType: 'magic', dist: 320, speed: 950, dmg: 105, dmgLv: 13, scaleAp: 0.45, slowPct: 0.3, slowDur: 1.2, botOpenSide: true, desc: 'Ride a surge 320 forward, slowing everything along the path 30% for 1.2s.' },
-      { name: 'High Water', icon: '🌊', type: 'zone', cd: [42, 38, 34], mana: 120, dmgType: 'magic', range: 480, radius: 250, delay: 0.5, ticks: 1, dmg: [270, 350, 430], scaleAp: 0.8, knockback: 130, wallDmg: 120, wallScaleAp: 0.4, wallStun: 0.7, noWallCC: { airborne: 0.5 }, desc: 'After 0.5s a wall of water throws everyone within 250 of the point 130 units outward; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, the rest are airborne 0.5s.' },
+      { name: 'High Water', icon: '🌊', type: 'zone', cd: [40, 36, 32], mana: 120, dmgType: 'magic', range: 480, radius: 250, delay: 0.5, ticks: 1, dmg: [270, 350, 430], scaleAp: 0.8, knockback: 130, wallDmg: 120, wallScaleAp: 0.4, wallStun: 0.7, noWallCC: { airborne: 0.5 }, desc: 'After 0.5s a wall of water throws everyone within 250 of the point 130 units outward; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, the rest are airborne 0.5s.' },
     ],
   },
   {
@@ -746,8 +746,8 @@ const HEROES = [
       desc: 'Basic attacks and skills apply a 3s burn of 25 (+20% MAGIC) magic damage; reapplying refreshes it. During Furnace the burn is 50 (+40% MAGIC).',
     },
     skills: [
-      { name: 'Haymaker', icon: '✊', type: 'nova', cd: 7, cdLv: -0.4, mana: 0, dmgType: 'magic', radius: 200, dmg: 140, dmgLv: 17, scaleAp: 0.55, overheat: { radius: 260, dmgMult: 1.4, slowPct: 0.4, slowDur: 1.5 }, desc: 'A burning haymaker around Cinder. Overheated: 260 radius, 40% more damage and a 40% slow for 1.5s.' },
-      { name: 'Coal Dash', icon: '☄', type: 'dash', cd: 10, cdLv: -0.4, mana: 0, dist: 320, speed: 980, endNova: { radius: 170, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4 }, overheat: { endNova: { radius: 220, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4, stun: 0.5 } }, desc: 'Dash 320 and detonate cinders on landing (no CC). Overheated: a 220 blast that stuns 0.5s.' },
+      { name: 'Haymaker', icon: '✊', type: 'nova', cd: 7, cdLv: -0.4, mana: 0, dmgType: 'magic', radius: 200, dmg: 152, dmgLv: 18, scaleAp: 0.55, overheat: { radius: 260, dmgMult: 1.4, slowPct: 0.4, slowDur: 1.5 }, desc: 'A burning haymaker around Cinder. Overheated: 260 radius, 40% more damage and a 40% slow for 1.5s.' },
+      { name: 'Coal Dash', icon: '☄', type: 'dash', cd: 10, cdLv: -0.4, mana: 0, dist: 320, speed: 980, endNova: { radius: 170, dmgType: 'magic', dmg: 115, dmgLv: 14, scaleAp: 0.4 }, overheat: { endNova: { radius: 220, dmgType: 'magic', dmg: 115, dmgLv: 14, scaleAp: 0.4, stun: 0.5 } }, desc: 'Dash 320 and detonate cinders on landing (no CC). Overheated: a 220 blast that stuns 0.5s.' },
       { name: 'Furnace', icon: '♨', type: 'buff', cd: [42, 38, 34], mana: 0, atkMult: 1.25, spdAdd: 50, hotPct: 0.18, dur: 6, burnUpgrade: true, overheat: { dur: 9, tenacityAdd: 0.35 }, botOwnHpBelow: 0.6, desc: 'Stoke the furnace 6s: +25% basic damage, +50 speed, 18% max HP over time and a burn twice as hot. Overheated: 9s and +35% tenacity.' },
     ],
   },
@@ -904,7 +904,7 @@ const HEROES = [
     },
     skills: [
       { name: 'Let', icon: '╱', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 140, dmgLv: 17, scaleAp: 0.6, range: 600, speed: 860, radius: 24, botAllyHurt: { range: 520, hp: 0.6 }, desc: 'A lash of blood (600 range at 860, radius 24) at the first enemy hit: 140+17/rank (+60% MAGIC). No CC. Tithe drinks from it.' },
-      { name: 'Offering', icon: '♥', type: 'heal', cd: 11, cdLv: -0.6, hpCost: 0.12, allyTarget: { range: 520, self: false }, heal: 0, healLv: 20, healFromCost: 2.0, scaleAp: 0.45, botHealHp: 0.55, botMinHp: 0.4, desc: 'Pay 12% of her max HP and heal the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim) for 200% of the HP paid +20/rank (+45% MAGIC). Refused below 25% HP; no ally in reach, no cost.' },
+      { name: 'Offering', icon: '♥', type: 'heal', cd: 12, cdLv: -0.6, hpCost: 0.12, allyTarget: { range: 520, self: false }, heal: 0, healLv: 20, healFromCost: 1.8, scaleAp: 0.45, botHealHp: 0.55, botMinHp: 0.4, desc: 'Pay 12% of her max HP and heal the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim) for 180% of the HP paid +20/rank (+45% MAGIC). Refused below 25% HP; no ally in reach, no cost.' },
       { name: 'Covenant', icon: '⛓', type: 'zone', cd: [50, 44, 38], mana: [100, 120, 140], dmgType: 'true', range: 480, radius: 200, delay: 0.6, ticks: 1, dmg: [190, 250, 310], scaleAp: 0.4, immobilize: 1.0, silence: 1.0, botCrowd: true, botGuardLow: 0.35, desc: 'After 0.6s everyone within 200 of a point up to 480 away takes 190/250/310 (+40% MAGIC) true damage and is rooted and silenced for 1s (both purifiable).' },
     ],
   },

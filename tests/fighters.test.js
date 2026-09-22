@@ -273,11 +273,11 @@ T.test('Omen: base stats and skill numbers match the spec; Cadence stacks +5% AS
     [640, 88, 200, 22, 66, 7.6, 16, 2.6, 13, 2.0, 108, 1.06, 266]);
   const [s1, s2, s3] = omen.skills;
   assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAd, s1.canCrit],
-    ['nova', 6, -0.3, 40, 3, 190, 120, 14, 0.8, true]);
+    ['nova', 6, -0.3, 40, 3, 190, 120, 14, 0.68, true]);
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAd, s2.resetOnKill, s2.resetOnAssist, s2.stun],
     ['dash', 10, -0.4, 45, 300, 1050, 90, 11, 0.6, 1, 0.5, undefined]);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.dist, s3.speed, s3.stopOnHero, s3.dmg, s3.scaleAd, s3.stun, s3.resetOnKill],
-    ['dash', [38, 34, 30], 120, 420, 1200, true, [240, 300, 360], 1.1, 0.8, 0.5]);
+    ['dash', [38, 34, 30], 120, 420, 1200, true, [220, 275, 330], 1.1, 0.8, 0.5]);
   assert.ok(Math.abs(omen.cooldownFor(s1, 6) - 4.5) < 1e-9); assert.ok(Math.abs(omen.cooldownFor(s2, 6) - 8) < 1e-9);
   // Cadence
   T.place(omen, open.x, open.y); T.place(tide, open.x + 120, open.y);
@@ -340,12 +340,12 @@ T.test('Omen: a hero kill resets Pass fully and refunds half of Duelist\'s End; 
   tide.alive = true; tide.hp = tide.maxHp; tide.respawnT = 0;
 });
 
-T.test("Omen: Duelist's End stops on the first hero, 360 (+110% ATK) physical at rank 3, stun 0.8 s", () => {
+T.test("Omen: Duelist's End stops on the first hero, 330 (+110% ATK) physical at rank 3, stun 0.8 s", () => {
   reset();
   T.place(omen, open.x, open.y); T.place(karn, open.x + 250, open.y); T.place(tide, open.x + 400, open.y);
   assert.ok(omen.castSkill(2, tide));
   assert.equal(omen.skillCd[2], 30); assert.equal(omen.mana, omen.maxMana - 120);
-  assert.ok(Math.abs(omen.dashS.dmg - (360 + omen.curAtk() * 1.1)) < 1e-6, 'rank-3 damage');
+  assert.ok(Math.abs(omen.dashS.dmg - (330 + omen.curAtk() * 1.1)) < 1e-6, 'rank-3 damage');
   T.seconds(G, 0.2);
   assert.ok(karn.hp < karn.maxHp && karn.cc.t.stun > 0.6 && karn.cc.t.stun <= 0.8, `first hero struck and stunned 0.8: ${karn.cc.t.stun}`);
   assert.equal(tide.hp, tide.maxHp, 'stopped on Karn');
@@ -541,12 +541,12 @@ T.test('Tide: base stats and skill numbers match the spec; Undertow slows 12% on
     [670, 92, 240, 26, 56, 6.0, 17, 2.8, 17, 2.6, 112, 0.98, 256]);
   const [s1, s2, s3] = tide.skills;
   assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce, s1.knockback, s1.wallDmg, s1.wallScaleAp, s1.wallStun],
-    ['skillshot', 8, -0.4, 55, 4, 145, 18, 0.6, 560, 750, 32, true, 120, 80, 0.3, 0.6]);
+    ['skillshot', 7.5, -0.4, 55, 4, 145, 18, 0.6, 560, 750, 32, true, 120, 80, 0.3, 0.6]);
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAp, s2.slowPct, s2.slowDur],
     ['dash', 10, -0.4, 55, 320, 950, 105, 13, 0.45, 0.3, 1.2]);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.knockback, s3.wallDmg, s3.wallScaleAp, s3.wallStun, s3.noWallCC],
-    ['zone', [42, 38, 34], 120, 480, 250, 0.5, 1, [270, 350, 430], 0.8, 130, 120, 0.4, 0.7, { airborne: 0.5 }]);
-  assert.ok(Math.abs(tide.cooldownFor(s1, 6) - 6) < 1e-9); assert.equal(rankVal(s1, 'mana', 6), 75);
+    ['zone', [40, 36, 32], 120, 480, 250, 0.5, 1, [270, 350, 430], 0.8, 130, 120, 0.4, 0.7, { airborne: 0.5 }]);
+  assert.ok(Math.abs(tide.cooldownFor(s1, 6) - 5.5) < 1e-9); assert.equal(rankVal(s1, 'mana', 6), 75);
   T.place(tide, open.x, open.y); T.place(torren, open.x + 120, open.y);
   tide.onBasicLanded(torren, 10);
   assert.ok(Math.abs(torren.cc.slowPct - 0.12) < 1e-9 && torren.cc.t.slow <= 1, 'basics slow 12% for 1 s');
@@ -591,7 +591,7 @@ T.test('Tide: Surge slows 30% for 1.2 s along its path; High Water throws everyo
   reset();
   T.place(tide, open.x, open.y); T.place(torren, open.x + 300, open.y + 60); T.place(brass, open.x + 300, open.y - 60);
   assert.ok(tide.castSkill(2, { x: open.x + 300, y: open.y }));
-  assert.equal(tide.skillCd[2], 34); assert.equal(tide.mana, tide.maxMana - 120);
+  assert.equal(tide.skillCd[2], 32); assert.equal(tide.mana, tide.maxMana - 120);
   assert.equal(G.zones.length, 1);
   T.seconds(G, 0.45);
   assert.equal(torren.hp, torren.maxHp, 'nothing before the 0.5 s telegraph');
@@ -686,9 +686,9 @@ T.test('Cinder: a Heat hero (0-100, free skills) whose gauge gains per hit, burn
 T.test('Cinder: skill numbers match the spec; at 100 Heat Haymaker overheats (260, x1.4, slow 40% 1.5 s) and the gauge empties', () => {
   reset();
   const [s1, s2, s3] = cinder.skills;
-  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.overheat], ['nova', 7, -0.4, 200, 140, 17, 0.55, { radius: 260, dmgMult: 1.4, slowPct: 0.4, slowDur: 1.5 }]);
+  assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.overheat], ['nova', 7, -0.4, 200, 152, 18, 0.55, { radius: 260, dmgMult: 1.4, slowPct: 0.4, slowDur: 1.5 }]);
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.dist, s2.speed, s2.dmg, s2.endNova, s2.overheat.endNova],
-    ['dash', 10, -0.4, 320, 980, undefined, { radius: 170, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4 }, { radius: 220, dmgType: 'magic', dmg: 100, dmgLv: 12, scaleAp: 0.4, stun: 0.5 }]);
+    ['dash', 10, -0.4, 320, 980, undefined, { radius: 170, dmgType: 'magic', dmg: 115, dmgLv: 14, scaleAp: 0.4 }, { radius: 220, dmgType: 'magic', dmg: 115, dmgLv: 14, scaleAp: 0.4, stun: 0.5 }]);
   assert.deepEqual([s3.type, s3.cd, s3.atkMult, s3.spdAdd, s3.hotPct, s3.dur, s3.burnUpgrade, s3.overheat], ['buff', [42, 38, 34], 1.25, 50, 0.18, 6, true, { dur: 9, tenacityAdd: 0.35 }]);
   assert.ok(Math.abs(cinder.cooldownFor(s1, 6) - 5) < 1e-9); assert.ok(Math.abs(cinder.cooldownFor(s2, 6) - 8) < 1e-9);
   // a cold Haymaker: 200 radius, no slow
