@@ -524,8 +524,8 @@ const Features = {
     return true;
   },
 
-  recordUndo(h, def) {
-    this.undo = { hero: h, def, t: 10 };
+  recordUndo(h, def, paid, consumed) {
+    this.undo = { hero: h, def, t: 10, paid: paid === undefined ? def.cost : paid, consumed: consumed || [] };
   },
   tryUndo() {
     const u = this.undo;
@@ -533,8 +533,10 @@ const Features = {
     const idx = u.hero.items.findIndex(i => i.id === u.def.id);
     if (idx < 0) return false;
     u.hero.items.splice(idx, 1);
-    u.hero.gold += u.def.cost;
-    u.hero.goldEarned = Math.max(0, u.hero.goldEarned - u.def.cost);
+    // the components the purchase swallowed come back with it
+    for (const part of u.consumed) u.hero.items.push(part);
+    u.hero.gold += u.paid;
+    u.hero.goldEarned = Math.max(0, u.hero.goldEarned - u.paid);
     u.hero.recalcStats(false);
     this.undo = null;
     if (u.hero.isPlayer) UI.announce('↩ Purchase undone', 'minor');

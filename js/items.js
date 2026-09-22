@@ -277,7 +277,7 @@ const ItemAI = {
        every early slot and a marksman finishes the game with five defensive
        items and no way to kill anything. */
     if (carry) {
-      const offence = hero.items.filter(i => i.tags.includes(mine)).length;
+      const offence = hero.items.filter(i => i.tags && i.tags.includes(mine)).length;
       if (item.tags.includes(mine)) s += Math.max(0, 90 - offence * 30);
       if (item.tags.includes('defense') && offence < 2) s -= 80;
     }
@@ -297,41 +297,81 @@ const ItemAI = {
      means the shop suggestion reacts to role and enemy damage instead of
      following a brittle six-item script. */
   recommend(hero, affordableOnly = false) {
-    if (!hero || hero.items.length >= ITEM_SLOTS) return null;
+    if (!hero) return null;
+    const full = hero.items.length >= ITEM_SLOTS;
     let best = null, bestScore = -Infinity;
     for (const it of ITEM_DEFS) {
-      if (affordableOnly && it.cost > hero.gold) continue;
+      // at six slots only an upgrade fits: one whose components give a slot back
+      if (full && !hero.partsFor(it).length) continue;
+      if (affordableOnly && hero.priceOf(it) > hero.gold) continue;
       const sc = this.score(it, hero);
       if (sc > bestScore) { bestScore = sc; best = it; }
     }
     return bestScore === -Infinity ? null : best;
   },
 
-  /* Buy at most one item per call. Bots only shop at their own fountain,
-     which is what makes recalling a real decision for them too.
-
-     The gold check is the important part: a bot buys the affordable item
-     only when it is the one it is building toward, or when it is a cheap
-     consumable and the real item is still out of reach anyway. Otherwise it
-     saves. Spending 300 on a component the plan does not want is how six
-     slots filled with trinkets. */
-  tryBuy(hero) {
-    if (hero.items.length >= ITEM_SLOTS) return false;
-    // being dead means being at the fountain: buy on the respawn timer too
-    if (Game.isDuel() || (hero.alive && dist(hero, Game.fountain(hero.team)) > 380)) return false;
-    const want = this.recommend(hero, false);
-    if (want && hero.gold >= want.cost) { hero.buyItem(want); return true; }
-    const affordable = this.recommend(hero, true);
-    if (!affordable) return false;
-    // a trinket only while the real item is still more than one wave away
-    if (this.isConsumable(affordable)) {
-      if (!want || hero.gold > want.cost * 0.75) return false;
-      if (this.consumableCount(hero) >= this.CONSUMABLE_SLOTS) return false;
-      if (hero.items.length >= ITEM_SLOTS - 1) return false;
-      hero.buyItem(affordable);
-      return true;
+  /* The most expensive component of `want` this hero can afford and does not
+     already hold. Buying it is gold-neutral toward the plan (the price is
+     credited back when the item lands) and the stats are live today, so a
+     bot standing at the fountain 400 gold short of its item has something
+     better to do than bank it. */
+  nextPart(hero, want) {
+    if (!want || hero.items.length >= ITEM_SLOTS) return null;
+    const need = {};
+    for (const id of want.from || []) need[id] = (need[id] || 0) + 1;
+    let best = null;
+    for (const id in need) {
+      const part = COMPONENTS[id];
+      if (!part || hero.gold < part.cost) continue;
+      if (hero.items.filter(i => i.id === id).length >= need[id]) continue;
+      if (!best || part.cost > best.cost) best = part;
     }
-    return false;
+    return best;
+  },
+
+  /* What this hero would buy if it were standing in the shop right now, or
+     null. Split out of tryBuy so the macro layer's "is it worth walking
+     home?" test (TeamBrain.goalFor) asks exactly the question the shop will
+     answer, instead of a second rule that drifts away from this one.
+
+     A bot buys the item it is building toward the moment it can afford it.
+     Short of that it buys a component of that same item, which costs it
+     nothing in the long run and keeps the bank near empty; only when neither
+     fits does it consider something else on the shelf, and a trinket last of
+     all. Spending 300 on a component the plan does not want is how six slots
+     once filled with trinkets — every step here stays on the plan. */
+  SAVE_WITHIN: 0.7,
+  nextBuy(hero) {
+    if (!hero) return null;
+    const want = this.recommend(hero, false);
+    if (want && hero.canBuy(want)) return want;
+    if (hero.items.length >= ITEM_SLOTS) return null;
+    const part = this.nextPart(hero, want);
+    if (part) return part;
+    const affordable = this.recommend(hero, true);
+    if (!affordable) return null;
+    const wantPrice = want ? hero.priceOf(want) : 0;
+    if (!this.isConsumable(affordable)) {
+      // still within one or two waves of the planned item: keep saving
+      if (want && hero.gold >= wantPrice * this.SAVE_WITHIN) return null;
+      return affordable;
+    }
+    // a trinket only while the real item is still more than one wave away
+    if (!want || hero.gold > wantPrice * this.SAVE_WITHIN) return null;
+    if (this.consumableCount(hero) >= this.CONSUMABLE_SLOTS) return null;
+    if (hero.items.length >= ITEM_SLOTS - 1) return null;
+    return affordable;
+  },
+
+  /* Buy at most one item per call. Bots only shop at their own fountain,
+     which is what makes recalling a real decision for them too. */
+  tryBuy(hero) {
+    // being dead means being at the fountain: buy on the respawn timer too
+    if (Game.isDuel() || (hero.alive && !hero.atShop())) return false;
+    const def = this.nextBuy(hero);
+    if (!def) return false;
+    hero.buyItem(def);
+    return true;
   },
 };
 

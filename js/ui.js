@@ -1020,7 +1020,9 @@ const UI = {
       .filter(it => !q || it.name.toLowerCase().includes(q) || it.id.includes(q))
       .map(it => {
         const owned = p.items.some(i => i.id === it.id);
-        const afford = p.gold >= it.cost;
+        // components you already hold are credited against the price
+        const price = p.priceOf(it);
+        const afford = p.gold >= price;
         const cls = owned ? 'owned' : afford ? 'afford' : 'poor';
         const parts = (it.from || []).map(c => COMPONENTS[c] ? this.itemIcon(COMPONENTS[c], 15) : '').filter(Boolean).join(' + ');
         return `<button class="shopItem ${cls}" data-id="${it.id}" ${owned ? 'disabled' : ''}>
@@ -1031,7 +1033,7 @@ const UI = {
               <small>${it.desc}</small>
               <em>${parts}</em>
             </span>
-            <span class="siCost">${it.cost}</span>
+            <span class="siCost">${price < it.cost ? `<s>${it.cost}</s> ${price}` : price}</span>
           </button>`;
       }).join('');
     el.innerHTML = `
@@ -1092,7 +1094,7 @@ const UI = {
     if (!def) { this.announce('Build complete', 'minor'); return; }
     if (!p.atShop()) { this.announce('Return to base for Quick Buy', 'minor'); return; }
     if (!p.canBuy(def)) {
-      this.announce(p.items.length >= ITEM_SLOTS ? 'Inventory full' : `Need ${Math.ceil(def.cost - p.gold)} more gold`, 'minor');
+      this.announce(p.items.length >= ITEM_SLOTS ? 'Inventory full' : `Need ${Math.ceil(p.priceOf(def) - p.gold)} more gold`, 'minor');
       return;
     }
     p.buyItem(def);
@@ -1109,12 +1111,13 @@ const UI = {
     const def = ItemAI.recommend(p);
     if (!def) { el.classList.add('hidden'); return; }
     const ready = p.atShop() && p.canBuy(def);
-    const state = ready ? 'BUY NOW' : p.gold < def.cost
-      ? `SAVE ${Math.ceil(def.cost - p.gold)}` : 'AT BASE';
+    const price = p.priceOf(def);     // components already held are credited
+    const state = ready ? 'BUY NOW' : p.gold < price
+      ? `SAVE ${Math.ceil(price - p.gold)}` : 'AT BASE';
     const key = `${def.id}|${state}|${Math.floor(p.gold / 25)}`;
     if (this._quickBuyKey !== key) {
       this._quickBuyKey = key;
-      el.innerHTML = `<span class="qbIcon">${this.itemIcon(def, 24)}</span><span class="qbText"><small>RECOMMENDED</small><b>${def.name}</b></span><span class="qbCost">${def.cost}<i>${state}</i></span>`;
+      el.innerHTML = `<span class="qbIcon">${this.itemIcon(def, 24)}</span><span class="qbText"><small>RECOMMENDED</small><b>${def.name}</b></span><span class="qbCost">${price}<i>${state}</i></span>`;
       el.title = `${def.desc} — ${state === 'AT BASE' ? 'return to base to buy' : state.toLowerCase()}`;
     }
     el.classList.remove('hidden');

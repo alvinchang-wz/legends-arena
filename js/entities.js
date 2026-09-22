@@ -508,10 +508,15 @@ class TeamBrain {
     const w = this.waves[h.lane];
     const laneFree = !w || w.state === 'crashed' || w.state === 'empty' || w.state === 'pushed';
     const wantReset = (h.hpPct < 0.35 || dry) && !enemyNear && h.items.length < ITEM_SLOTS;
-    const shopReady = h.items.length < ITEM_SLOTS && h.gold >= p.shopRecallMinGold &&
-      (() => { const next = ItemAI.recommend(h); return !!next && h.gold >= next.cost; })();
+    /* Gold that would buy something is worth the walk home on its own: the
+       old rule also demanded hp < 0.85, so a healthy farmed-up carry stayed
+       in lane on a full wallet and the match ended with it in the bank
+       (measured: median 960 unspent, 3.2 of 6 slots filled). `nextBuy` is
+       the shop's own answer, so this test cannot drift from what happens
+       when the hero arrives. */
+    const shopReady = h.gold >= p.shopRecallMinGold && !!ItemAI.nextBuy(h);
     const canLeave = laneFree || this.plan === 'group' || o.tToSpawn > 60 || h.lane === 'jungle' || h.lane === 'roam';
-    if ((wantReset || (shopReady && !enemyNear && h.hpPct < 0.85)) &&
+    if ((wantReset || (shopReady && !enemyNear)) &&
         dist(h, G.fountain(h.team)) > 420 && G.time > 40) {
       if (canLeave) { this.assign(h, 'recall', null, null, 'hold', false, null); return; }
       this.assign(h, 'lane', h.lane, null, 'crash', false, null);
@@ -1481,18 +1486,46 @@ class Hero extends Unit {
   }
 
   /* ---------- shop ---------- */
+  /* Components build into the item they are listed in: a part already in a
+     slot pays its full price toward that item and hands its slot back when
+     the item lands. That is what makes a partial build worth buying — gold
+     spent on a Longsword at 3:00 is not wasted when the Blade of Ruin lands
+     at 7:00 — and it gives a bot (or a player) something to do with 400 gold
+     while the 1,150 item is still a wave away. Returns the item indices the
+     purchase would consume, each part matched at most once. */
+  partsFor(def) {
+    const out = [];
+    for (const id of def.from || []) {
+      const i = this.items.findIndex((it, k) => it && it.id === id && out.indexOf(k) < 0);
+      if (i >= 0) out.push(i);
+    }
+    return out;
+  }
+  priceOf(def) {
+    let price = def.cost;
+    for (const i of this.partsFor(def)) price -= this.items[i].cost || 0;
+    return Math.max(0, Math.round(price));
+  }
   canBuy(def) {
-    return this.items.length < ITEM_SLOTS && this.gold >= def.cost
-      && !this.items.some(i => i.id === def.id);
+    const parts = this.partsFor(def);
+    if (this.items.length - parts.length >= ITEM_SLOTS || this.gold < this.priceOf(def)) return false;
+    // one of each finished item; components stack, because a recipe can ask
+    // for two of the same part (Blade of Ruin is two Longswords)
+    const isPart = typeof COMPONENTS !== 'undefined' && !!COMPONENTS[def.id];
+    return isPart || !this.items.some(i => i.id === def.id);
   }
   buyItem(def) {
     if (!this.canBuy(def)) return false;
-    this.gold -= def.cost;
+    const paid = this.priceOf(def);
+    const parts = this.partsFor(def).sort((a, b) => b - a);
+    const consumed = parts.map(i => this.items[i]);
+    for (const i of parts) this.items.splice(i, 1);
+    this.gold -= paid;
     this.items.push(def);
     this.recalcStats(false);
     if (this.isPlayer) {
       UI.announce(`${def.icon} ${def.name} purchased`, 'minor'); SFX.gear();
-      if (typeof Features !== 'undefined') Features.recordUndo(this, def);
+      if (typeof Features !== 'undefined') Features.recordUndo(this, def, paid, consumed);
     }
     return true;
   }
