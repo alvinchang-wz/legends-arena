@@ -174,50 +174,21 @@ corner_zone = np.zeros((N, N), np.uint8)          # only the void itself (plus 2
 for v in (VOID_A, VOID_B): fill_poly(corner_zone, v)
 corner_zone = cv2.dilate(corner_zone, disk(2.0))
 
-# ---------------------------------------------------------------- walls (minimap layer)
-wall = LAY['wall'].astype(np.uint8).copy()
-wall = symmetrise(wall)
-wall &= 1 - corner_zone
-free_fixed = np.zeros((N, N), np.uint8)          # the picture already keeps lanes and turret pads clear; only guarantee the plazas and camp floors
-for c in (BASE_A, BASE_B): circle(free_fixed, c, 30)
-for c in (FOUNTAIN_A, FOUNTAIN_B): circle(free_fixed, c, 22)
-for cp in CAMPS: circle(free_fixed, (cp['x'], cp['y']), 6 if cp['kind'] in ('blueBuff', 'redBuff') else 5)
-wall &= 1 - free_fixed
-wall = remove_small(wall, 12)
-# unreachable pockets become rock; every corridor gets at least MIN_CORRIDOR
-free = (1 - wall).astype(np.uint8)
-n, lab, stats, _ = cv2.connectedComponentsWithStats(free, 4)
-main = lab[tuple(int(v) for v in reversed(to_r(*BASE_A)))]
-for i in range(1, n):
-    if i != main and stats[i, cv2.CC_STAT_AREA] < 400 * R * R: wall[lab == i] = 1
-free = (1 - wall).astype(np.uint8)
-MIN_CORRIDOR = 5.5
-narrow = free & (1 - cv2.morphologyEx(free, cv2.MORPH_OPEN, disk(MIN_CORRIDOR / 2)))
-wall &= 1 - cv2.dilate(narrow, disk(1.0))
-wall = remove_small(wall, 12)
-wall = symmetrise(wall)
-wall_src = wall.copy()
-
-WALLS = [{'poly': w['poly'], 'r': w['r'], 'x': w['x'], 'y': w['y']} for w in polygons(wall, 0.35, 12)]
+# ---------------------------------------------------------------- walls and bushes: pixel-exact outlines
+# docs/drafts/exact-trace.py traces the 0.5 iso-line of the picture's own
+# colour field (4x, rotational consensus) and checks it pixel by pixel against
+# the picture. Nothing here reshapes them; only the void corners are added.
+EX = json.load(open(REF + 'exact_polys.json'))
+WALLS = [{'poly': w['poly'], 'r': w['r'], 'x': w['x'], 'y': w['y']} for w in EX['walls']]
 for v in (VOID_A, VOID_B):
     WALLS.append({'poly': [[round(x, 1), round(y, 1)] for x, y in v], 'r': 20.0, 'hidden': True})
-
-# ---------------------------------------------------------------- what the engine will see
 built = np.zeros((N, N), np.uint8)
 for w in WALLS:
     if not w.get('hidden'): fill_poly(built, w['poly'])
+wall_src = LAY['wall'].astype(np.uint8)
 _in = 1 - corner_zone
 fidelity = ((built & wall_src) & _in).sum() / max(((built | wall_src) & _in).sum(), 1)
-
-# ---------------------------------------------------------------- bushes (minimap layer)
-bush = LAY['bush'].astype(np.uint8).copy()
-bush = symmetrise(bush)
-bush &= 1 - corner_zone
-bush &= 1 - cv2.dilate(built, disk(0.5))
-for c in (BASE_A, BASE_B): circle(bush, c, 30, 0)
-bush = remove_small(bush, 25)
-bush = symmetrise(bush)
-BUSHES = [{'poly': b['poly'], 'x': b['x'], 'y': b['y'], 'r': round(max(3.0, math.sqrt(b['area'] / math.pi)), 1)} for b in polygons(bush, 0.35, 25)]
+BUSHES = [{'poly': b['poly'], 'x': b['x'], 'y': b['y'], 'r': b['r']} for b in EX['bushes']]
 # the mid lane has no bushes: the light patches the minimap draws on the lane at
 # the river crossing are bank decoration, not concealment (confirmed by the user)
 def _dist_mid(x, y):
