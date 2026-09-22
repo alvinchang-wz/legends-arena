@@ -152,6 +152,7 @@ T.test('F13: conceal hides allied heroes inside from enemies unless close or rev
   const s = { type: 'zone', radius: 220, delay: 0.05, ticks: 0, linger: { dur: 3, conceal: true } };
   T.place(tide, open.x, open.y);          // red, inside the red zone
   T.place(grom, open.x + 400, open.y);    // blue, looking on
+  T.place(ignis, open.x - 600, open.y);   // blue too, and beyond the 250 an enemy needs to see into the patch (Ashara's Sand Veil)
   G.zones.push(new Zone(mira, s, open.x, open.y));
   T.frames(G, 6);
   assert.ok(tide.concealT > 0);

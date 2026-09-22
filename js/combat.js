@@ -801,16 +801,24 @@ const PASSIVES = {
     },
   },
 
+  /* Hexa — every basic and skill hit is one Blight: the passive's own mark
+     (F12 applyMark with a dot, so it draws pips and Leech Thread's
+     spreadMark can carry the same shape): 45 (+30% MAGIC) over 3 s per
+     stack, two at most, the dot refreshed to stacks x per-stack on every
+     re-apply. She heals 12% of every Blight tick that lands on a hero
+     (Unit.baseUpdate fires onDotTick per dot tick). */
   blight: {
-    onBasicHit(h, target) {
-      if (!target.marks || target.isStructure) return;
-      const m = target.marks;
-      m.blight = (m.blightT > Game.time) ? Math.min(2, m.blight + 1) : 1;
-      m.blightT = Game.time + 3;
-      target.addDot({
-        src: h, total: (50 + h.magicPower() * 0.3) * m.blight, dur: 3,
-        type: 'magic', color: h.color, tag: 'blight',
-      });
+    MARK: { tag: 'blight', max: 2, dur: 3, stacks: 1, dot: { base: 45, scaleAp: 0.3, dur: 3 } },
+    _rot(h, target) {
+      if (!target.marks || target.isStructure || !target.alive) return;
+      applyMark(h, target, { applyMark: PASSIVES.blight.MARK, dmgType: 'magic' }, 1);
+    },
+    onBasicHit(h, target) { PASSIVES.blight._rot(h, target); },
+    onSkillHit(h, target) { PASSIVES.blight._rot(h, target); },
+    onDotTick(h, target, dmg, dot) {
+      if (!dot || dot.tag !== 'blight' || target.type !== 'hero' || !(dmg > 0)) return;
+      const v = dmg * 0.12;
+      if (h.heal(v) > 0) Game.fx.drainFx(h, Math.round(v));
     },
   },
 

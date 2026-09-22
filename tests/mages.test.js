@@ -711,4 +711,175 @@ T.test('Ashara bot: Sand Veil on herself with a melee inside 300, on the allied 
   assert.equal(ashara.botHoldNow(), 305, 'holds 305');
 });
 
+/* ---------------- Hexa ---------------- */
+
+T.test('Hexa: base stats and skill numbers match the spec (the only self-healing tether; the slowest mage with the most magic resist)', () => {
+  reset();
+  const d = hexa.def0;
+  assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
+    [488, 61, 315, 36, 43, 3.7, 9, 1.8, 15, 2.3, 345, 0.84, 240, 3]);
+  assert.equal(d.passive.id, 'blight');
+  const [s1, s2, s3] = hexa.skills;
+  assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.cd, s1.cdLv, s1.mana, s1.manaLv],
+    ['skillshot', 690, 820, 24, 140, 17, 0.7, 6, -0.3, 45, 4]);
+  assert.equal(rankVal(s1, 'dmg', 6), 225); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Bolt cd at rank 6');
+  assert.deepEqual([s2.type, s2.targetRange, s2.targetCone, s2.cd, s2.cdLv, s2.mana, s2.manaLv], ['tether', 520, 60, 13, -0.5, 70, 5]);
+  const tt = s2.tether;
+  assert.deepEqual([tt.dur, tt.breakRange, tt.slowStart, tt.slowEnd, tt.interval, tt.tickDmg, tt.tickDmgLv, tt.tickScaleAp, tt.healPct],
+    [3.0, 620, 0.15, 0.15, 0.6, 40, 6, 0.25, 0.40]);
+  assert.deepEqual([tt.payload.dmg, tt.payload.dmgLv, tt.payload.scaleAp, tt.payload.slowPct, tt.payload.slowDur, tt.payload.spreadMark.tag, tt.payload.spreadMark.stacks, tt.payload.spreadMark.radius],
+    [120, 16, 0.50, 0.40, 1.5, 'blight', 2, 200]);
+  near(rankVal(s2, 'cd', 6), 10.5, 1e-9, 'Thread cd at rank 6');
+  assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.interval, s3.dmg, s3.scaleAp, s3.cd, s3.mana],
+    ['zone', 600, 240, 0.5, 4, 0.5, [80, 105, 130], 0.35, [40, 35, 30], [110, 130, 150]]);
+  for (const s of hexa.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
+});
+
+T.test('Hexa: Blight is 45 (+30% MAGIC) over 3 s per stack, two at most, from basics and skills alike; she heals 12% of its ticks on heroes and nothing off creeps', () => {
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
+  const per = 45 + hexa.magicPower() * 0.3;
+  basic(hexa, grom);
+  assert.equal(markStacks(grom, 'blight'), 1, 'one Blight');
+  let dot = grom.dots.find(k => k.tag === 'blight');
+  assert.ok(dot, 'a rot is ticking');
+  near(dot.perSec * dot.t, per, per * 0.35, 'about one stack of rot left over 3 s');
+  near(dot.perSec, per / 3, 1e-6, 'one stack: 45 +30% MAGIC over 3 s');
+  hexa.fire('onSkillHit', grom, 10, hexa.skills[0]);
+  assert.equal(markStacks(grom, 'blight'), 2, 'a skill hit stacks it to two');
+  dot = grom.dots.find(k => k.tag === 'blight');
+  near(dot.perSec, 2 * per / 3, 1e-6, 'two stacks: twice the rot, refreshed to 3 s');
+  near(dot.t, 3, 1e-6);
+  hexa.fire('onSkillHit', grom, 10, hexa.skills[0]);
+  assert.equal(markStacks(grom, 'blight'), 2, 'capped at two');
+  // 12% of every tick on a hero heals her
+  hexa.hp = hexa.maxHp * 0.5;
+  const hp0 = hexa.hp, took0 = grom.stats.dmgTaken;
+  T.seconds(G, 1.0);
+  const ticked = grom.stats.dmgTaken - took0;
+  assert.ok(ticked > 0, 'the rot ticked');
+  near(hexa.hp - hp0, ticked * 0.12, 2, 'healed 12% of the Blight damage (some regen)');
+  // nothing off a creep
+  reset();
+  T.place(hexa, open.x, open.y);
+  const m = creep(0, open.x + 300, open.y);
+  basic(hexa, m);
+  assert.equal(markStacks(m, 'blight'), 1, 'creeps rot too');
+  hexa.hp = hexa.maxHp * 0.5;
+  const hp1 = hexa.hp;
+  T.seconds(G, 1.0);
+  assert.ok(hexa.hp - hp1 < hexa.maxHp * 0.006 * 1.1 + 1, 'no Blight heal off a creep (base regen only)');
+});
+
+T.test('Hexa: Leech Thread ticks five times over 3 s healing her 40% of each with a 15% slow, then bursts, slows 40% and spreads 2 Blight within 200; it snaps past 620 or when she is stunned, and Purify releases it; the aim cone falls back to the nearest hero', () => {
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 300, open.y + 150); T.place(ignis, open.x + 300, open.y + 400);
+  grom.attrs.bonus.tenacity = 0;
+  G.update(1 / 60);
+  hexa.hp = hexa.maxHp * 0.4;
+  assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
+  const tt = hexa.liveTether();
+  assert.ok(tt && tt.target === grom, 'latched onto the hero in the cone');
+  const tick = 40 + 6 * 5 + hexa.magicPower() * 0.25;
+  // the thread's ticks are the big hits; the Blight rot they apply ticks small amounts at 4 Hz in between
+  let ticks = 0, lastTaken = grom.stats.dmgTaken, healed = 0, dealt = 0, hpBefore = hexa.hp, slowSeen = 0;
+  for (let k = 0; k < 60 * 2.9; k++) {
+    G.update(1 / 60);
+    slowSeen = Math.max(slowSeen, grom.cc.slowPct);
+    const took = grom.stats.dmgTaken - lastTaken;
+    if (took > 30) { ticks++; dealt += took; healed += hexa.hp - hpBefore; }
+    lastTaken = grom.stats.dmgTaken; hpBefore = hexa.hp;
+  }
+  assert.equal(ticks, 4, 'four ticks by 2.9 s');
+  near(slowSeen, 0.15, 1e-9, '15% slow while linked');
+  near(healed, dealt * 0.4, dealt * 0.4 * 0.2 + 4, 'healed about 40% of the ticks');
+  const mrMult = 95 / (95 + grom.mrValue());
+  near(dealt / 4, tick * 0.88 * mrMult, 6, 'each tick 40+6/rank +25% MAGIC (skill damage, mitigated; a rot tick may share the frame)');
+  // the completion: the fifth tick lands on the completion frame, then the burst, the slow and the spread
+  const before = grom.stats.dmgTaken;
+  T.seconds(G, 0.2);
+  assert.ok(!hexa.liveTether(), 'over at 3 s');
+  assert.ok(hexa.lastTetherDone && hexa.lastTetherDone.target === grom, 'the completion is remembered for the bot');
+  assert.ok(grom.stats.dmgTaken - before > tick * 0.88 * mrMult * 1.5, `fifth tick plus the burst: ${grom.stats.dmgTaken - before}`);
+  near(grom.cc.slowPct, 0.40, 1e-9, 'the burst slows 40%');
+  assert.equal(markStacks(grom, 'blight'), 2, 'the target carries 2 Blight');
+  assert.equal(markStacks(zephyr, 'blight'), 2, '2 Blight spread to a hero 150 from the target');
+  assert.equal(markStacks(ignis, 'blight'), 0, 'nothing 400 away');
+  assert.ok(zephyr.dots.some(k => k.tag === 'blight'), 'the spread Blight rots');
+  // breaks past 620 with no payload
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
+  G.update(1 / 60);
+  assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
+  T.seconds(G, 0.7);
+  T.place(grom, open.x + 700, open.y);
+  G.update(1 / 60);
+  assert.ok(!hexa.liveTether(), 'snapped past 620');
+  assert.ok(!(grom.cc.slowPct >= 0.4), 'no burst');
+  // a stun on Hexa cuts it
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
+  G.update(1 / 60);
+  assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
+  hexa.cc.apply('stun', 0.5, 0);
+  G.update(1 / 60);
+  assert.ok(!hexa.liveTether(), 'cut by a stun on her');
+  // Purify on the target releases it
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y);
+  G.update(1 / 60);
+  assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
+  grom.cc.purify(1);
+  assert.ok(!hexa.liveTether(), 'released by Purify');
+  // fallback: nobody in the 60-degree cone, the nearest hero in reach is taken instead
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x, open.y + 300);
+  G.update(1 / 60);
+  assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }), 'aimed 90 degrees off him');
+  assert.ok(hexa.liveTether() && hexa.liveTether().target === grom, 'the nearest hero in reach');
+});
+
+T.test('Hexa: Black Mass pulses four times over 2 s and every pulse applies Blight', () => {
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 400, open.y);
+  assert.ok(hexa.castSkill(2, { x: open.x + 400, y: open.y }));
+  let hits = 0, lastTaken = 0;
+  for (let k = 0; k < 60 * 3; k++) {
+    G.update(1 / 60);
+    const took = grom.stats.dmgTaken - lastTaken;
+    if (took > 30) hits++;   // a pulse (the rot's own ticks are small)
+    lastTaken = grom.stats.dmgTaken;
+  }
+  assert.equal(hits, 4, 'four pulses');
+  assert.equal(markStacks(grom, 'blight'), 2, 'Blighted by the pulses');
+});
+
+T.test('Hexa bot: the thread goes on the closest hero in reach, then she kites at 490 while it holds; Hex Bolt at the tethered target; Black Mass on the burst or 2+ heroes; retreats under 40%', () => {
+  reset();
+  T.place(hexa, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 500, open.y + 300);   // Zephyr 360 from Grom: outside a mass on him
+  G.update(1 / 60);
+  assert.equal(hexa.p.retreatHp, 0.4, 'retreats to heal under 40%');
+  assert.ok(hexa.botSkillUrgency(1, grom, 300, true, false) > 0, 'the thread on a hero in reach');
+  assert.equal(hexa.botHoldNow(), 345, 'holds 345 with no thread');
+  assert.equal(hexa.botSkillUrgency(0, zephyr, 583, true, false), 500, 'Hex Bolt: a normal poke with no thread');
+  assert.ok(hexa.castSkill(1, { x: open.x + 300, y: open.y }));
+  assert.equal(hexa.botHoldNow(), 490, 'the thread holds: keep 400-580');
+  const cp = hexa.chooseCombatPoint(grom);
+  near(Math.hypot(cp.x - grom.x, cp.y - grom.y), 490, 40, 'the combat point is out past her attack range');
+  assert.equal(hexa.botSkillUrgency(0, zephyr, 583, true, false), 720, 'Hex Bolt the tethered target, whoever the bot is looking at');
+  const cs = hexa.castSkill.bind(hexa);
+  let aimed = null; hexa.castSkill = (i, p) => { aimed = p; return cs(i, p); };
+  hexa.botFireSkill(0, zephyr, 583, true, false);
+  hexa.castSkill = cs;
+  assert.ok(aimed && Math.hypot(aimed.x - grom.x, aimed.y - grom.y) < 60, 'aimed at Grom, not Zephyr');
+  // Black Mass
+  assert.equal(hexa.botSkillUrgency(2, grom, 300, true, false), 0, 'one healthy hero, no burst: held (a 15% tether slow is not enough)');
+  hexa.lastTetherDone = { t: G.time, target: grom };
+  assert.equal(hexa.botSkillUrgency(2, grom, 300, true, false), 820, 'right after the burst: Black Mass on him');
+  hexa.lastTetherDone = { t: G.time - 2, target: grom };
+  assert.equal(hexa.botSkillUrgency(2, grom, 300, true, false), 0, '2 s later: too late');
+  T.place(zephyr, open.x + 300, open.y + 200);
+  assert.equal(hexa.botSkillUrgency(2, grom, 300, true, false), 880, 'two heroes in the mass');
+});
+
 T.done();

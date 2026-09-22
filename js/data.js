@@ -497,19 +497,35 @@ const HEROES = [
   },
   {
     id: 'hexa', name: 'Hexa', role: 'Mage', icon: '🔮', color: '#a78bfa', projColor: '#ddd6fe',
-    desc: 'A hexwright whose glances leave rotting marks.',
-    difficulty: 2, damageStyle: 'magic',
+    desc: 'A drain and attrition mage: stacking Blight, a thread that feeds her health, and rot that spreads.',
+    difficulty: 3, damageStyle: 'magic',
+    /* docs/design/heroes.md, Mages: Hexa. The only self-healing tether
+       (F16 hostile, drain payload): Leech Thread ticks five times over 3 s,
+       healing her 40% of each, and if it holds it bursts, slows and
+       spreads two Blight to everyone around the target; a stun on her, a
+       Purify or 620 of distance cuts it with no payoff. Blight is the
+       passive's mark (F12 applyMark with a dot: BLIGHT_MARK in combat.js)
+       and the thread's spreadMark carries the same shape. The only mage
+       who heals herself; lowest burst, no hard CC. Bot fields: botHold
+       345; botRetreatHp 0.4 (she retreats to heal on Blight ticks under
+       40%); botKiteHold 490 on the thread keeps her at 400-580 while it
+       holds; botTethered rates Hex Bolt at the tethered target; botCrowd +
+       botAfterTether hold Black Mass for 2+ heroes or the thread's burst. */
+    botHold: 345, botRetreatHp: 0.4,
     hp: 488, hpLv: 61, mp: 315, mpLv: 36, atk: 43, atkLv: 3.7,
     armor: 9, armorLv: 1.8, mr: 15, mrLv: 2.3,
-    range: 345, atkSpd: 0.84, speed: 238,
+    range: 345, atkSpd: 0.84, speed: 240,
     passive: {
       name: 'Blight', icon: '🧿', id: 'blight',
-      desc: 'Basic attacks apply a blight that deals 50 (+30% MAGIC) magic damage over 3s. Refreshing it stacks to 2. The rot mage: weakest upfront hit, strongest damage over time.',
+      desc: 'Basic attacks and skill hits apply a rot dealing 45 (+30% MAGIC) magic damage over 3s; reapplying stacks it to 2. Hexa heals for 12% of Blight damage dealt to heroes.',
     },
     skills: [
-      { name: 'Hex Bolt', icon: '☽', type: 'skillshot', cd: 7, mana: 50, dmgType: 'magic', dmg: 145, dmgLv: 17, scaleAp: 0.7, range: 690, speed: 820, radius: 24, desc: 'A cursed bolt that carries your blight with it.' },
-      { name: 'Ruin Pulse', icon: '✺', type: 'nova', cd: 10, mana: 60, dmgType: 'magic', radius: 220, dmg: 155, dmgLv: 18, scaleAp: 0.6, desc: 'Pulse hex-fire around you.' },
-      { name: 'Black Mass', icon: '⬤', type: 'zone', cd: 42, mana: 120, dmgType: 'magic', range: 600, radius: 230, delay: 0.5, ticks: 6, interval: 0.4, dmg: 58, dmgLv: 8, scaleAp: 0.22, desc: 'A lingering curse that ticks six times — more ticks than any other mage ult.' },
+      { name: 'Hex Bolt', icon: '☽', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 140, dmgLv: 17, scaleAp: 0.7, range: 690, speed: 820, radius: 24, botTethered: true, desc: 'A cursed bolt that stops on the first enemy: 140+17/rank (+70% MAGIC) and a Blight.' },
+      { name: 'Leech Thread', icon: '⌇', type: 'tether', cd: 13, cdLv: -0.5, mana: 70, manaLv: 5, dmgType: 'magic', targetRange: 520, targetCone: 60, targetFallback: true, botKiteHold: 490,
+        tether: { dur: 3.0, breakRange: 620, slowStart: 0.15, slowEnd: 0.15, interval: 0.6, tickDmg: 40, tickDmgLv: 6, tickScaleAp: 0.25, healPct: 0.40,
+          payload: { dmg: 120, dmgLv: 16, scaleAp: 0.50, slowPct: 0.40, slowDur: 1.5, spreadMark: { tag: 'blight', stacks: 2, max: 2, dur: 3, radius: 200, dot: { base: 45, scaleAp: 0.3, dur: 3 } } } },
+        desc: 'Latch a thread onto the nearest enemy hero in a 60-degree aim cone within 520 (else the nearest): 3s, 5 ticks of 40+6/rank (+25% MAGIC) that each heal Hexa 40%, a 15% slow while linked. If it holds it bursts for 120+16/rank (+50% MAGIC), slows 40% for 1.5s and puts 2 Blight on every enemy within 200 of the target. Breaks past 620, on death, or when Hexa is stunned, launched, suppressed or taunted; Purify on the target cuts it.' },
+      { name: 'Black Mass', icon: '⬤', type: 'zone', cd: [40, 35, 30], mana: [110, 130, 150], dmgType: 'magic', range: 600, radius: 240, delay: 0.5, ticks: 4, interval: 0.5, dmg: [80, 105, 130], scaleAp: 0.35, botCrowd: true, botAfterTether: 1.5, desc: 'After 0.5s a 240 curse pulses four times over 2s for 80/105/130 (+35% MAGIC) each; every pulse applies Blight.' },
     ],
   },
   {

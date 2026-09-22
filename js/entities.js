@@ -136,8 +136,10 @@ class Unit {
         d._acc = (d._acc || 0) + d.perSec * dt;
         d._cd = (d._cd || 0) - dt;
         if ((d._cd <= 0 || d.t <= 0) && d._acc > 0) {
-          resolveDamage(d.src, this, { amount: d._acc, type: d.type, noPassive: true, lifestealMult: 0 });
+          const dealt = resolveDamage(d.src, this, { amount: d._acc, type: d.type, noPassive: true, lifestealMult: 0 });
           d._acc = 0; d._cd = 0.25;
+          // a passive may read its own dot's ticks (Hexa heals off Blight); the tick itself stays noPassive
+          if (dealt && d.src && d.src.fire) d.src.fire('onDotTick', this, dealt, d);
         }
       }
       this.dots = this.dots.filter(d => d.t > 0);
@@ -337,6 +339,8 @@ class Hero extends Unit {
     // every hero carries bot parameters: the idle autopilot drives the player's
     // hero through the same heuristics, so a null here crashed every frame
     this.p = defaultBotParams();
+    if (def.botRetreatHp) this.p.retreatHp = def.botRetreatHp;   // F29 (Hexa's hint): she retreats to heal earlier than most
+    this.lastTetherDone = null;        // {t, target}: the last hostile tether of hers that ran its course (F29, Hexa)
     const lanes = Game.lanesFor(team);
     this.path = lane && lanes[lane] ? lanes[lane] : null;
     this.curTarget = null;
@@ -980,6 +984,7 @@ class Hero extends Unit {
         }
       },
       onComplete() {
+        h.lastTetherDone = { t: Game.time, target };   // F29 (Hexa's hint): Black Mass on the burst
         if (!tt.payload || !target.alive) return;
         const p = Object.assign({ dmgType }, tt.payload);
         h.skillHit(target, p, r);
@@ -1364,17 +1369,19 @@ class Hero extends Unit {
         } else {
           const reach = s.targetRange || s.range || 500;
           const half = ((s.targetCone || 360) / 2) * Math.PI / 180;
-          let best = null, bd = Infinity;
+          let best = null, bd = Infinity, nearest = null, nd = Infinity;
           for (const e of Game.heroes) {
             if (e.team === this.team || !e.alive || e.untargetable || !Game.canSee(this.team, e)) continue;
             const d = dist(this, e);
             if (d > reach) continue;
+            if (d < nd) { nd = d; nearest = e; }
             const ang = Math.atan2(e.y - this.y, e.x - this.x);
             let diff = Math.abs(ang - this.facing) % TAU;
             if (diff > Math.PI) diff = TAU - diff;
             if (diff > half) continue;
             if (d < bd) { bd = d; best = e; }
           }
+          if (!best && s.targetFallback) best = nearest;   // Hexa's thread: nobody in the cone, take the nearest in reach
           if (best) victims.push(best);
         }
         if (!victims.length) return false;   // nothing to chain: no cost
@@ -2636,7 +2643,16 @@ class Hero extends Unit {
     if (!t || t.type !== 'hero') return false;
     if (s.botMark) return this.botMarkOk(s.botMark, t);
     if (s.botExecuteHp) return t.hpPct < s.botExecuteHp;
+    // F29 (Hexa's hint): Black Mass on the completion burst: her thread ran its course on this hero within botAfterTether seconds
+    if (s.botAfterTether) { const ld = this.lastTetherDone; return !!(ld && ld.target === t && Game.time - ld.t < s.botAfterTether); }
     return this.unitHeld(t);
+  }
+  /* F29 (Hexa's hint): the live hostile tether's target when it is inside
+     the shot's range, else null. */
+  tetheredInReach(s) {
+    const tt = this.liveTether();
+    if (!tt || !tt.target.alive || tt.target.untargetable) return null;
+    return this.distTo(tt.target) < (s.range || 500) * 0.95 ? tt.target : null;
   }
   /* F29 (Mira's hint): is `t` standing inside a lingering zone of this hero's? */
   inOwnLinger(t) {
@@ -2816,6 +2832,8 @@ class Hero extends Unit {
         if (s.botField && isHero && this.inOwnLinger(t)) return 700;
         // F29 (Nadir's hint): Singularity on whoever retreats: a hero moving away from him
         if (s.botRetreating && isHero && (t.vx || 0) * (t.x - this.x) + (t.vy || 0) * (t.y - this.y) > 40 * d) return 700;
+        // F29 (Hexa's hint): Hex Bolt the tethered target while the thread holds (botFireSkill aims at it)
+        if (s.botTethered && isHero && this.tetheredInReach(s)) return 720;
         // F29 (Quill's hint): a boomerang is best at a hero walking toward him, so the return pass crosses them too
         if (s.boomerang && isHero && (t.vx || 0) * (this.x - t.x) + (t.vy || 0) * (this.y - t.y) > 40 * d) return 560;
         return isHero ? 500 : 220;
@@ -3247,7 +3265,8 @@ class Hero extends Unit {
     const s = this.skills[i];
     switch (s.type) {
       case 'skillshot': {
-        const at = s.tether ? this.tetherPick(s, t) : s.hook ? (this.hookPick(s) || t) : t;
+        // F29 (Hexa's hint): a botTethered shot goes at the hero on her thread
+        const at = s.tether ? this.tetherPick(s, t) : s.hook ? (this.hookPick(s) || t) : (s.botTethered && this.tetheredInReach(s)) || t;
         this.castSkill(i, Game.aimLeadPoint(this, at, s.speed));
         break;
       }
