@@ -21,7 +21,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 - Slowing S1 skillshots: Zephyr's Gale Shot and Bell's Chime lose their slows; Quill's Bola becomes a boomerang (slow only on the return pass).
 - Stun dashes: Grom and Brass (difficulty-1 heroes) keep theirs; Anchor's is replaced; Omen's is an ult.
 - Multi-tick zone ults: Quill 3 ticks, Volt's slow ramps per tick, Hexa 4 ticks that spread Blight, Ashara's becomes progressive quicksand.
-- Balance caps adopted: Zephyr AS steroids take the max instead of multiplying and a volley counts as one basic; Vesper Deadeye 1.10 AD with Last Light limited to basics + Deadeye and the recharge refund once per 2.5 s; Ignis stun lock 1.5 s and 20% MP per Ember; Mira 2.5 s Chill immunity after a freeze; Volt bounce decay 0.75 and Static heroes only; Brass taunt 0.8/1.0/1.2 s at 260 radius; Omen full reset on kill, half on assist; Sylva Canopy 12 x 16/22/28 (+8% MP) not stacking with Vine Link; Bell Carillon +0.20 -> +0.30 AS for 3.5 s (max with other steroids); Wick shieldPct 0.08 and the lantern has no slow; Cinder Heat +8 per skill hit; Tide ult push 130 and wall stun 0.7; Grom Bull Charge stun 0.7; Anchor Harbour slow 2.0 s and tether snaps on hard CC; Rook Return window 3 s with the ult cd starting on cast.
+- Balance caps adopted: Zephyr AS steroids take the max instead of multiplying and a volley counts as one basic; Vesper Deadeye 1.10 AD with Last Light limited to basics + Deadeye and the recharge refund once per 2.5 s; Ignis stun lock 1.5 s and 20% MP per Ember; Mira 2.5 s Chill immunity after a freeze; Volt bounce decay 0.75 and Static heroes only; Brass taunt 0.8/1.0/1.2 s at 260 radius; Omen full reset on kill, half on assist; Sylva Canopy 12 x 12/17/22 (+8% MP) not stacking with Vine Link; Bell Carillon +0.20 -> +0.30 AS for 3.5 s (max with other steroids); Wick shieldPct 0.08 and the lantern has no slow; Cinder Heat +8 per skill hit; Tide ult push 130 and wall stun 0.7; Grom Bull Charge stun 0.7; Anchor Harbour slow 2.0 s and tether snaps on hard CC; Rook Return window 3 s with the ult cd starting on cast.
 
 ---
 
@@ -122,7 +122,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** Mana. mp 300, mpLv 34.
 
-**Base stats.** hp 500 (+64), atk 46 (+4.0), armor 10 (+2.0), mr 12 (+2.0), range 330, atkSpd 0.9, speed 250.
+**Base stats.** hp 530 (+68), atk 46 (+4.0), armor 10 (+2.0), mr 12 (+2.0), range 330, atkSpd 0.9, speed 250.
 
 **Passive: Kindling** (`kindling`, replaces `combustion`). Basic attacks against an Embered hero deal +25 (+20% MP) bonus magic damage. Embers are drawn as flame pips on the target's HP bar. (Ember application is done by the skills' `applyMark`; the passive only reads the mark.)
 
@@ -147,9 +147,9 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Frostbite** (`frostbite`, retuned). Mira's damage applies Chill (4 s, max 4), 8% slow per stack (applied as one applySlow with the strongest value; does not stack multiplicatively with field slows). At 4 stacks the target is Frozen 0.8 s (stun kind), stacks are consumed and the target gains `marks.chillImmuneT` = 2.5 s during which no Chill is applied.
 
-**S1 Frost Shard** - `skillshot`. range 700, speed 900, radius 24. magic dmg 150 +20/rank (150 -> 250), scaleAp 0.7, slowPct 0.30, slowDur 1.5. cd 5.5, cdLv -0.3 (-> 4); mana 40, manaLv 5. Applies 1 Chill.
+**S1 Frost Shard** - `skillshot`. range 700, speed 900, radius 24. magic dmg 150 +20/rank (150 -> 250), scaleAp 0.7, slowPct 0.25, slowDur 1.5. cd 5.5, cdLv -0.3 (-> 4); mana 40, manaLv 5. Applies 1 Chill.
 
-**S2 Rime Field** - `zone` + `linger` **(new)**. range 600, radius 200, delay 0.3, one pulse: magic dmg 90 +12/rank (90 -> 150), scaleAp 0.4. linger: dur 4, enemySlowPct 0.35, allySpeedAdd 40, chillPerSec 1 (only after an enemy has been inside for 1.0 s). cd 12, cdLv -0.4 (-> 10); mana 70, manaLv 5.
+**S2 Rime Field** - `zone` + `linger` **(new)**. range 600, radius 200, delay 0.3, one pulse: magic dmg 90 +12/rank (90 -> 150), scaleAp 0.4. linger: dur 3, enemySlowPct 0.28, allySpeedAdd 40, chillPerSec 1 (only after an enemy has been inside for 1.0 s). cd 12, cdLv -0.4 (-> 10); mana 70, manaLv 5.
 
 **Ult Glacial Prison** - `zone` + `linger`. range 620, radius 200, delay 0.75. magic dmg 260/340/420, scaleAp 0.9, Frozen (stun) 1.0/1.1/1.2, then leaves a Rime Field (same linger values) centred on the zone. cd 42/37/32; mana 110/130/150.
 
@@ -168,7 +168,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Static** (`static`, retuned). Skill hits on enemy HEROES apply a Static stack (4 s, max 5); each stack is 8 flat magic penetration against that target. Non-heroes never gain stacks.
 
-**S1 Chain Arc** - `skillshot` with `bounce` **(new)**. range 680, speed 1100, radius 22, non-pierce. magic dmg 160 +20/rank (160 -> 260), scaleAp 0.75. bounce: count 3, range 320, decay 0.75 (0.75, 0.56, 0.42 of first hit), hero bias -150, structures excluded. cd 5, cdLv -0.2 (-> 4); mana 45, manaLv 5.
+**S1 Chain Arc** - `skillshot` with `bounce` **(new)**. range 680, speed 1100, radius 22, non-pierce. magic dmg 140 +20/rank (140 -> 240), scaleAp 0.75. bounce: count 3, range 320, decay 0.75 (0.75, 0.56, 0.42 of first hit), hero bias -150, structures excluded. cd 5.5, cdLv -0.2 (-> 4.5); mana 45, manaLv 5.
 
 **S2 Flashover** - `nova`. radius 240. magic dmg 130 +16/rank (130 -> 210), scaleAp 0.55, stun 0.5. cd 10, cdLv -0.4 (-> 8); mana 60, manaLv 4.
 
@@ -210,13 +210,13 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Dry Mouth** (`drymouth`, unchanged). The third skill damage instance on a target within 6 s silences it 0.9 s (8 s lockout per target). Entering Sand Veil or Burial counts as one skill hit.
 
-**S1 Glass Needle** - `skillshot`. range 660, speed 900, radius 22. magic dmg 150 +18/rank (150 -> 240), scaleAp 0.65, slowPct 0.25, slowDur 1.2. cd 6, cdLv -0.3 (-> 4.5); mana 45, manaLv 4.
+**S1 Glass Needle** - `skillshot`. range 660, speed 900, radius 22. magic dmg 160 +20/rank (160 -> 260), scaleAp 0.72, slowPct 0.25, slowDur 1.2. cd 6, cdLv -0.3 (-> 4.5); mana 45, manaLv 4.
 
-**S2 Sand Veil** - `zone` + `linger` with `conceal` **(new)**. range 500, radius 180, delay 0.2, one pulse: magic dmg 70 +10/rank (70 -> 120), scaleAp 0.35. linger: dur 4, conceal allied heroes inside (bush rules: hidden from enemies beyond 250, revealed 1.6 s on dealing damage), enemySlowPct 0.30; an enemy entering counts as a Dry Mouth skill hit once per cast. cd 13, cdLv -0.5 (-> 10.5); mana 55, manaLv 4.
+**S2 Sand Veil** - `zone` + `linger` with `conceal` **(new)**. range 500, radius 180, delay 0.2, one pulse: magic dmg 115 +15/rank (115 -> 190), scaleAp 0.55. linger: dur 4, conceal allied heroes inside (bush rules: hidden from enemies beyond 250, revealed 1.6 s on dealing damage), enemySlowPct 0.30; an enemy entering counts as a Dry Mouth skill hit once per cast. cd 11, cdLv -0.5 (-> 8.5); mana 55, manaLv 4.
 
-**Ult Burial** - `zone` + `linger` with `ramp` **(new)**. range 560, radius 220, delay 0.4, no initial damage. linger dur 4: enemy slow ramps linearly 20% -> 60% over the 4 s; entering counts as a Dry Mouth hit. At the end everyone still inside takes magic dmg 260/340/420, scaleAp 1.0 and is rooted 1.2 s. cd 42/37/32; mana 105/125/145.
+**Ult Burial** - `zone` + `linger` with `ramp` **(new)**. range 560, radius 220, delay 0.4, no initial damage. linger dur 3: enemy slow ramps linearly 30% -> 60% over the 3 s; entering counts as a Dry Mouth hit. At the end everyone still inside takes magic dmg 260/340/420, scaleAp 1.0 and is rooted 1.2 s. cd 42/37/32; mana 105/125/145.
 
-**Counterplay.** The veil is a visible sand patch: skills into it still hit. Burial is a 4 s telegraph; walk out before the slow reaches 60%. Ashara has no mobility and 500 HP; Purify clears the root.
+**Counterplay.** The veil is a visible sand patch: skills into it still hit. Burial is a 3 s telegraph; walk out before the slow reaches 60%. Ashara has no mobility and 500 HP; Purify clears the root.
 
 **Bot hint.** Cast Sand Veil on the allied group when an enemy hero approaches within 600, or on herself when a melee enemy is within 300; Glass Needle at max range; Burial under 2+ enemy heroes who are attacking (not retreating) or on a hero already slowed.
 
@@ -315,7 +315,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** Mana. mp 220, mpLv 24.
 
-**Base stats.** hp 730 (+98), atk 54 (+5.8), armor 23 (+3.3), mr 16 (+2.5), range 102, atkSpd 0.84, speed 241.
+**Base stats.** hp 730 (+98), atk 54 (+5.8), armor 23 (+3.8), mr 16 (+2.9), range 102, atkSpd 0.84, speed 241.
 
 **Passive: Deadweight** (`deadweight`, unchanged). Skill hits on slowed, rooted, stunned or airborne enemies deal +15%.
 
@@ -340,13 +340,13 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** Mana. mp 230, mpLv 25.
 
-**Base stats.** hp 515 (+68), atk 68 (+8.0), armor 12 (+2.0), mr 10 (+1.6), range 95, atkSpd 1.15, speed 275.
+**Base stats.** hp 540 (+71), atk 68 (+8.0), armor 13 (+2.2), mr 11 (+1.7), range 95, atkSpd 1.15, speed 275.
 
 **Passive: Backstab** (`backstab`, unchanged). Hits on a target facing away deal 18% bonus true damage; hero kills grant +25% move speed 3 s.
 
 **S1 Shadow Strike** - `dash`. dist 340, speed 1100. physical dmg 130 +16/rank (130 -> 210), scaleAd 0.7. cd 8; mana 45.
 
-**S2 Shade Step** - `selfState` with `untargetable` **(new)**. 0.8 s: removed from targeting and projectile hit tests, zones and novas skip her, +30% move speed (speedPct), cannot attack or cast; existing dots keep ticking. cd 12; mana 40.
+**S2 Shade Step** - `selfState` with `untargetable` **(new)**. 0.8 s: removed from targeting and projectile hit tests, zones and novas skip her, +30% move speed (speedPct), cannot attack or cast; existing dots keep ticking. cd 10.5; mana 40.
 
 **Ult Deathmark** - `blinkstrike`. range 500. physical dmg 260/300/340, scaleAd 1.0, missingPct 0.20, missingPctLv 0.05 (20/25/30% of missing HP), missingCap 400 vs non-heroes, physPenPct 0.22. No CC. cd 42/38/34; mana 100.
 
@@ -361,7 +361,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** Energy 100 at every level, regen 8/s, +10 on an empowered basic vs a hero. Costs S1 25, S2 30, ult 40.
 
-**Base stats.** hp 500 (+65), atk 66 (+7.6), armor 11 (+1.9), mr 9 (+1.5), range 90, atkSpd 1.18, speed 280.
+**Base stats.** hp 545 (+70), atk 66 (+7.6), armor 13 (+2.2), mr 10 (+1.7), range 90, atkSpd 1.18, speed 280.
 
 **Passive: Afterimage** (`afterimage`, extended). After any skill hits, the next basic within 3 s deals +30% and, on a hero, restores 10 energy.
 
@@ -382,15 +382,15 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** Mana. mp 240, mpLv 26.
 
-**Base stats.** hp 508 (+67), atk 60 (+6.4), armor 12 (+2.0), mr 12 (+1.8), range 92, atkSpd 1.12, speed 272.
+**Base stats.** hp 508 (+67), atk 64 (+7.0), armor 12 (+2.0), mr 12 (+1.8), range 92, atkSpd 1.12, speed 272.
 
 **Passive: Venom Bank** (`venom`, extended). Hero kills grant 18% spell vamp 5 s, assists 8% 3 s. Basics on a Venomed hero refresh the Venom timer (once per stack lifetime).
 
-**S1 Needle** - `skillshot`, `heroOnly: true` **(new)**. range 560, speed 1000, radius 20; passes through minions and monsters, hits the first HERO. magic dmg 90 +12/rank (90 -> 150), scaleAp 0.5. applyMark venom (max 3, dur 4) whose dot ticks 1.5% (+0.01% per MP) of target max HP per second per stack as magic (cap 40/s per stack vs non-heroes). cd 5, cdLv -0.2; mana 40.
+**S1 Needle** - `skillshot`, `heroOnly: true` **(new)**. range 560, speed 1000, radius 20; passes through minions and monsters, hits the first HERO. magic dmg 105 +14/rank (105 -> 175), scaleAp 0.5. applyMark venom (max 3, dur 4) whose dot ticks 1.5% (+0.01% per MP) of target max HP per second per stack as magic (cap 40/s per stack vs non-heroes). cd 5, cdLv -0.2; mana 40.
 
-**S2 Lunge** - `dash`. dist 300, speed 1100. magic dmg 110 +14/rank (110 -> 180), scaleAp 0.5; applyMark venom x1 to each enemy hit. cd 9, cdLv -0.3; mana 45.
+**S2 Lunge** - `dash`. dist 300, speed 1100. magic dmg 125 +16/rank (125 -> 205), scaleAp 0.6; applyMark venom x1 to each enemy hit. cd 9, cdLv -0.3; mana 45.
 
-**Ult Kiss** - `blinkstrike`. range 460. magic dmg 220/260/300, scaleAp 0.7, plus pctMaxHp 0.08/0.10/0.12 of the target's max HP (cap 500 vs non-heroes), slowPct 0.50, slowDur 1.5, refreshes all Venom stacks to full duration (no consume). cd 38/34/30; mana 100.
+**Ult Kiss** - `blinkstrike`. range 460. magic dmg 220/260/300, scaleAp 0.7, plus pctMaxHp 0.09/0.11/0.13 of the target's max HP (cap 500 vs non-heroes), slowPct 0.50, slowDur 1.5, refreshes all Venom stacks to full duration (no consume). cd 38/34/30; mana 100.
 
 **Counterplay.** Venom pips are visible: back off at 2 stacks and let them expire. Needle cannot be body-blocked but it is narrow and slow. No hard CC: Purify or a speed buff walks out of the slow. Lowest AD assassin: MR and early aggression shut her down.
 
@@ -403,7 +403,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Resource.** Mana. mp 200, mpLv 22.
 
-**Base stats.** hp 530 (+70), atk 64 (+7.0), armor 13 (+2.1), mr 10 (+1.6), range 98, atkSpd 1.05, speed 278.
+**Base stats.** hp 540 (+72), atk 64 (+7.0), armor 13 (+2.2), mr 10 (+1.6), range 98, atkSpd 1.05, speed 278.
 
 **Passive: Stoop** (`stoop`, reworked). Landing Dive or Skyfall on a hero grants +40 move speed 2 s and makes her next basic within 3 s deal +50% total AD bonus physical damage.
 
@@ -432,11 +432,11 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Bloodthirst** (`bloodthirst`, retuned). 8% lifesteal plus 1% per 3% missing HP, capped at 35% at or below 20% HP. Basics only.
 
-**S1 Whirling Axe** - `nova`. radius 220. physical dmg 130 +16/rank (130 -> 210), scaleAd 0.8, selfMissingBonus: +1% damage per 2% of Torren's missing HP (max +40%). cd 7, cdLv -0.3 (-> 5.5); mana 0.
+**S1 Whirling Axe** - `nova`. radius 220. physical dmg 110 +13/rank (110 -> 175), scaleAd 0.55, selfMissingBonus: +1% damage per 2% of Torren's missing HP (max +30%). cd 8, cdLv -0.3 (-> 6.5); mana 0.
 
 **S2 War Leap** - `dash` with `dashToPoint: true` **(new)**. Leap to the aimed point up to 340 away (joystick pull shortens it), speed 950, no path damage. endNova: radius 180, physical dmg 110 +13/rank, scaleAd 0.6, slowPct 0.30, slowDur 1.2. cd 11, cdLv -0.3 (-> 9.5); mana 0.
 
-**Ult Reaver's Toll** - `nova`. radius 260. true dmg 160/220/280, scaleAd 0.7, plus selfMissingPct 0.20/0.25/0.30 of Torren's own missing HP (cap 50% of his max HP), computed once at cast. cd 42/38/34; mana 0.
+**Ult Reaver's Toll** - `nova`. radius 260. true dmg 135/175/215, scaleAd 0.7, plus selfMissingPct 0.12/0.16/0.20 of Torren's own missing HP (cap 50% of his max HP), computed once at cast. cd 42/38/34; mana 0.
 
 **Counterplay.** Kite him: no ranged tool, one leap on 11 s, no CC. Burst him at high HP before Bloodthirst and the missing-HP bonus ramp, or finish him instead of letting him sit at 30%. Shields eat the true damage.
 
@@ -495,11 +495,11 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Cadence** (`cadence`, retuned). Basics grant +5% AS 3 s, stacking to 8; a Crosscut that hits a hero grants 2 stacks.
 
-**S1 Crosscut** - `nova`, `canCrit: true` **(new)**. radius 190. physical dmg 120 +14/rank (120 -> 190), scaleAd 0.8; can critically strike using his crit chance. cd 6, cdLv -0.3 (-> 4.5); mana 40, manaLv 3.
+**S1 Crosscut** - `nova`, `canCrit: true` **(new)**. radius 190. physical dmg 120 +14/rank (120 -> 190), scaleAd 0.68; can critically strike using his crit chance. cd 6, cdLv -0.3 (-> 4.5); mana 40, manaLv 3.
 
 **S2 Pass** - `dash`. dist 300, speed 1050. physical dmg 90 +11/rank, scaleAd 0.6, no CC. resetOnKill 1.0, resetOnAssist 0.5. cd 10, cdLv -0.4 (-> 8); mana 45.
 
-**Ult Duelist's End** - `dash`, `stopOnHero: true`. dist 420, speed 1200. physical dmg 240/300/360, scaleAd 1.1, stun 0.8. resetOnKill 0.5 (kill only). cd 38/34/30; mana 120.
+**Ult Duelist's End** - `dash`, `stopOnHero: true`. dist 420, speed 1200. physical dmg 220/275/330, scaleAd 1.1, stun 0.8. resetOnKill 0.5 (kill only). cd 38/34/30; mana 120.
 
 **Counterplay.** Do not feed the reset. Any stun or root mid-chain kills him (assassin HP, no sustain). His ult stops on the first hero: a tank steps in front.
 
@@ -516,13 +516,13 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Undertow** (`undertow`, unchanged). Basics slow 12% for 1 s; slowed heroes take +8% magic damage from Tide.
 
-**S1 Breaker** - `skillshot`, `pierce: true`. range 560, speed 750, radius 32. magic dmg 130 +16/rank (130 -> 210), scaleAp 0.5, knockback 120 along the wave direction (0.25 s slide); wallDmg 80 (+30% MP), wallStun 0.6. cd 8, cdLv -0.4 (-> 6); mana 55, manaLv 4.
+**S1 Breaker** - `skillshot`, `pierce: true`. range 560, speed 850, radius 32. magic dmg 145 +18/rank (145 -> 235), scaleAp 0.7, knockback 120 along the wave direction (0.25 s slide); wallDmg 80 (+30% MP), wallStun 0.6. cd 7.5, cdLv -0.4 (-> 5.5); mana 55, manaLv 4.
 
-**S2 Surge** - `dash`. dist 320, speed 950. magic dmg 90 +11/rank, scaleAp 0.4, slowPct 0.30, slowDur 1.2. cd 10, cdLv -0.4; mana 55.
+**S2 Surge** - `dash`. dist 320, speed 950. magic dmg 105 +13/rank, scaleAp 0.45, slowPct 0.30, slowDur 1.2. cd 10, cdLv -0.4; mana 55.
 
-**Ult High Water** - `zone`. range 480, radius 250, delay 0.5. magic dmg 250/320/390, scaleAp 0.8, knockback 130 radial from the zone centre; wallDmg 120 (+40% MP), wallStun 0.7; victims that hit no wall are airborne 0.5. cd 42/38/34; mana 120.
+**Ult High Water** - `zone`. range 480, radius 250, delay 0.5. magic dmg 270/350/430, scaleAp 0.8, knockback 130 radial from the zone centre; wallDmg 120 (+40% MP), wallStun 0.7; victims that hit no wall are airborne 0.5. cd 40/36/32; mana 120.
 
-**Counterplay.** Fight in open ground: every stun needs a wall within 120-130 behind you. The wave is 750-speed; High Water has a 0.5 s delay. Purify refuses the slide. No sustain, one 320 dash.
+**Counterplay.** Fight in open ground: every stun needs a wall within 120-130 behind you. The wave is 850-speed; High Water has a 0.5 s delay. Purify refuses the slide. No sustain, one 320 dash.
 
 **Bot hint.** Prefer Breaker / High Water when the push vector through the target, extended 130 units, hits a wall tile; otherwise shove the enemy hero attacking an allied carry; Surge to the open side of a target standing next to a wall.
 
@@ -537,9 +537,9 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Live Coal** (`livecoal`, retuned). Basics and skills apply a 3 s burn of 25 (+20% MP) magic; refreshes. During Furnace the burn is 50 (+40% MP).
 
-**S1 Haymaker** - `nova`. radius 200. magic dmg 140 +17/rank (140 -> 225), scaleAp 0.55. cd 7, cdLv -0.4 (-> 5). overheat: radius 260, dmgMult 1.4, slowPct 0.40, slowDur 1.5.
+**S1 Haymaker** - `nova`. radius 200. magic dmg 152 +18/rank (152 -> 242), scaleAp 0.55. cd 7, cdLv -0.4 (-> 5). overheat: radius 260, dmgMult 1.4, slowPct 0.40, slowDur 1.5.
 
-**S2 Coal Dash** - `dash` with `endNova`. dist 320, speed 980, no path damage. endNova: radius 170, magic dmg 100 +12/rank, scaleAp 0.4, no CC. cd 10, cdLv -0.4 (-> 8). overheat: endNova radius 220, stun 0.5.
+**S2 Coal Dash** - `dash` with `endNova`. dist 320, speed 980, no path damage. endNova: radius 170, magic dmg 115 +14/rank, scaleAp 0.4, no CC. cd 10, cdLv -0.4 (-> 8). overheat: endNova radius 220, stun 0.5.
 
 **Ult Furnace** - `buff`. dur 6: atkMult 1.25, spdAdd 50, hotPct 0.18, burn upgraded. cd 42/38/34. overheat: dur 9, tenacityAdd 0.35.
 
@@ -564,9 +564,9 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **S1 Thorn Volley** - `skillshot`. range 680, speed 850, radius 26. magic dmg 130 +16/rank (130 -> 210), scaleAp 0.6, slowPct 0.30, slowDur 1.5. cd 7, cdLv -0.4; mana 45, manaLv 4.
 
-**S2 Vine Link** - `tether` friendly with `allyTarget`. Target: allied hero (not self) nearest the aim point within 520, fallback lowest-HP ally; no target = no cost. Instant heal 110 +18/rank (110 -> 200), scaleAp 0.55. Link dur 4, 8 ticks of 25 +4/rank (+15% MP) (200 -> 360 +120% MP), target +40 speed, Sylva +12 armor/MR while linked, breakRange 650. Recasting replaces. cd 11, cdLv -0.6 (-> 8); mana 70, manaLv 5.
+**S2 Vine Link** - `tether` friendly with `allyTarget`. Target: allied hero (not self) nearest the aim point within 520, fallback lowest-HP ally; no target = no cost. Instant heal 100 +16/rank (100 -> 180), scaleAp 0.55. Link dur 4, 8 ticks of 20 +3/rank (+15% MP) (160 -> 280 +120% MP), target +40 speed, Sylva +12 armor/MR while linked, breakRange 650. Recasting replaces. cd 12, cdLv -0.6 (-> 9); mana 70, manaLv 5.
 
-**Ult Canopy** - `heal` + friendly `tether` to all. Instant heal 150/210/270 (+50% MP) to allied heroes within 420; then every allied hero within 420 (incl. self) is linked 6 s: 12 ticks of 16/22/28 (+8% MP) (192/264/336 +96% MP), +40 speed, breakRange 550. A Canopy link does not stack with a Vine Link on the same ally (stronger tick wins). cd 55/48/41; mana 120/150/180.
+**Ult Canopy** - `heal` + friendly `tether` to all. Instant heal 140/190/240 (+50% MP) to allied heroes within 420; then every allied hero within 420 (incl. self) is linked 6 s: 12 ticks of 12/17/22 (+8% MP) (144/204/264 +96% MP), +40 speed, breakRange 550. A Canopy link does not stack with a Vine Link on the same ally (stronger tick wins). cd 58/52/46; mana 120/150/180.
 
 **Counterplay.** Kill or displace the linked target, or knock Sylva 650 away to snap the vine. No escape, no CC, no shield: dive her first. Anti-heal shrinks every tick; Canopy is a 6 s window, not a burst.
 
@@ -604,11 +604,11 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **Passive: Lampglass** (`lampglass`, unchanged). Whenever Wick heals an ally, that ally also gains a shield for 40% of the heal for 2.5 s.
 
-**S1 Spark** - `skillshot`. range 640, speed 900, radius 22. magic dmg 125 +15/rank (125 -> 200), scaleAp 0.5, slowPct 0.25, slowDur 1.0. cd 6, cdLv -0.3; mana 40, manaLv 4.
+**S1 Spark** - `skillshot`. range 640, speed 900, radius 22. magic dmg 135 +16/rank (135 -> 215), scaleAp 0.5, slowPct 0.25, slowDur 1.0. cd 6, cdLv -0.3; mana 40, manaLv 4.
 
-**S2 Lantern** - `object` **(new)**. range 480, duration 5, tick 1.0. Each tick: allied heroes within 300 gain a lantern-tagged shield of 45 +7/rank (+20% MP) for 2 s (refreshes, does not stack). Enemy heroes within 300 are revealed for the whole 5 s (bush stealth and Sand Veil broken); Wick's basics on revealed enemies deal +15%. No slow. Untargetable, expires on owner death. cd 13, cdLv -0.6 (-> 10); mana 60, manaLv 4.
+**S2 Lantern** - `object` **(new)**. range 480, duration 5, tick 1.0. Each tick: allied heroes within 300 gain a lantern-tagged shield of 60 +9/rank (+25% MP) for 2 s (refreshes, does not stack). Enemy heroes within 300 are revealed for the whole 5 s (bush stealth and Sand Veil broken); Wick's basics on revealed enemies deal +15%. No slow. Untargetable, expires on owner death. cd 13, cdLv -0.6 (-> 10); mana 60, manaLv 4.
 
-**Ult Warding Glow** - `heal`. heal 170/230/290 (+55% MP) to allied heroes within 320, shieldPct 0.08 (3 s), plus Lampglass. cd 48/42/36; mana 110/140/170.
+**Ult Warding Glow** - `heal`. heal 200/270/340 (+55% MP) to allied heroes within 320, shieldPct 0.08 (3 s), plus Lampglass. cd 44/39/34; mana 110/140/170.
 
 **Counterplay.** The lantern is stationary: pull the fight 300 away or wait a pulse out. Wick's only CC is a 25% slow. Kill Wick and the lantern goes out.
 
@@ -627,7 +627,7 @@ Judge resolutions applied (majority of the three verdicts; where they split, the
 
 **S1 Let** - `skillshot`. range 600, speed 860, radius 24. magic dmg 140 +17/rank (140 -> 225), scaleAp 0.6. No CC. cd 6, cdLv -0.3; mana 45, manaLv 4.
 
-**S2 Offering** - `heal` with `allyTarget` and `hpCost` **(new)**. Target: allied hero (not self) nearest the aim point within 520, fallback lowest HP; no target = no cost. Pact pays 12% of her max HP and the target is healed for 200% of the HP paid +20/rank (+45% MP) (level 1: ~144 +45% MP; level 15: ~420 +45% MP). cd 11, cdLv -0.6 (-> 8); hpCost 0.12.
+**S2 Offering** - `heal` with `allyTarget` and `hpCost` **(new)**. Target: allied hero (not self) nearest the aim point within 520, fallback lowest HP; no target = no cost. Pact pays 12% of her max HP and the target is healed for 180% of the HP paid +20/rank (+45% MP) (level 1: ~130 +45% MP; level 15: ~378 +45% MP). cd 12, cdLv -0.6 (-> 9); hpCost 0.12.
 
 **Ult Covenant** - `zone`. range 480, radius 200, delay 0.6, ticks 1. true dmg 190/250/310, scaleAp 0.4, immobilize 1.0, silence 1.0 (both purifiable). cd 50/44/38; mana 100/120/140.
 

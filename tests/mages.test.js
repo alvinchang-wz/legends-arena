@@ -591,8 +591,8 @@ T.test('Ashara: base stats and skill numbers match the spec (the only conceal, t
     ['skillshot', 660, 900, 22, 160, 20, 0.72, 0.25, 1.2, 6, -0.3, 45, 4]);
   assert.equal(rankVal(s1, 'dmg', 6), 260); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Needle cd at rank 6');
   assert.deepEqual([s2.type, s2.range, s2.radius, s2.delay, s2.ticks, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.linger],
-    ['zone', 500, 180, 0.2, 1, 70, 10, 0.35, 13, -0.5, 55, 4, { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }]);
-  assert.equal(rankVal(s2, 'dmg', 6), 120); near(rankVal(s2, 'cd', 6), 10.5, 1e-9, 'Veil cd at rank 6');
+    ['zone', 500, 180, 0.2, 1, 115, 15, 0.55, 11, -0.5, 55, 4, { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }]);
+  assert.equal(rankVal(s2, 'dmg', 6), 190); near(rankVal(s2, 'cd', 6), 8.5, 1e-9, 'Veil cd at rank 6');
   assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.cd, s3.mana, s3.linger],
     ['zone', 560, 220, 0.4, 0, [42, 37, 32], [105, 125, 145],
       { dur: 3, enemySlowRamp: [0.30, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } }]);

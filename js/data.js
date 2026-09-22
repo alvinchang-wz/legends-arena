@@ -293,9 +293,9 @@ const HEROES = [
       desc: '8% Lifesteal plus 1% for every 3% of missing HP, capped at 35% at or below 20% HP. Basic attacks only.',
     },
     skills: [
-      { name: 'Whirling Axe', icon: '🌀', type: 'nova', cd: 8, cdLv: -0.3, mana: 0, dmgType: 'physical', radius: 220, dmg: 130, dmgLv: 16, scaleAd: 0.65, selfMissingBonus: { perPct: 0.01, per: 0.02, max: 0.3 }, desc: 'Spin the axe around Torren: +1% damage per 2% of his missing HP (max +30%).' },
+      { name: 'Whirling Axe', icon: '🌀', type: 'nova', cd: 8, cdLv: -0.3, mana: 0, dmgType: 'physical', radius: 220, dmg: 110, dmgLv: 13, scaleAd: 0.55, selfMissingBonus: { perPct: 0.01, per: 0.02, max: 0.3 }, desc: 'Spin the axe around Torren: +1% damage per 2% of his missing HP (max +30%).' },
       { name: 'War Leap', icon: '🦵', type: 'dash', cd: 11, cdLv: -0.3, mana: 0, dashToPoint: true, dist: 340, speed: 950, endNova: { radius: 180, dmgType: 'physical', dmg: 110, dmgLv: 13, scaleAd: 0.6, slowPct: 0.3, slowDur: 1.2 }, desc: 'Leap to the aimed point up to 340 away and slam down, damaging and slowing 30% for 1.2s.' },
-      { name: 'Reaver\'s Toll', icon: '🪓', type: 'nova', cd: [42, 38, 34], mana: 0, botOwnHpBelow: 0.5, dmgType: 'true', radius: 260, dmg: [150, 200, 250], scaleAd: 0.7, selfMissingPct: [0.15, 0.2, 0.25], selfMissingCap: 0.5, desc: 'A true-damage cleave that adds 15/20/25% of Torren\'s own missing HP (cap 50% of his max HP).' },
+      { name: 'Reaver\'s Toll', icon: '🪓', type: 'nova', cd: [42, 38, 34], mana: 0, botOwnHpBelow: 0.5, dmgType: 'true', radius: 260, dmg: [135, 175, 215], scaleAd: 0.7, selfMissingPct: [0.12, 0.16, 0.2], selfMissingCap: 0.5, desc: 'A true-damage cleave that adds 12/16/20% of Torren\'s own missing HP (cap 50% of his max HP).' },
     ],
   },
   {
@@ -514,7 +514,7 @@ const HEROES = [
     },
     skills: [
       { name: 'Glass Needle', icon: '↾', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 160, dmgLv: 20, scaleAp: 0.72, range: 660, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.2, desc: 'A shard of fused sand that stops on the first enemy: 160+20/rank (+72% MAGIC) and a 25% slow for 1.2s.' },
-      { name: 'Sand Veil', icon: '〜', type: 'zone', cd: 13, cdLv: -0.5, mana: 55, manaLv: 4, dmgType: 'magic', range: 500, radius: 180, delay: 0.2, ticks: 1, dmg: 70, dmgLv: 10, scaleAp: 0.35, linger: { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }, botVeil: { melee: 300, enemy: 600, group: 400 }, desc: 'A pulse of 70+10/rank (+35% MAGIC) in 180, then a sand patch for 4s: allied heroes inside are concealed like a bush (hidden beyond 250, revealed 1.6s by dealing damage); enemies inside are slowed 30% and count a Dry Mouth hit on entry.' },
+      { name: 'Sand Veil', icon: '〜', type: 'zone', cd: 11, cdLv: -0.5, mana: 55, manaLv: 4, dmgType: 'magic', range: 500, radius: 180, delay: 0.2, ticks: 1, dmg: 115, dmgLv: 15, scaleAp: 0.55, linger: { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }, botVeil: { melee: 300, enemy: 600, group: 400 }, desc: 'A pulse of 115+15/rank (+55% MAGIC) in 180, then a sand patch for 4s: allied heroes inside are concealed like a bush (hidden beyond 250, revealed 1.6s by dealing damage); enemies inside are slowed 30% and count a Dry Mouth hit on entry.' },
       { name: 'Burial', icon: '⏳', type: 'zone', cd: [42, 37, 32], mana: [105, 125, 145], dmgType: 'magic', range: 560, radius: 220, delay: 0.4, ticks: 0,
         dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2,   // mirrored from the endPayload for tooltips and burst estimates (ticks: 0 never applies them)
         linger: { dur: 3, enemySlowRamp: [0.30, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } },
@@ -604,7 +604,7 @@ const HEROES = [
        botFireSkill); botTargetMaxHp makes her prefer the biggest hero when
        two are equally reachable instead of the squishiest. */
     botTargetMaxHp: true,
-    hp: 508, hpLv: 67, mp: 240, mpLv: 26, atk: 60, atkLv: 6.4,
+    hp: 508, hpLv: 67, mp: 240, mpLv: 26, atk: 64, atkLv: 7.0,
     armor: 12, armorLv: 2.0, mr: 12, mrLv: 1.8,
     range: 92, atkSpd: 1.12, speed: 272,
     passive: {
@@ -615,9 +615,9 @@ const HEROES = [
       { name: 'Needle', icon: '┊', type: 'skillshot', cd: 5, cdLv: -0.2, mana: 40, heroOnly: true, dmgType: 'magic', dmg: 105, dmgLv: 14, scaleAp: 0.5, range: 560, speed: 1000, radius: 20, pierce: false,
         applyMark: SABLE_VENOM,
         desc: 'A venom dart (560 range, radius 20) that passes through minions and monsters and hits the first hero for 105+14/rank (+50% MAGIC), applying Venom: 1.5% (+0.01% per MAGIC) of max HP per second per stack for 4s, up to 3 stacks.' },
-      { name: 'Lunge', icon: '→', type: 'dash', cd: 9, cdLv: -0.3, mana: 45, dmgType: 'magic', dist: 300, speed: 1100, dmg: 110, dmgLv: 14, scaleAp: 0.5,
+      { name: 'Lunge', icon: '→', type: 'dash', cd: 9, cdLv: -0.3, mana: 45, dmgType: 'magic', dist: 300, speed: 1100, dmg: 125, dmgLv: 16, scaleAp: 0.6,
         applyMark: SABLE_VENOM, botMark: { tag: 'venom', stacks: 2 }, botHoldMark: { tag: 'venom', stacks: 3 },
-        desc: 'Lunge 300 units through enemies for 110+14/rank (+50% MAGIC), coating each in one Venom stack (the same 1.5% of max HP per second per stack).' },
+        desc: 'Lunge 300 units through enemies for 125+16/rank (+60% MAGIC), coating each in one Venom stack (the same 1.5% of max HP per second per stack).' },
       { name: 'Kiss', icon: '💋', type: 'blinkstrike', cd: [38, 34, 30], mana: 100, dmgType: 'magic', range: 460, dmg: 220, dmgLv: 40, scaleAp: 0.7, pctMaxHp: [0.09, 0.11, 0.13], pctMaxHpCap: 500, slowPct: 0.5, slowDur: 1.5,
         refreshMark: { tag: 'venom' }, botMark: { tag: 'venom', stacks: 3 },
         desc: 'Blink in and bite the nearest hero within 460 for 220/260/300 (+70% MAGIC) plus 9/11/13% of its max HP (cap 500 vs non-heroes), slow 50% for 1.5s, and refresh every Venom stack to full duration.' },
@@ -719,7 +719,7 @@ const HEROES = [
       desc: 'Basic attacks slow by 12% for 1s. Slowed heroes take 8% bonus magic damage from Tide.',
     },
     skills: [
-      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 7.5, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 145, dmgLv: 18, scaleAp: 0.6, range: 560, speed: 750, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
+      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 7.5, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 145, dmgLv: 18, scaleAp: 0.7, range: 560, speed: 850, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
       { name: 'Surge', icon: '⤳', type: 'dash', cd: 10, cdLv: -0.4, mana: 55, dmgType: 'magic', dist: 320, speed: 950, dmg: 105, dmgLv: 13, scaleAp: 0.45, slowPct: 0.3, slowDur: 1.2, botOpenSide: true, desc: 'Ride a surge 320 forward, slowing everything along the path 30% for 1.2s.' },
       { name: 'High Water', icon: '🌊', type: 'zone', cd: [40, 36, 32], mana: 120, dmgType: 'magic', range: 480, radius: 250, delay: 0.5, ticks: 1, dmg: [270, 350, 430], scaleAp: 0.8, knockback: 130, wallDmg: 120, wallScaleAp: 0.4, wallStun: 0.7, noWallCC: { airborne: 0.5 }, desc: 'After 0.5s a wall of water throws everyone within 250 of the point 130 units outward; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, the rest are airborne 0.5s.' },
     ],
@@ -799,7 +799,7 @@ const HEROES = [
     desc: 'A harbour warden who pins runners without ever reeling them in.',
     difficulty: 2, damageStyle: 'physical',
     hp: 730, hpLv: 98, mp: 220, mpLv: 24, atk: 54, atkLv: 5.8,
-    armor: 23, armorLv: 3.3, mr: 16, mrLv: 2.5,
+    armor: 23, armorLv: 3.8, mr: 16, mrLv: 2.9,
     range: 102, atkSpd: 0.84, speed: 241,
     passive: {
       name: 'Deadweight', icon: '⚓', id: 'deadweight',

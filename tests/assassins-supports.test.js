@@ -301,7 +301,7 @@ T.test('Sable: base stats and skill numbers match the spec (the only hero-only p
   reset();
   const d = sable.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [508, 67, 240, 26, 60, 6.4, 12, 2.0, 12, 1.8, 92, 1.12, 272, 3]);
+    [508, 67, 240, 26, 64, 7.0, 12, 2.0, 12, 1.8, 92, 1.12, 272, 3]);
   assert.equal(d.passive.id, 'venom');
   const [s1, s2, s3] = sable.skills;
   assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.heroOnly, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce],
@@ -309,9 +309,9 @@ T.test('Sable: base stats and skill numbers match the spec (the only hero-only p
   assert.deepEqual(s1.applyMark, { tag: 'venom', max: 3, dur: 4, stacks: 1, dot: { pctMaxHp: 0.015, pctPerMp: 0.0001, perSec: true, dur: 4, capNonHero: 40 } });
   assert.equal(rankVal(s1, 'dmg', 6), 175); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Needle cd at rank 6');
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAp],
-    ['dash', 9, -0.3, 45, 300, 1100, 110, 14, 0.5]);
+    ['dash', 9, -0.3, 45, 300, 1100, 125, 16, 0.6]);
   assert.equal(s2.applyMark, s1.applyMark, 'Lunge applies the same Venom (one stack, the same dot)');
-  assert.equal(rankVal(s2, 'dmg', 6), 180); near(rankVal(s2, 'cd', 6), 7.5, 1e-9, 'Lunge cd at rank 6');
+  assert.equal(rankVal(s2, 'dmg', 6), 205); near(rankVal(s2, 'cd', 6), 7.5, 1e-9, 'Lunge cd at rank 6');
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.dmg, s3.dmgLv, s3.scaleAp, s3.pctMaxHp, s3.pctMaxHpCap, s3.slowPct, s3.slowDur, s3.refreshMark],
     ['blinkstrike', [38, 34, 30], 100, 460, 220, 40, 0.7, [0.09, 0.11, 0.13], 500, 0.5, 1.5, { tag: 'venom' }]);
   assert.ok(!s3.consumeMark, 'Kiss refreshes, never consumes');

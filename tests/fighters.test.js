@@ -76,14 +76,14 @@ T.test('Torren: Bloodthirst is 8% lifesteal plus 1% per 3% missing HP, 35% at or
   torren.hp = torren.maxHp; torren.recalcStats(false);
 });
 
-T.test('Torren: Whirling Axe 130+16/rank (+65% ATK) grows +1% per 2% of his missing HP, max +30%; cd 8 -> 6.5', () => {
+T.test('Torren: Whirling Axe 110+13/rank (+55% ATK) grows +1% per 2% of his missing HP, max +30%; cd 8 -> 6.5', () => {
   reset();
   const s = torren.skills[0];
-  assert.deepEqual([s.type, s.cd, s.cdLv, s.mana, s.radius, s.dmg, s.dmgLv, s.scaleAd], ['nova', 8, -0.3, 0, 220, 130, 16, 0.65]);
+  assert.deepEqual([s.type, s.cd, s.cdLv, s.mana, s.radius, s.dmg, s.dmgLv, s.scaleAd], ['nova', 8, -0.3, 0, 220, 110, 13, 0.55]);
   assert.deepEqual(s.selfMissingBonus, { perPct: 0.01, per: 0.02, max: 0.3 });
-  assert.equal(rankVal(s, 'dmg', 6), 210);
+  assert.equal(rankVal(s, 'dmg', 6), 175);
   assert.ok(Math.abs(torren.cooldownFor(s, 6) - 6.5) < 1e-9);
-  const base = 130 + torren.curAtk() * 0.65;
+  const base = 110 + torren.curAtk() * 0.55;
   torren.hp = torren.maxHp;
   assert.ok(Math.abs(torren.skillDmg(s, 1) - base) < 1e-9, 'no bonus at full HP');
   torren.hp = torren.maxHp * 0.6;
@@ -118,16 +118,16 @@ T.test('Torren: War Leap is a leap to the aimed point (up to 340) that slams for
   assert.ok(Math.abs(torren.x - (open.x + 340)) < 2, `capped at 340: ${torren.x - open.x}`);
 });
 
-T.test("Torren: Reaver's Toll is 150/200/250 (+70% ATK) true damage plus 15/20/25% of his missing HP (cap 50% max HP), computed once at cast", () => {
+T.test("Torren: Reaver's Toll is 135/175/215 (+70% ATK) true damage plus 12/16/20% of his missing HP (cap 50% max HP), computed once at cast", () => {
   reset();
   const s = torren.skills[2];
   assert.deepEqual([s.type, s.cd, s.mana, s.radius, s.dmgType, s.dmg, s.scaleAd, s.selfMissingPct, s.selfMissingCap],
-    ['nova', [42, 38, 34], 0, 260, 'true', [150, 200, 250], 0.7, [0.15, 0.2, 0.25], 0.5]);
+    ['nova', [42, 38, 34], 0, 260, 'true', [135, 175, 215], 0.7, [0.12, 0.16, 0.2], 0.5]);
   T.place(torren, open.x, open.y);
   T.place(tide, open.x + 200, open.y);
   T.place(vesper, open.x - 200, open.y);
   torren.hp = torren.maxHp * 0.3;   // 70% missing: the cap (50%) applies
-  const expect = Math.round((250 + torren.curAtk() * 0.7 + torren.maxHp * 0.5 * 0.25) * G.rules.COMBAT.SKILL_DMG);
+  const expect = Math.round((215 + torren.curAtk() * 0.7 + torren.maxHp * 0.5 * 0.2) * G.rules.COMBAT.SKILL_DMG);
   assert.ok(torren.castSkill(2, tide));
   assert.equal(torren.skillCd[2], 34, 'rank-3 cooldown');
   const dTide = tide.maxHp - tide.hp, dVesper = vesper.maxHp - vesper.hp;
@@ -137,7 +137,7 @@ T.test("Torren: Reaver's Toll is 150/200/250 (+70% ATK) true damage plus 15/20/2
   reset();
   T.place(torren, open.x, open.y); T.place(tide, open.x + 200, open.y);
   torren.hp = torren.maxHp * 0.6;
-  const e2 = Math.round((250 + torren.curAtk() * 0.7 + torren.maxHp * 0.4 * 0.25) * G.rules.COMBAT.SKILL_DMG);
+  const e2 = Math.round((215 + torren.curAtk() * 0.7 + torren.maxHp * 0.4 * 0.2) * G.rules.COMBAT.SKILL_DMG);
   torren.castSkill(2, tide);
   assert.equal(tide.maxHp - tide.hp, e2);
   torren.hp = torren.maxHp;
@@ -541,7 +541,7 @@ T.test('Tide: base stats and skill numbers match the spec; Undertow slows 12% on
     [670, 92, 240, 26, 56, 6.0, 17, 2.8, 17, 2.6, 112, 0.98, 256]);
   const [s1, s2, s3] = tide.skills;
   assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.pierce, s1.knockback, s1.wallDmg, s1.wallScaleAp, s1.wallStun],
-    ['skillshot', 7.5, -0.4, 55, 4, 145, 18, 0.6, 560, 750, 32, true, 120, 80, 0.3, 0.6]);
+    ['skillshot', 7.5, -0.4, 55, 4, 145, 18, 0.7, 560, 850, 32, true, 120, 80, 0.3, 0.6]);
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.dist, s2.speed, s2.dmg, s2.dmgLv, s2.scaleAp, s2.slowPct, s2.slowDur],
     ['dash', 10, -0.4, 55, 320, 950, 105, 13, 0.45, 0.3, 1.2]);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.knockback, s3.wallDmg, s3.wallScaleAp, s3.wallStun, s3.noWallCC],

@@ -435,7 +435,7 @@ T.test('Marrow bot: never Ribcage below 20% HP; Splint when an ally within 300 i
 T.test('Anchor: base stats and skill numbers match the spec', () => {
   const d = anchor.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [730, 98, 220, 24, 54, 5.8, 23, 3.3, 16, 2.5, 102, 0.84, 241, 2]);
+    [730, 98, 220, 24, 54, 5.8, 23, 3.8, 16, 2.9, 102, 0.84, 241, 2]);
   const [s1, s2, s3] = d.skills;
   assert.deepEqual([s1.type, s1.cd, s1.mana, s1.dmg, s1.dmgLv, s1.scaleAd, s1.range, s1.speed, s1.radius, s1.pierce], ['skillshot', 12, 60, 90, 12, 0.4, 580, 760, 26, false]);
   assert.deepEqual(s1.tether, { dur: 2.0, breakRange: 560, slowStart: 0.25, slowEnd: 0.5, payload: { dmg: 130, dmgLv: 16, scaleAd: 0.5, immobilize: 1.3 } });
