@@ -73,18 +73,18 @@ const near = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg || ''}
 
 /* ---------------- Ignis ---------------- */
 
-T.test('Ignis: base stats and skill numbers match the spec (mage band: 500 HP, 250 speed, the only cone and the only consumeMark)', () => {
+T.test('Ignis: base stats and skill numbers match the spec (mage band: 530 HP, 250 speed, the only cone and the only consumeMark)', () => {
   reset();
   const d = ignis.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [500, 64, 300, 34, 46, 4.0, 10, 2.0, 12, 2.0, 330, 0.9, 250, 2]);
+    [530, 68, 300, 34, 46, 4.0, 10, 2.0, 12, 2.0, 330, 0.9, 250, 2]);
   assert.equal(d.passive.id, 'kindling');
   const [s1, s2, s3] = ignis.skills;
   assert.deepEqual([s1.type, s1.angle, s1.length, s1.dmg, s1.dmgLv, s1.scaleAp, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.applyMark],
     ['cone', 60, 480, 150, 20, 0.75, 6, -0.3, 45, 5, { tag: 'ember', max: 3, dur: 4, stacks: 1 }]);
   assert.equal(rankVal(s1, 'dmg', 6), 250); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Fan cd at rank 6'); assert.equal(rankVal(s1, 'mana', 6), 70);
   assert.deepEqual([s2.type, s2.radius, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.consumeMark],
-    ['nova', 260, 110, 15, 0.45, 9, -0.4, 60, 5, { tag: 'ember', dmg: 65, dmgLv: 0, scaleAp: 0.20, stunAtStacks: 3, stunDur: 0.6, stunLock: 1.5 }]);
+    ['nova', 260, 110, 15, 0.45, 9, -0.4, 60, 5, { tag: 'ember', dmg: 85, dmgLv: 0, scaleAp: 0.25, stunAtStacks: 3, stunDur: 0.6, stunLock: 1.5 }]);
   assert.equal(rankVal(s2, 'dmg', 6), 185); near(rankVal(s2, 'cd', 6), 7, 1e-9, 'Flashburn cd at rank 6');
   assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.dmg, s3.scaleAp, s3.stun, s3.cd, s3.mana, s3.applyMark],
     ['zone', 640, 230, 0.9, 1, [280, 360, 440], 1.0, 0.5, [40, 35, 30], [110, 130, 150], { tag: 'ember', max: 3, dur: 4, stacks: 1, centreStacks: { within: 100, stacks: 2 } }]);
@@ -119,15 +119,15 @@ T.test('Ignis: Flame Fan is a 60-degree, 480 cone that Embers everyone inside; P
   assert.equal(markStacks(bastion, 'ember'), 0, 'gone after 4 s');
 });
 
-T.test('Ignis: Flashburn consumes Embers per victim (+65 +20% MAGIC each), stuns 0.6 s at 3, sets a 1.5 s stunLockT that blocks the next stun, and deletes the mark', () => {
+T.test('Ignis: Flashburn consumes Embers per victim (+85 +25% MAGIC each), stuns 0.6 s at 3, sets a 1.5 s stunLockT that blocks the next stun, and deletes the mark', () => {
   reset();
   T.place(ignis, open.x, open.y); T.place(bastion, open.x + 200, open.y); T.place(nadir, open.x - 200, open.y);
   const s2 = ignis.skills[1], mp = ignis.magicPower();
   const base = rankVal(s2, 'dmg', 6) + 0.45 * mp;
   near(ignis.skillDmg(s2, 6, bastion), base, 1e-6, 'no Embers: base only');
   bastion.marks = { ember: 3, emberT: G.time + 4 }; nadir.marks = { ember: 1, emberT: G.time + 4 };
-  near(ignis.skillDmg(s2, 6, bastion), base + 3 * (65 + 0.2 * mp), 1e-6, 'three Embers: +3 x (65 +20% MAGIC)');
-  near(ignis.skillDmg(s2, 6, nadir), base + 1 * (65 + 0.2 * mp), 1e-6, 'one Ember: +1 x');
+  near(ignis.skillDmg(s2, 6, bastion), base + 3 * (85 + 0.25 * mp), 1e-6, 'three Embers: +3 x (85 +25% MAGIC)');
+  near(ignis.skillDmg(s2, 6, nadir), base + 1 * (85 + 0.25 * mp), 1e-6, 'one Ember: +1 x');
   const took = bastion.stats.dmgTaken;
   assert.ok(ignis.castSkill(1, null));
   assert.ok(bastion.stats.dmgTaken > took, 'hit');
@@ -224,8 +224,8 @@ T.test('Volt: base stats and skill numbers match the spec (the only bounce, Stat
   assert.equal(d.passive.id, 'static');
   const [s1, s2, s3] = volt.skills;
   assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.pierce, s1.dmg, s1.dmgLv, s1.scaleAp, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.bounce],
-    ['skillshot', 680, 1100, 22, false, 160, 20, 0.75, 5, -0.2, 45, 5, { count: 3, range: 320, decay: 0.75 }]);
-  assert.equal(rankVal(s1, 'dmg', 6), 260); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Arc cd at rank 6');
+    ['skillshot', 680, 1100, 22, false, 140, 20, 0.75, 5.5, -0.2, 45, 5, { count: 3, range: 320, decay: 0.75 }]);
+  assert.equal(rankVal(s1, 'dmg', 6), 240); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Arc cd at rank 6');
   assert.deepEqual([s2.type, s2.radius, s2.dmg, s2.dmgLv, s2.scaleAp, s2.stun, s2.cd, s2.cdLv, s2.mana, s2.manaLv],
     ['nova', 240, 130, 16, 0.55, 0.5, 10, -0.4, 60, 4]);
   assert.equal(rankVal(s2, 'dmg', 6), 210); near(rankVal(s2, 'cd', 6), 8, 1e-9, 'Flashover cd at rank 6');
@@ -341,9 +341,9 @@ T.test('Mira: base stats and skill numbers match the spec (the only mage whose z
   assert.equal(d.passive.id, 'frostbite');
   const [s1, s2, s3] = mira.skills;
   assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.slowPct, s1.slowDur, s1.cd, s1.cdLv, s1.mana, s1.manaLv],
-    ['skillshot', 700, 900, 24, 150, 20, 0.7, 0.30, 1.5, 5.5, -0.3, 40, 5]);
+    ['skillshot', 700, 900, 24, 150, 20, 0.7, 0.25, 1.5, 5.5, -0.3, 40, 5]);
   assert.equal(rankVal(s1, 'dmg', 6), 250); near(rankVal(s1, 'cd', 6), 4, 1e-9, 'Shard cd at rank 6');
-  const linger = { dur: 4, enemySlowPct: 0.35, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 };
+  const linger = { dur: 3, enemySlowPct: 0.28, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 };
   assert.deepEqual([s2.type, s2.range, s2.radius, s2.delay, s2.ticks, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.linger],
     ['zone', 600, 200, 0.3, 1, 90, 12, 0.4, 12, -0.4, 70, 5, linger]);
   assert.equal(rankVal(s2, 'dmg', 6), 150); near(rankVal(s2, 'cd', 6), 10, 1e-9, 'Field cd at rank 6');
@@ -380,10 +380,10 @@ T.test('Mira: Frostbite chills per hit (8% per stack, strongest slow wins), free
   assert.ok(mira.castSkill(0, { x: open.x + 300, y: open.y }));
   T.frames(G, 30);
   assert.ok(bastion.stats.dmgTaken > 0 && !nadir.stats.dmgTaken, 'stops on the first');
-  assert.equal(bastion.marks.chill, 1); near(bastion.cc.slowPct, 0.30, 1e-9, 'the shard\'s own 30% slow');
+  assert.equal(bastion.marks.chill, 1); near(bastion.cc.slowPct, 0.25, 1e-9, 'the shard\'s own 25% slow');
 });
 
-T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed 35% and Chilled once a second after 1 s, allies inside gain +40 speed; Glacial Prison freezes 1.2 s at rank 3 and leaves a field', () => {
+T.test('Mira: Rime Field pulses once then lingers 3 s: enemies inside are slowed 28% and Chilled once a second after 1 s, allies inside gain +40 speed; Glacial Prison freezes 1.2 s at rank 3 and leaves a field', () => {
   reset();
   T.place(mira, open.x, open.y); T.place(bastion, open.x + 400, open.y); T.place(grom, open.x + 400, open.y + 120);
   bastion.attrs.bonus.tenacity = -bastion.attrs.base.tenacity;
@@ -393,10 +393,10 @@ T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed
   const z = G.zones[G.zones.length - 1];
   T.seconds(G, 0.5);
   assert.ok(bastion.stats.dmgTaken > 0, 'the pulse landed');
-  assert.ok(z.lingerT > 3 && !z.dead, 'the patch stays');
+  assert.ok(z.lingerT > 2 && !z.dead, 'the patch stays');
   const chillAfterPulse = bastion.marks.chill || 0;
   assert.equal(chillAfterPulse, 1, 'the pulse itself is one Chill (Frostbite)');
-  near(bastion.cc.slowPct, 0.35, 1e-9, 'slowed 35% inside');
+  near(bastion.cc.slowPct, 0.28, 1e-9, 'slowed 28% inside');
   near(grom.curSpeed(), gromSpd + 40, 1e-6, 'an ally inside is +40 speed');
   T.seconds(G, 0.4);   // 0.9 s into the linger: no field Chill yet
   assert.equal(bastion.marks.chill, 1, 'no field Chill before 1 s');
@@ -404,11 +404,11 @@ T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed
   assert.equal(bastion.marks.chill, 2, 'one Chill per second after the first second');
   T.place(bastion, open.x + 900, open.y);
   T.seconds(G, 0.3);
-  assert.ok(bastion.cc.slowPct < 0.35 || !bastion.cc.has('slow'), 'stepping out ends the field slow');
+  assert.ok(bastion.cc.slowPct < 0.28 || !bastion.cc.has('slow'), 'stepping out ends the field slow');
   near(bastion.cc.slowPct, 0.16, 1e-9, 'only the two Chill stacks (16%) remain');
   near(bastion.curSpeed(), bastion.attrs.get('speed') * 0.84, 1e-6, 'a slowed hero still moves, at 84% speed (a slow is not a root)');
   T.seconds(G, 2.5);
-  assert.ok(z.dead, 'gone after 4 s');
+  assert.ok(z.dead, 'gone after 3 s');
   // Glacial Prison: stun 1.2 at rank 3, then the same linger
   reset();
   T.place(mira, open.x, open.y); T.place(bastion, open.x + 400, open.y);
@@ -418,7 +418,7 @@ T.test('Mira: Rime Field pulses once then lingers 4 s: enemies inside are slowed
   assert.ok(bastion.stats.dmgTaken > 0);
   near(bastion.cc.t.stun, 1.2 * (1 - Math.min(0.6, bastion.attrs.get('tenacity'))) - 0.05, 0.03, 'Frozen 1.2 s at rank 3 (less tenacity)');
   const zp = G.zones[G.zones.length - 1];
-  assert.ok(zp.lingerT > 3.5 && zp.linger.allySpeedAdd === 40, 'a Rime Field is left behind');
+  assert.ok(zp.lingerT > 2.0 && zp.linger.allySpeedAdd === 40, 'a Rime Field is left behind');
 });
 
 T.test('Mira bot: Rime Field between her and a melee inside 520 (or on the target once an ally engages); Frost Shard prefers a hero in her field; Glacial Prison for 2+ heroes or one at 3 Chill; holds 335', () => {
@@ -588,14 +588,14 @@ T.test('Ashara: base stats and skill numbers match the spec (the only conceal, t
   assert.equal(d.passive.id, 'drymouth');
   const [s1, s2, s3] = ashara.skills;
   assert.deepEqual([s1.type, s1.range, s1.speed, s1.radius, s1.dmg, s1.dmgLv, s1.scaleAp, s1.slowPct, s1.slowDur, s1.cd, s1.cdLv, s1.mana, s1.manaLv],
-    ['skillshot', 660, 900, 22, 150, 18, 0.65, 0.25, 1.2, 6, -0.3, 45, 4]);
-  assert.equal(rankVal(s1, 'dmg', 6), 240); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Needle cd at rank 6');
+    ['skillshot', 660, 900, 22, 160, 20, 0.72, 0.25, 1.2, 6, -0.3, 45, 4]);
+  assert.equal(rankVal(s1, 'dmg', 6), 260); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Needle cd at rank 6');
   assert.deepEqual([s2.type, s2.range, s2.radius, s2.delay, s2.ticks, s2.dmg, s2.dmgLv, s2.scaleAp, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.linger],
     ['zone', 500, 180, 0.2, 1, 70, 10, 0.35, 13, -0.5, 55, 4, { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }]);
   assert.equal(rankVal(s2, 'dmg', 6), 120); near(rankVal(s2, 'cd', 6), 10.5, 1e-9, 'Veil cd at rank 6');
   assert.deepEqual([s3.type, s3.range, s3.radius, s3.delay, s3.ticks, s3.cd, s3.mana, s3.linger],
     ['zone', 560, 220, 0.4, 0, [42, 37, 32], [105, 125, 145],
-      { dur: 4, enemySlowRamp: [0.20, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } }]);
+      { dur: 3, enemySlowRamp: [0.30, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } }]);
   assert.ok(!HEROES_ONLY_STEALTH(), 'Ashara is the only hero with a concealing skill');
   for (const s of ashara.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
   function HEROES_ONLY_STEALTH() {
@@ -633,11 +633,11 @@ T.test('Ashara: Sand Veil pulses, then for 4 s conceals allied heroes inside fro
   assert.equal(grom.marks.sand, 2, 'a second entry into the same veil is not another instance');
   T.place(nadir, open.x + 900, open.y);
   T.seconds(G, 3.2);
-  assert.ok(z.dead, 'gone after 4 s');
+  assert.ok(z.dead, 'gone after 3 s');
   assert.ok(nadir.concealT <= 0, 'conceal lapses outside');
 });
 
-T.test('Ashara: Burial has no opening hit, its slow ramps 20% -> 60% over 4 s, entering counts a Dry Mouth hit, and at the end everyone still inside takes 260/340/420 (+100% MAGIC) and is rooted 1.2 s; Dry Mouth silences on the third instance within 6 s, once per 8 s', () => {
+T.test('Ashara: Burial has no opening hit, its slow ramps 30% -> 60% over 3 s, entering counts a Dry Mouth hit, and at the end everyone still inside takes 260/340/420 (+100% MAGIC) and is rooted 1.2 s; Dry Mouth silences on the third instance within 6 s, once per 8 s', () => {
   reset();
   T.place(ashara, open.x, open.y); T.place(grom, open.x + 300, open.y); T.place(zephyr, open.x + 300, open.y + 150);
   grom.attrs.bonus.tenacity = 0; zephyr.attrs.bonus.tenacity = 0;
@@ -645,15 +645,15 @@ T.test('Ashara: Burial has no opening hit, its slow ramps 20% -> 60% over 4 s, e
   const z = G.zones[G.zones.length - 1];
   T.seconds(G, 0.5);   // 0.1 s into the linger
   assert.equal(grom.stats.dmgTaken, 0, 'no opening damage');
-  assert.ok(z.lingerT > 3.8, 'lingering');
+  assert.ok(z.lingerT > 2.8, 'lingering');
   assert.equal(grom.marks.sand, 1, 'entering is one Dry Mouth instance');
-  near(grom.cc.slowPct, 0.21, 0.02, 'the slow starts near 20%');
-  T.seconds(G, 3.0);   // 3.1 s in
+  near(grom.cc.slowPct, 0.31, 0.02, 'the slow starts near 30%');
+  T.seconds(G, 2.0);   // 2.1 s in
   near(grom.cc.slowPct, 0.51, 0.02, 'ramping toward 60%');
   T.place(zephyr, open.x + 800, open.y + 150);   // walks out before the end
   const before = grom.stats.dmgTaken;
   T.seconds(G, 1.0);
-  assert.ok(z.dead, 'over after 4 s');
+  assert.ok(z.dead, 'over after 3 s');
   assert.ok(grom.stats.dmgTaken > before, 'the one still inside is buried');
   near(grom.cc.t.immobilize, 1.2 * (1 - Math.min(0.6, grom.attrs.get('tenacity'))) - 0.05, 0.03, 'rooted 1.2 s (less tenacity)');
   assert.equal(zephyr.stats.dmgTaken, 0, 'the one who left takes nothing');

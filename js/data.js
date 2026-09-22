@@ -172,7 +172,7 @@ const HEROES = [
        while an Embered hero (walkInStacks) is within 400 and the skill is
        ready, and botOwnHpBelow fires it under 30% HP. */
     botHold: 330,
-    hp: 500, hpLv: 64, mp: 300, mpLv: 34, atk: 46, atkLv: 4.0,
+    hp: 530, hpLv: 68, mp: 300, mpLv: 34, atk: 46, atkLv: 4.0,
     armor: 10, armorLv: 2.0, mr: 12, mrLv: 2.0,
     range: 330, atkSpd: 0.9, speed: 250,
     passive: {
@@ -181,7 +181,7 @@ const HEROES = [
     },
     skills: [
       { name: 'Flame Fan', icon: '🔥', type: 'cone', cd: 6, cdLv: -0.3, mana: 45, manaLv: 5, dmgType: 'magic', angle: 60, length: 480, dmg: 150, dmgLv: 20, scaleAp: 0.75, applyMark: { tag: 'ember', max: 3, dur: 4, stacks: 1 }, desc: 'An instant 60-degree fan of flame 480 long: 150+20/rank (+75% MAGIC) and one Ember (max 3, 4s) on every enemy inside.' },
-      { name: 'Flashburn', icon: '🔆', type: 'nova', cd: 9, cdLv: -0.4, mana: 60, manaLv: 5, dmgType: 'magic', radius: 260, dmg: 110, dmgLv: 15, scaleAp: 0.45, consumeMark: { tag: 'ember', dmg: 65, dmgLv: 0, scaleAp: 0.20, stunAtStacks: 3, stunDur: 0.6, stunLock: 1.5 }, botMark: { tag: 'ember', stacks: 3, within: 240, walkIn: 400, walkInStacks: 1 }, botOwnHpBelow: 0.3, desc: 'A ring of flame in 260 that consumes Embers: 110+15/rank (+45% MAGIC) plus 65 (+20% MAGIC) per Ember; at 3 Embers the victim is stunned 0.6s (not again within 1.5s of an Ignis stun). The Embers are spent.' },
+      { name: 'Flashburn', icon: '🔆', type: 'nova', cd: 9, cdLv: -0.4, mana: 60, manaLv: 5, dmgType: 'magic', radius: 260, dmg: 110, dmgLv: 15, scaleAp: 0.45, consumeMark: { tag: 'ember', dmg: 85, dmgLv: 0, scaleAp: 0.25, stunAtStacks: 3, stunDur: 0.6, stunLock: 1.5 }, botMark: { tag: 'ember', stacks: 3, within: 240, walkIn: 400, walkInStacks: 1 }, botOwnHpBelow: 0.3, desc: 'A ring of flame in 260 that consumes Embers: 110+15/rank (+45% MAGIC) plus 85 (+25% MAGIC) per Ember; at 3 Embers the victim is stunned 0.6s (not again within 1.5s of an Ignis stun). The Embers are spent.' },
       { name: 'Pyroclasm', icon: '💥', type: 'zone', cd: [40, 35, 30], mana: [110, 130, 150], dmgType: 'magic', range: 640, radius: 230, delay: 0.9, ticks: 1, dmg: [280, 360, 440], scaleAp: 1.0, stun: 0.5, applyMark: { tag: 'ember', max: 3, dur: 4, stacks: 1, centreStacks: { within: 100, stacks: 2 } }, botMark: { tag: 'ember', stacks: 1 }, desc: 'A meteor after 0.9s: 280/360/440 (+100% MAGIC) in 230 and a 0.5s stun; 2 Embers within 100 of the centre, 1 on the rim.' },
     ],
   },
@@ -224,8 +224,8 @@ const HEROES = [
        hero under 50% (botExecuteHp) and never thrown above 70%
        (botNeverAbove); Shade Step goes through an incoming skillshot or
        closes the last 200 on a hunted target (botClose), and is her exit. */
-    hp: 515, hpLv: 68, mp: 230, mpLv: 25, atk: 68, atkLv: 8.0,
-    armor: 12, armorLv: 2.0, mr: 10, mrLv: 1.6,
+    hp: 540, hpLv: 71, mp: 230, mpLv: 25, atk: 68, atkLv: 8.0,
+    armor: 13, armorLv: 2.2, mr: 11, mrLv: 1.7,
     range: 95, atkSpd: 1.15, speed: 275,
     passive: {
       name: 'Backstab', icon: '🌑', id: 'backstab',
@@ -265,12 +265,12 @@ const HEROES = [
     },
     skills: [
       { name: 'Thorn Volley', icon: '🌱', type: 'skillshot', cd: 7, cdLv: -0.4, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 130, dmgLv: 16, scaleAp: 0.6, range: 680, speed: 850, radius: 26, slowPct: 0.3, slowDur: 1.5, botChasing: true, desc: 'A thorn (680 range at 850, radius 26) that damages the first enemy hit for 130+16/rank (+60% MAGIC) and slows it 30% for 1.5s.' },
-      { name: 'Vine Link', icon: '🌿', type: 'link', cd: 11, cdLv: -0.6, mana: 70, manaLv: 5, allyTarget: { range: 520, self: false }, heal: 110, healLv: 18, scaleAp: 0.55,
-        link: { dur: 4, interval: 0.5, tickHeal: 25, tickHealLv: 4, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 },
-        desc: 'Bind a vine to the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim): heal 110+18/rank (+55% MAGIC) at once, then 8 ticks of 25+4/rank (+15% MAGIC) over 4s while they stay within 650; the ally gains +40 move speed and Sylva +12 armor and magic resist while linked. Recasting replaces the vine. No ally in reach, no cost.' },
+      { name: 'Vine Link', icon: '🌿', type: 'link', cd: 12, cdLv: -0.6, mana: 70, manaLv: 5, allyTarget: { range: 520, self: false }, heal: 100, healLv: 16, scaleAp: 0.55,
+        link: { dur: 4, interval: 0.5, tickHeal: 20, tickHealLv: 3, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 },
+        desc: 'Bind a vine to the allied hero nearest the aim within 520 (never herself; the lowest-HP ally with no aim): heal 100+16/rank (+55% MAGIC) at once, then 8 ticks of 20+3/rank (+15% MAGIC) over 4s while they stay within 650; the ally gains +40 move speed and Sylva +12 armor and magic resist while linked. Recasting replaces the vine. No ally in reach, no cost.' },
       { name: 'Canopy', icon: '🌳', type: 'heal', cd: [55, 48, 41], mana: [120, 150, 180], heal: [150, 210, 270], scaleAp: 0.5, radius: 420, botHealCount: { n: 2, hp: 0.55 }, botHealHp: 0.35,
-        link: { all: true, dur: 6, interval: 0.5, tickHeal: [16, 22, 28], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 },
-        desc: 'Heal every allied hero within 420 for 150/210/270 (+50% MAGIC), then link all of them (herself included) for 6s: 12 ticks of 16/22/28 (+8% MAGIC) and +40 move speed, snapping past 550. A Canopy vine never replaces a stronger Vine Link on the same ally.' },
+        link: { all: true, dur: 6, interval: 0.5, tickHeal: [12, 17, 22], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 },
+        desc: 'Heal every allied hero within 420 for 150/210/270 (+50% MAGIC), then link all of them (herself included) for 6s: 12 ticks of 12/17/22 (+8% MAGIC) and +40 move speed, snapping past 550. A Canopy vine never replaces a stronger Vine Link on the same ally.' },
     ],
   },
   {
@@ -293,9 +293,9 @@ const HEROES = [
       desc: '8% Lifesteal plus 1% for every 3% of missing HP, capped at 35% at or below 20% HP. Basic attacks only.',
     },
     skills: [
-      { name: 'Whirling Axe', icon: '🌀', type: 'nova', cd: 7, cdLv: -0.3, mana: 0, dmgType: 'physical', radius: 220, dmg: 130, dmgLv: 16, scaleAd: 0.8, selfMissingBonus: { perPct: 0.01, per: 0.02, max: 0.4 }, desc: 'Spin the axe around Torren: +1% damage per 2% of his missing HP (max +40%).' },
+      { name: 'Whirling Axe', icon: '🌀', type: 'nova', cd: 8, cdLv: -0.3, mana: 0, dmgType: 'physical', radius: 220, dmg: 130, dmgLv: 16, scaleAd: 0.65, selfMissingBonus: { perPct: 0.01, per: 0.02, max: 0.3 }, desc: 'Spin the axe around Torren: +1% damage per 2% of his missing HP (max +30%).' },
       { name: 'War Leap', icon: '🦵', type: 'dash', cd: 11, cdLv: -0.3, mana: 0, dashToPoint: true, dist: 340, speed: 950, endNova: { radius: 180, dmgType: 'physical', dmg: 110, dmgLv: 13, scaleAd: 0.6, slowPct: 0.3, slowDur: 1.2 }, desc: 'Leap to the aimed point up to 340 away and slam down, damaging and slowing 30% for 1.2s.' },
-      { name: 'Reaver\'s Toll', icon: '🪓', type: 'nova', cd: [42, 38, 34], mana: 0, botOwnHpBelow: 0.5, dmgType: 'true', radius: 260, dmg: [160, 220, 280], scaleAd: 0.7, selfMissingPct: [0.2, 0.25, 0.3], selfMissingCap: 0.5, desc: 'A true-damage cleave that adds 20/25/30% of Torren\'s own missing HP (cap 50% of his max HP).' },
+      { name: 'Reaver\'s Toll', icon: '🪓', type: 'nova', cd: [42, 38, 34], mana: 0, botOwnHpBelow: 0.5, dmgType: 'true', radius: 260, dmg: [150, 200, 250], scaleAd: 0.7, selfMissingPct: [0.15, 0.2, 0.25], selfMissingCap: 0.5, desc: 'A true-damage cleave that adds 15/20/25% of Torren\'s own missing HP (cap 50% of his max HP).' },
     ],
   },
   {
@@ -321,9 +321,9 @@ const HEROES = [
       desc: 'Mira\'s damage applies Chill for 4s (max 4), 8% slow per stack (the strongest slow wins). At 4 stacks the target is Frozen 0.8s, the stacks are consumed and the target is Chill-immune for 2.5s.',
     },
     skills: [
-      { name: 'Frost Shard', icon: '🧿', type: 'skillshot', cd: 5.5, cdLv: -0.3, mana: 40, manaLv: 5, dmgType: 'magic', dmg: 150, dmgLv: 20, scaleAp: 0.7, range: 700, speed: 900, radius: 24, slowPct: 0.30, slowDur: 1.5, botField: true, desc: 'An icy shard that stops on the first enemy: 150+20/rank (+70% MAGIC), a 30% slow for 1.5s and one Chill.' },
-      { name: 'Rime Field', icon: '❄', type: 'zone', cd: 12, cdLv: -0.4, mana: 70, manaLv: 5, dmgType: 'magic', range: 600, radius: 200, delay: 0.3, ticks: 1, dmg: 90, dmgLv: 12, scaleAp: 0.4, linger: { dur: 4, enemySlowPct: 0.35, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 }, botBetween: 520, desc: 'A pulse of 90+12/rank (+40% MAGIC) in 200, then the ground stays frozen 4s: enemies inside are slowed 35% and take one Chill per second after the first, allied heroes gain +40 speed.' },
-      { name: 'Glacial Prison', icon: '🧊', type: 'zone', cd: [42, 37, 32], mana: [110, 130, 150], dmgType: 'magic', range: 620, radius: 200, delay: 0.75, ticks: 1, dmg: [260, 340, 420], scaleAp: 0.9, stun: [1.0, 1.1, 1.2], linger: { dur: 4, enemySlowPct: 0.35, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 }, botCrowd: true, botMark: { tag: 'chill', stacks: 3 }, desc: 'After 0.75s the area freezes solid: 260/340/420 (+90% MAGIC) in 200 and Frozen 1.0/1.1/1.2s, then a Rime Field stays 4s.' },
+      { name: 'Frost Shard', icon: '🧿', type: 'skillshot', cd: 5.5, cdLv: -0.3, mana: 40, manaLv: 5, dmgType: 'magic', dmg: 150, dmgLv: 20, scaleAp: 0.7, range: 700, speed: 900, radius: 24, slowPct: 0.25, slowDur: 1.5, botField: true, desc: 'An icy shard that stops on the first enemy: 150+20/rank (+70% MAGIC), a 25% slow for 1.5s and one Chill.' },
+      { name: 'Rime Field', icon: '❄', type: 'zone', cd: 12, cdLv: -0.4, mana: 70, manaLv: 5, dmgType: 'magic', range: 600, radius: 200, delay: 0.3, ticks: 1, dmg: 90, dmgLv: 12, scaleAp: 0.4, linger: { dur: 3, enemySlowPct: 0.28, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 }, botBetween: 520, desc: 'A pulse of 90+12/rank (+40% MAGIC) in 200, then the ground stays frozen 3s: enemies inside are slowed 28% and take one Chill per second after the first, allied heroes gain +40 speed.' },
+      { name: 'Glacial Prison', icon: '🧊', type: 'zone', cd: [42, 37, 32], mana: [110, 130, 150], dmgType: 'magic', range: 620, radius: 200, delay: 0.75, ticks: 1, dmg: [260, 340, 420], scaleAp: 0.9, stun: [1.0, 1.1, 1.2], linger: { dur: 3, enemySlowPct: 0.28, allySpeedAdd: 40, chillPerSec: 1, chillDelay: 1.0 }, botCrowd: true, botMark: { tag: 'chill', stacks: 3 }, desc: 'After 0.75s the area freezes solid: 260/340/420 (+90% MAGIC) in 200 and Frozen 1.0/1.1/1.2s, then a Rime Field stays 3s.' },
     ],
   },
   {
@@ -455,7 +455,7 @@ const HEROES = [
       desc: 'Skill hits on enemy heroes apply a Static stack for 4s (max 5); each stack is 8 flat magic penetration against that target. Non-heroes never gain stacks.',
     },
     skills: [
-      { name: 'Chain Arc', icon: '↯', type: 'skillshot', cd: 5, cdLv: -0.2, mana: 45, manaLv: 5, dmgType: 'magic', dmg: 160, dmgLv: 20, scaleAp: 0.75, range: 680, speed: 1100, radius: 22, pierce: false, bounce: { count: 3, range: 320, decay: 0.75 }, botBounce: true, desc: 'A bolt that stops on the first enemy for 160+20/rank (+75% MAGIC), then arcs to up to three more within 320 at 75% per hop (heroes first, never a structure).' },
+      { name: 'Chain Arc', icon: '↯', type: 'skillshot', cd: 5.5, cdLv: -0.2, mana: 45, manaLv: 5, dmgType: 'magic', dmg: 140, dmgLv: 20, scaleAp: 0.75, range: 680, speed: 1100, radius: 22, pierce: false, bounce: { count: 3, range: 320, decay: 0.75 }, botBounce: true, desc: 'A bolt that stops on the first enemy for 140+20/rank (+75% MAGIC), then arcs to up to three more within 320 at 75% per hop (heroes first, never a structure).' },
       { name: 'Flashover', icon: '✳', type: 'nova', cd: 10, cdLv: -0.4, mana: 60, manaLv: 4, dmgType: 'magic', radius: 240, dmg: 130, dmgLv: 16, scaleAp: 0.55, stun: 0.5, botMelee: true, desc: 'Discharge a shock in 240 around Volt: 130+16/rank (+55% MAGIC) and a 0.5s stun.' },
       { name: 'Thunderhead', icon: '☁', type: 'zone', cd: [40, 35, 30], mana: [110, 130, 150], dmgType: 'magic', range: 600, radius: 240, delay: 0.4, ticks: 5, interval: 0.45, dmg: [70, 95, 120], scaleAp: 0.3, slowPct: 0.10, slowPctLv: 0.08, slowDur: 0.6, botFrontline: true, desc: 'A storm cloud in 240 that strikes five times over 2.2s for 70/95/120 (+30% MAGIC) each; the slow builds from 10% to 42% per strike (0.6s) and every strike applies Static.' },
     ],
@@ -513,13 +513,13 @@ const HEROES = [
       desc: 'The third skill damage instance on a target within 6s silences it for 0.9s (8s lockout per target). Entering Sand Veil or Burial counts as one skill hit.',
     },
     skills: [
-      { name: 'Glass Needle', icon: '↾', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 150, dmgLv: 18, scaleAp: 0.65, range: 660, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.2, desc: 'A shard of fused sand that stops on the first enemy: 150+18/rank (+65% MAGIC) and a 25% slow for 1.2s.' },
+      { name: 'Glass Needle', icon: '↾', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 45, manaLv: 4, dmgType: 'magic', dmg: 160, dmgLv: 20, scaleAp: 0.72, range: 660, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.2, desc: 'A shard of fused sand that stops on the first enemy: 160+20/rank (+72% MAGIC) and a 25% slow for 1.2s.' },
       { name: 'Sand Veil', icon: '〜', type: 'zone', cd: 13, cdLv: -0.5, mana: 55, manaLv: 4, dmgType: 'magic', range: 500, radius: 180, delay: 0.2, ticks: 1, dmg: 70, dmgLv: 10, scaleAp: 0.35, linger: { dur: 4, conceal: true, enemySlowPct: 0.30, countsAsSkillHit: true }, botVeil: { melee: 300, enemy: 600, group: 400 }, desc: 'A pulse of 70+10/rank (+35% MAGIC) in 180, then a sand patch for 4s: allied heroes inside are concealed like a bush (hidden beyond 250, revealed 1.6s by dealing damage); enemies inside are slowed 30% and count a Dry Mouth hit on entry.' },
       { name: 'Burial', icon: '⏳', type: 'zone', cd: [42, 37, 32], mana: [105, 125, 145], dmgType: 'magic', range: 560, radius: 220, delay: 0.4, ticks: 0,
         dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2,   // mirrored from the endPayload for tooltips and burst estimates (ticks: 0 never applies them)
-        linger: { dur: 4, enemySlowRamp: [0.20, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } },
+        linger: { dur: 3, enemySlowRamp: [0.30, 0.60], countsAsSkillHit: true, endPayload: { dmg: [260, 340, 420], scaleAp: 1.0, immobilize: 1.2 } },
         botCrowd: true, botAttacking: true,
-        desc: 'Quicksand in 220 for 4s: the slow ramps from 20% to 60%, entering counts a Dry Mouth hit, and everyone still inside at the end takes 260/340/420 (+100% MAGIC) and is rooted 1.2s.' },
+        desc: 'Quicksand in 220 for 3s: the slow ramps from 30% to 60%, entering counts a Dry Mouth hit, and everyone still inside at the end takes 260/340/420 (+100% MAGIC) and is rooted 1.2s.' },
     ],
   },
   {
@@ -573,8 +573,8 @@ const HEROES = [
     resource: 'energy',
     energy: { max: 100, regen: 8, perBasic: 0, botRetreatBelow: 30 },
     botRetreatHp: 0.35,
-    hp: 500, hpLv: 65, mp: 0, mpLv: 0, atk: 66, atkLv: 7.6,
-    armor: 11, armorLv: 1.9, mr: 9, mrLv: 1.5,
+    hp: 545, hpLv: 70, mp: 0, mpLv: 0, atk: 66, atkLv: 7.6,
+    armor: 13, armorLv: 2.2, mr: 10, mrLv: 1.7,
     range: 90, atkSpd: 1.18, speed: 280,
     passive: {
       name: 'Afterimage', icon: '👻', id: 'afterimage',
@@ -639,8 +639,8 @@ const HEROES = [
        reach (the stopOnHero pick); Skyfall goes at the marksman or mage in
        reach (botCarry) whatever its health; the Return is pressed under 45%
        HP or with 2+ enemy heroes inside 300 (the recast rule). */
-    hp: 530, hpLv: 70, mp: 200, mpLv: 22, atk: 64, atkLv: 7.0,
-    armor: 13, armorLv: 2.1, mr: 10, mrLv: 1.6,
+    hp: 560, hpLv: 74, mp: 200, mpLv: 22, atk: 64, atkLv: 7.0,
+    armor: 14, armorLv: 2.3, mr: 11, mrLv: 1.7,
     range: 98, atkSpd: 1.05, speed: 278,
     passive: {
       name: 'Stoop', icon: '⬇', id: 'stoop',
@@ -719,9 +719,9 @@ const HEROES = [
       desc: 'Basic attacks slow by 12% for 1s. Slowed heroes take 8% bonus magic damage from Tide.',
     },
     skills: [
-      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 8, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 130, dmgLv: 16, scaleAp: 0.5, range: 560, speed: 750, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
-      { name: 'Surge', icon: '⤳', type: 'dash', cd: 10, cdLv: -0.4, mana: 55, dmgType: 'magic', dist: 320, speed: 950, dmg: 90, dmgLv: 11, scaleAp: 0.4, slowPct: 0.3, slowDur: 1.2, botOpenSide: true, desc: 'Ride a surge 320 forward, slowing everything along the path 30% for 1.2s.' },
-      { name: 'High Water', icon: '🌊', type: 'zone', cd: [42, 38, 34], mana: 120, dmgType: 'magic', range: 480, radius: 250, delay: 0.5, ticks: 1, dmg: [250, 320, 390], scaleAp: 0.8, knockback: 130, wallDmg: 120, wallScaleAp: 0.4, wallStun: 0.7, noWallCC: { airborne: 0.5 }, desc: 'After 0.5s a wall of water throws everyone within 250 of the point 130 units outward; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, the rest are airborne 0.5s.' },
+      { name: 'Breaker', icon: '≈', type: 'skillshot', cd: 8, cdLv: -0.4, mana: 55, manaLv: 4, dmgType: 'magic', dmg: 145, dmgLv: 18, scaleAp: 0.6, range: 560, speed: 750, radius: 32, pierce: true, knockback: 120, wallDmg: 80, wallScaleAp: 0.3, wallStun: 0.6, desc: 'A wave that carries everyone on its line 120 units along it; a victim that hits a wall takes +80 (+30% MAGIC) and is stunned 0.6s.' },
+      { name: 'Surge', icon: '⤳', type: 'dash', cd: 10, cdLv: -0.4, mana: 55, dmgType: 'magic', dist: 320, speed: 950, dmg: 105, dmgLv: 13, scaleAp: 0.45, slowPct: 0.3, slowDur: 1.2, botOpenSide: true, desc: 'Ride a surge 320 forward, slowing everything along the path 30% for 1.2s.' },
+      { name: 'High Water', icon: '🌊', type: 'zone', cd: [42, 38, 34], mana: 120, dmgType: 'magic', range: 480, radius: 250, delay: 0.5, ticks: 1, dmg: [270, 350, 430], scaleAp: 0.8, knockback: 130, wallDmg: 120, wallScaleAp: 0.4, wallStun: 0.7, noWallCC: { airborne: 0.5 }, desc: 'After 0.5s a wall of water throws everyone within 250 of the point 130 units outward; wall hits take +120 (+40% MAGIC) and are stunned 0.7s, the rest are airborne 0.5s.' },
     ],
   },
   {
@@ -871,9 +871,9 @@ const HEROES = [
       desc: 'Whenever Wick heals an ally, that ally also gains a shield for 40% of the heal for 2.5s. Her basic attacks on an enemy revealed by her Lantern deal +15%.',
     },
     skills: [
-      { name: 'Spark', icon: '·', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 40, manaLv: 4, dmgType: 'magic', dmg: 125, dmgLv: 15, scaleAp: 0.5, range: 640, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.0, desc: 'A lantern spark (640 range at 900) that stings the first enemy hit for 125+15/rank (+50% MAGIC) and slows it 25% for 1s.' },
-      { name: 'Lantern', icon: '🏮', type: 'object', cd: 13, cdLv: -0.6, mana: 60, manaLv: 4, range: 480, dur: 5, tick: 1.0, allyRadius: 300, shield: 45, shieldLv: 7, shieldScaleAp: 0.2, shieldDur: 2.0, revealRadius: 300, revealBasicBonus: 0.15, botStand: 250, desc: 'Plant a lantern up to 480 away for 5s: each second allied heroes within 300 gain a refreshing 2s shield of 45+7/rank (+20% MAGIC); enemy heroes within 300 are revealed for the whole duration (bush stealth and veils broken) and Wick\'s basics on them deal +15%. Untargetable; goes out if Wick dies.' },
-      { name: 'Warding Glow', icon: '✦', type: 'heal', cd: [48, 42, 36], mana: [110, 140, 170], heal: [170, 230, 290], scaleAp: 0.55, radius: 320, shieldPct: 0.08, botHealHp: 0.45, botHealCrowd: 3, desc: 'Flood allied heroes within 320 with hard light: 170/230/290 (+55% MAGIC) healing, a shield of 8% max HP for 3s, and the Lampglass shield on top.' },
+      { name: 'Spark', icon: '·', type: 'skillshot', cd: 6, cdLv: -0.3, mana: 40, manaLv: 4, dmgType: 'magic', dmg: 135, dmgLv: 16, scaleAp: 0.5, range: 640, speed: 900, radius: 22, slowPct: 0.25, slowDur: 1.0, desc: 'A lantern spark (640 range at 900) that stings the first enemy hit for 135+16/rank (+50% MAGIC) and slows it 25% for 1s.' },
+      { name: 'Lantern', icon: '🏮', type: 'object', cd: 13, cdLv: -0.6, mana: 60, manaLv: 4, range: 480, dur: 5, tick: 1.0, allyRadius: 300, shield: 60, shieldLv: 9, shieldScaleAp: 0.25, shieldDur: 2.0, revealRadius: 300, revealBasicBonus: 0.15, botStand: 250, desc: 'Plant a lantern up to 480 away for 5s: each second allied heroes within 300 gain a refreshing 2s shield of 60+9/rank (+25% MAGIC); enemy heroes within 300 are revealed for the whole duration (bush stealth and veils broken) and Wick\'s basics on them deal +15%. Untargetable; goes out if Wick dies.' },
+      { name: 'Warding Glow', icon: '✦', type: 'heal', cd: [44, 39, 34], mana: [110, 140, 170], heal: [200, 270, 340], scaleAp: 0.55, radius: 320, shieldPct: 0.08, botHealHp: 0.45, botHealCrowd: 3, desc: 'Flood allied heroes within 320 with hard light: 200/270/340 (+55% MAGIC) healing, a shield of 8% max HP for 3s, and the Lampglass shield on top.' },
     ],
   },
   {

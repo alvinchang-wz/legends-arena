@@ -84,7 +84,7 @@ T.test('Nyx: base stats and skill numbers match the spec (the execute assassin: 
   reset();
   const d = nyx.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [515, 68, 230, 25, 68, 8.0, 12, 2.0, 10, 1.6, 95, 1.15, 275, 3]);
+    [540, 71, 230, 25, 68, 8.0, 13, 2.2, 11, 1.7, 95, 1.15, 275, 3]);
   assert.equal(d.passive.id, 'backstab');
   const [s1, s2, s3] = nyx.skills;
   assert.deepEqual([s1.type, s1.dist, s1.speed, s1.dmgType, s1.dmg, s1.dmgLv, s1.scaleAd, s1.cd, s1.mana], ['dash', 340, 1100, 'physical', 130, 16, 0.7, 8, 45]);
@@ -194,7 +194,7 @@ T.test('Wraith: base stats and skill numbers match the spec (the fast energy poo
   reset();
   const d = wraith.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [500, 65, 0, 0, 66, 7.6, 11, 1.9, 9, 1.5, 90, 1.18, 280, 2]);
+    [545, 70, 0, 0, 66, 7.6, 13, 2.2, 10, 1.7, 90, 1.18, 280, 2]);
   assert.equal(d.resource, 'energy');
   assert.deepEqual([d.energy.max, d.energy.regen, d.energy.perBasic], [100, 8, 0]);
   assert.equal(d.passive.id, 'afterimage');
@@ -439,7 +439,7 @@ T.test('Rook: base stats and skill numbers match the spec (airborne on both gap-
   reset();
   const d = rook.def0;
   assert.deepEqual([d.hp, d.hpLv, d.mp, d.mpLv, d.atk, d.atkLv, d.armor, d.armorLv, d.mr, d.mrLv, d.range, d.atkSpd, d.speed, d.difficulty],
-    [530, 70, 200, 22, 64, 7.0, 13, 2.1, 10, 1.6, 98, 1.05, 278, 3]);
+    [560, 74, 200, 22, 64, 7.0, 14, 2.3, 11, 1.7, 98, 1.05, 278, 3]);
   assert.equal(d.passive.id, 'stoop');
   const [s1, s2, s3] = rook.skills;
   assert.deepEqual([s1.type, s1.cd, s1.mana, s1.dist, s1.speed, s1.stopOnHero, s1.dmg, s1.dmgLv, s1.scaleAd, s1.airborne], ['dash', 10, 45, 380, 1150, true, 120, 15, 0.6, 0.5]);
@@ -554,12 +554,12 @@ T.test('Wick: base stats and skill numbers match the spec (the only pulse object
   assert.equal(d.passive.id, 'lampglass');
   const [s1, s2, s3] = wick.skills;
   assert.deepEqual([s1.type, s1.cd, s1.cdLv, s1.mana, s1.manaLv, s1.dmg, s1.dmgLv, s1.scaleAp, s1.range, s1.speed, s1.radius, s1.slowPct, s1.slowDur],
-    ['skillshot', 6, -0.3, 40, 4, 125, 15, 0.5, 640, 900, 22, 0.25, 1.0]);
-  assert.equal(rankVal(s1, 'dmg', 6), 200); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Spark cd at rank 6');
+    ['skillshot', 6, -0.3, 40, 4, 135, 16, 0.5, 640, 900, 22, 0.25, 1.0]);
+  assert.equal(rankVal(s1, 'dmg', 6), 215); near(rankVal(s1, 'cd', 6), 4.5, 1e-9, 'Spark cd at rank 6');
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.range, s2.dur, s2.tick, s2.allyRadius, s2.shield, s2.shieldLv, s2.shieldScaleAp, s2.shieldDur, s2.revealRadius, s2.revealBasicBonus, s2.slowPct],
-    ['object', 13, -0.6, 60, 4, 480, 5, 1.0, 300, 45, 7, 0.2, 2.0, 300, 0.15, undefined]);
+    ['object', 13, -0.6, 60, 4, 480, 5, 1.0, 300, 60, 9, 0.25, 2.0, 300, 0.15, undefined]);
   near(rankVal(s2, 'cd', 6), 10, 1e-9, 'Lantern cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 80);
-  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius, s3.shieldPct], ['heal', [48, 42, 36], [110, 140, 170], [170, 230, 290], 0.55, 320, 0.08]);
+  assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius, s3.shieldPct], ['heal', [44, 39, 34], [110, 140, 170], [200, 270, 340], 0.55, 320, 0.08]);
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'object')).length, 1, 'the only pulse object');
   assert.ok(sim.context.HEROES.filter(h => h.role === 'Support').every(h => h.armor <= d.armor && h.mr <= d.mr), 'the toughest support (Pact carries more HP, Wick the most armor)');
   for (const s of wick.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
@@ -576,7 +576,7 @@ T.test('Wick: the Lantern pulses a refreshing lantern-tagged shield on allies wi
   assert.equal(G.objects.length, 1); assert.equal(G.objects[0].mode, 'pulse');
   near(wick.mana, mana0 - 80, 1e-9, '60 +4/rank mana');
   G.update(1 / 60); T.reveal(G);
-  const expect = 45 + 7 * 5 + wick.magicPower() * 0.2;
+  const expect = 60 + 9 * 5 + wick.magicPower() * 0.25;
   for (const a of [rook, wick]) {
     const sh = a.shields.filter(x => x.tag === 'lantern');
     assert.equal(sh.length, 1, `${a.name} shielded on the first pulse`);
@@ -600,17 +600,17 @@ T.test('Wick: the Lantern pulses a refreshing lantern-tagged shield on allies wi
   assert.equal(G.objects.length, 0, 'gone after 5 s');
 });
 
-T.test('Wick: Warding Glow heals allies within 320 for 170/230/290 (+55% MAGIC) with an 8% max-HP shield for 3 s, plus the Lampglass shield of 40% of the heal', () => {
+T.test('Wick: Warding Glow heals allies within 320 for 200/270/340 (+55% MAGIC) with an 8% max-HP shield for 3 s, plus the Lampglass shield of 40% of the heal', () => {
   reset();
   T.place(wick, open.x, open.y);
   T.place(rook, open.x + 200, open.y);
   T.place(grom, open.x + 400, open.y);   // past 320
-  rook.hp = rook.maxHp * 0.5; grom.hp = grom.maxHp * 0.5;
+  rook.hp = rook.maxHp * 0.2; grom.hp = grom.maxHp * 0.5;
   const mana0 = wick.mana;
   assert.ok(wick.castSkill(2, null));
   near(wick.mana, mana0 - 170, 1e-9, '170 mana at rank 3');
-  const heal = 290 + wick.magicPower() * 0.55;
-  near(rook.hp, rook.maxHp * 0.5 + heal, 1e-6, 'healed 290 (+55% MAGIC)');
+  const heal = 340 + wick.magicPower() * 0.55;
+  near(rook.hp, rook.maxHp * 0.2 + heal, 1e-6, 'healed 340 (+55% MAGIC)');
   assert.equal(grom.hp, grom.maxHp * 0.5, 'past 320: nothing');
   const pct = rook.shields.find(x => Math.abs(x.amount - rook.maxHp * 0.08) < 1e-6);
   assert.ok(pct && Math.abs(pct.t - 3) < 1e-6, 'an 8% max-HP shield for 3 s');
@@ -758,11 +758,11 @@ T.test('Sylva: base stats and skill numbers match the spec (the only single-ally
     ['skillshot', 7, -0.4, 45, 4, 130, 16, 0.6, 680, 850, 26, 0.3, 1.5]);
   assert.equal(rankVal(s1, 'dmg', 6), 210); near(rankVal(s1, 'cd', 6), 5, 1e-9, 'Thorn Volley cd at rank 6');
   assert.deepEqual([s2.type, s2.cd, s2.cdLv, s2.mana, s2.manaLv, s2.allyTarget, s2.heal, s2.healLv, s2.scaleAp],
-    ['link', 11, -0.6, 70, 5, { range: 520, self: false }, 110, 18, 0.55]);
-  assert.deepEqual(s2.link, { dur: 4, interval: 0.5, tickHeal: 25, tickHealLv: 4, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 });
-  assert.equal(rankVal(s2, 'heal', 6), 200); near(rankVal(s2, 'cd', 6), 8, 1e-9, 'Vine Link cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 95);
+    ['link', 12, -0.6, 70, 5, { range: 520, self: false }, 100, 16, 0.55]);
+  assert.deepEqual(s2.link, { dur: 4, interval: 0.5, tickHeal: 20, tickHealLv: 3, tickScaleAp: 0.15, targetSpeedAdd: 40, casterArmorAdd: 12, casterMrAdd: 12, breakRange: 650 });
+  assert.equal(rankVal(s2, 'heal', 6), 180); near(rankVal(s2, 'cd', 6), 9, 1e-9, 'Vine Link cd at rank 6'); assert.equal(rankVal(s2, 'mana', 6), 95);
   assert.deepEqual([s3.type, s3.cd, s3.mana, s3.heal, s3.scaleAp, s3.radius], ['heal', [55, 48, 41], [120, 150, 180], [150, 210, 270], 0.5, 420]);
-  assert.deepEqual(s3.link, { all: true, dur: 6, interval: 0.5, tickHeal: [16, 22, 28], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 });
+  assert.deepEqual(s3.link, { all: true, dur: 6, interval: 0.5, tickHeal: [12, 17, 22], tickScaleAp: 0.08, targetSpeedAdd: 40, breakRange: 550 });
   assert.equal(sim.context.HEROES.filter(h => h.skills.some(s => s.type === 'link')).length, 1, 'the only ally link');
   assert.ok(!sylva.skills.some(s => s.stun || s.immobilize || s.silence || s.airborne || s.shieldPct), 'no hard CC, no shield');
   for (const s of sylva.skills) assert.ok(s.desc && s.desc.length > 20, `${s.name} has a description`);
@@ -780,17 +780,17 @@ T.test('Sylva: Vine Link heals the chosen ally at once (Verdant Gift: +60 speed,
   const fire = sylva.fire.bind(sylva);
   sylva.fire = (hook, ...a) => { if (hook === 'onHealAlly') heals++; return fire(hook, ...a); };
   assert.ok(sylva.castSkill(1, null), 'no aim: the lowest ally');
-  const heal = 200 + sylva.magicPower() * 0.55;
-  near(pact.hp, pact.maxHp * 0.4 + heal, 1e-6, 'healed 200 (+55% MAGIC) at once');
+  const heal = 180 + sylva.magicPower() * 0.55;
+  near(pact.hp, pact.maxHp * 0.4 + heal, 1e-6, 'healed 180 (+55% MAGIC) at once');
   near(sylva.mana, mana0 - 95 + 12, 1e-6, '95 mana paid, 12 back from Verdant Gift');
   assert.ok(pact.buffs.speed && pact.buffs.speed.value >= 60, 'Verdant Gift: +60 move speed');
   assert.equal(heals, 1);
   const link = G.tethers.find(t => !t.dead && t.src === sylva);
   assert.ok(link && !link.hostile && link.target === pact && Math.abs(link.t - 4) < 1e-9, 'a 4 s friendly link');
-  const tick = 25 + 4 * 5 + sylva.magicPower() * 0.15;
+  const tick = 20 + 3 * 5 + sylva.magicPower() * 0.15;
   const hp1 = pact.hp;
   T.frames(G, 33);
-  assert.ok(pact.hp >= hp1 + tick - 1, `a tick of 45 (+15% MAGIC): ${pact.hp - hp1}`);
+  assert.ok(pact.hp >= hp1 + tick - 1, `a tick of 35 (+15% MAGIC): ${pact.hp - hp1}`);
   assert.equal(heals, 1, 'link ticks skip the passive');
   assert.ok(pact.attrs.get('speed') >= psp0 + 40, 'the ally +40 speed while linked');
   assert.ok(sylva.armorValue() >= armor0 + 12 - 1e-6 && sylva.mrValue() >= mr0 + 12 - 1e-6, 'Sylva +12 armor and MR while linked');
@@ -823,7 +823,7 @@ T.test('Sylva: Vine Link heals the chosen ally at once (Verdant Gift: +60 speed,
   sylva.fire = fire;
 });
 
-T.test('Sylva: Canopy heals every allied hero within 420 and links them all, herself included, for 6 s of 28 (+8% MAGIC) ticks; a Canopy vine never replaces a stronger Vine Link', () => {
+T.test('Sylva: Canopy heals every allied hero within 420 and links them all, herself included, for 6 s of 22 (+8% MAGIC) ticks; a Canopy vine never replaces a stronger Vine Link', () => {
   reset();
   T.place(sylva, open.x, open.y);
   T.place(pact, open.x + 200, open.y);
@@ -838,7 +838,7 @@ T.test('Sylva: Canopy heals every allied hero within 420 and links them all, her
   assert.ok(sylva.castSkill(2, null));
   near(sylva.mana, mana0 - 180 + 12 * 3, 1e-6, '180 mana at rank 3, Verdant Gift per hero healed (herself included)');
   const heal = 270 + sylva.magicPower() * 0.5;
-  assert.ok(Math.abs(pact.hp - Math.min(pact.maxHp, pact.maxHp * 0.4 + (200 + sylva.magicPower() * 0.55) + heal)) < 1e-6, `the vined ally healed again: ${pact.hp} of ${pact.maxHp}`);
+  assert.ok(Math.abs(pact.hp - Math.min(pact.maxHp, pact.maxHp * 0.4 + (180 + sylva.magicPower() * 0.55) + heal)) < 1e-6, `the vined ally healed again: ${pact.hp} of ${pact.maxHp}`);
   near(wraith.hp, wraith.maxHp * 0.5 + heal, 1e-6, '270 (+50% MAGIC) to an ally in 420');
   assert.ok(Math.abs(sylva.hp - (sylva.maxHp * 0.5 + heal)) < 1e-6, 'and herself');
   assert.equal(bastion.hp, bastion.maxHp * 0.5, 'past 420: nothing');
@@ -847,7 +847,7 @@ T.test('Sylva: Canopy heals every allied hero within 420 and links them all, her
   assert.ok(links.some(t => t.target === sylva), 'self linked');
   assert.ok(!vine.dead && links.includes(vine), 'the stronger Vine Link on the first ally was kept');
   const canopy = links.find(t => t.target === wraith);
-  near(canopy.tickHeal, 28 + sylva.magicPower() * 0.08, 1e-6, 'Canopy ticks 28 (+8% MAGIC) at rank 3');
+  near(canopy.tickHeal, 22 + sylva.magicPower() * 0.08, 1e-6, 'Canopy ticks 22 (+8% MAGIC) at rank 3');
   near(canopy.t, 6, 1e-9, 'for 6 s'); assert.equal(canopy.breakRange, 550);
   const w0 = wraith.hp; wraith.hp = wraith.maxHp * 0.5;
   T.frames(G, 33);
